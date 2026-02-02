@@ -48,7 +48,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: recurringthings_test
+          POSTGRES_DB: emit_test
         ports:
           - 5432:5432
         options: >-
@@ -75,4 +75,4 @@ jobs:
       run: dotnet test --no-build --filter 'Category=Integration' --verbosity normal
       env:
         MONGODB_CONNECTION_STRING: mongodb://localhost:27017
-        POSTGRES_CONNECTION_STRING: Host=localhost;Database=recurringthings_test;Username=postgres;Password=password
+        POSTGRES_CONNECTION_STRING: Host=localhost;Database=emit_test;Username=postgres;Password=password

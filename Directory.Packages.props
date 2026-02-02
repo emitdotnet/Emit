@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core dependencies -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="FluentValidation" Version="11.11.0" />
+    <PackageVersion Include="MessagePack" Version="3.0.300" />
+
+    <!-- Transactional library -->
+    <PackageVersion Include="Transactional.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Transactional.MongoDB" Version="10.0.0" />
+    <PackageVersion Include="Transactional.PostgreSQL" Version="10.0.0" />
+
+    <!-- Kafka dependencies -->
+    <PackageVersion Include="Confluent.Kafka" Version="2.6.1" />
+    <PackageVersion Include="Confluent.SchemaRegistry" Version="2.6.1" />
+
+    <!-- MongoDB dependencies -->
+    <PackageVersion Include="MongoDB.Driver" Version="3.6.0" />
+
+    <!-- PostgreSQL / EF Core dependencies -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
+
+    <!-- Test dependencies -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+</Project>
