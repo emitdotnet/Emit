@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Emit is a .NET 8.0+ library that provides a transactional outbox pattern. Instead of directly performing operations against external systems (e.g., producing a Kafka event), Emit first persists the operation in an outbox within the user's database as part of an ACID transaction. This guarantees that the user's data and the outbox entries are committed atomically — both succeed or both roll back.
+Emit is a .NET 10.0+ library that provides a transactional outbox pattern. Instead of directly performing operations against external systems (e.g., producing a Kafka event), Emit first persists the operation in an outbox within the user's database as part of an ACID transaction. This guarantees that the user's data and the outbox entries are committed atomically — both succeed or both roll back.
 
 A background worker then processes the outbox, performing the actual external operations (e.g., producing to Kafka) with retry logic, ordering guarantees, and resilience.
 
@@ -31,7 +31,7 @@ A background worker then processes the outbox, performing the actual external op
 
 - **One persistence provider only.** The user cannot register both MongoDB and PostgreSQL. The library must enforce this at registration time with a clear error.
 - **Multiple outbox providers allowed.** The user can register Kafka and future providers (e.g., RabbitMQ) simultaneously.
-- **.NET 8.0+ target.**
+- **.NET 10.0+ target** for all Emit packages. Transitive dependencies (Transactional, Confluent.Kafka, etc.) may target .NET 8.0+ — this is fine as long as .NET 8.0 remains a supported runtime.
 - **Use `Directory.Packages.props`** for centralized dependency version management.
 - **Avoid locking users into specific transitive package versions.** Users of the library may be using slightly different versions of shared dependencies.
 - **No commercial or restrictively licensed libraries.**
@@ -498,7 +498,7 @@ Triggers on push to `main` and pull requests to `main`.
 **Jobs:**
 
 **`test` job:**
-1. Checkout, setup .NET 8.0.
+1. Checkout, setup .NET 10.0.
 2. `dotnet restore`.
 3. `dotnet build --no-restore`.
 4. `dotnet test --no-build --filter 'Category!=Integration'` — unit tests only.
@@ -512,7 +512,7 @@ Service containers:
 - **No Kafka container.** Integration tests mock the Confluent producer via the factory. The real Confluent producer is never built in tests, so no broker connection is attempted.
 
 Steps:
-1. Checkout, setup .NET 8.0.
+1. Checkout, setup .NET 10.0.
 2. `dotnet restore`.
 3. `dotnet build --no-restore`.
 4. `dotnet test --no-build --filter 'Category=Integration'` with environment variables:
@@ -524,7 +524,7 @@ Steps:
 Triggers on tags matching `v[0-9]+.[0-9]+.[0-9]+*`.
 
 Steps:
-1. Checkout, setup .NET 8.0.
+1. Checkout, setup .NET 10.0.
 2. `dotnet restore`.
 3. `dotnet build -c Release --no-restore`.
 4. `dotnet test -c Release --no-build --filter 'Category!=Integration'` — unit tests gate the publish.

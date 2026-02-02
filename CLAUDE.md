@@ -4,7 +4,26 @@ Guidance for Claude Code when working with this repository. See `PRD.md` for det
 
 ## Project Overview
 
-Emit is a .NET 8.0+ transactional outbox library. It persists operations (e.g., Kafka messages) in an outbox within the user's database as part of an ACID transaction, then a background worker processes them with retry logic and ordering guarantees.
+Emit is a .NET 10.0+ transactional outbox library. It persists operations (e.g., Kafka messages) in an outbox within the user's database as part of an ACID transaction, then a background worker processes them with retry logic and ordering guarantees.
+
+## Project Structure
+
+```
+src/
+├── Emit/                           # Core library (abstractions, models, workers)
+│   ├── Abstractions/               # Interfaces (IOutboxRepository, ILeaseRepository)
+│   ├── Configuration/              # Options classes and validators
+│   ├── DependencyInjection/        # EmitBuilder and service registration
+│   ├── Models/                     # OutboxEntry, OutboxAttempt
+│   ├── Resilience/                 # Retry policies and backoff strategies
+│   └── Worker/                     # OutboxWorker, CleanupWorker
+├── Emit.Provider.Kafka/            # Kafka IProducer<TKey,TValue> implementation
+├── Emit.Persistence.MongoDB/       # MongoDB persistence
+└── Emit.Persistence.PostgreSQL/    # PostgreSQL persistence (EF Core)
+tests/
+├── Emit.Tests/                     # Unit tests
+└── Emit.IntegrationTests/          # Integration tests (require Docker services)
+```
 
 ## Critical Rules
 
@@ -22,6 +41,7 @@ Emit is a .NET 8.0+ transactional outbox library. It persists operations (e.g., 
 dotnet build                                    # Build
 dotnet test                                     # All tests
 dotnet test --filter 'Category!=Integration'   # Unit tests only
+dotnet test --filter 'Category=Integration'    # Integration tests only
 dotnet format                                   # Fix formatting
 dotnet format --verify-no-changes              # Check formatting
 dotnet pack -c Release                          # Pack NuGet
@@ -44,6 +64,34 @@ dotnet pack -c Release                          # Pack NuGet
 - XML documentation on all public APIs
 - Use `nameof()` instead of hardcoded strings
 - All DateTime fields in UTC
+- `BackgroundService` for long-running workers with `PeriodicTimer`
+- Use `ConfigureAwait(false)` in library code
+
+## Architecture Patterns
+
+### Builder Pattern for DI
+```csharp
+services.AddEmit(builder =>
+{
+    builder.UseMongoDb((sp, options) => { ... });
+    builder.AddKafka((sp, kafka) => { ... });
+});
+```
+
+### FluentValidation + IValidateOptions Adapter
+```csharp
+// Validator
+public class CleanupOptionsValidator : AbstractValidator<CleanupOptions> { ... }
+
+// Registration with adapter
+services.AddSingleton<IValidateOptions<CleanupOptions>,
+    FluentValidateOptions<CleanupOptions, CleanupOptionsValidator>>();
+services.AddOptions<CleanupOptions>().ValidateOnStart();
+```
+
+### Atomic Sequence Generation
+- **MongoDB**: `FindOneAndUpdate` with `$inc` on counter collection
+- **PostgreSQL**: `INSERT...ON CONFLICT...DO UPDATE...RETURNING`
 
 ## Testing
 
@@ -52,3 +100,5 @@ dotnet pack -c Release                          # Pack NuGet
 - **Tests are ground truth** - If a test fails, fix the implementation, not the test
 - Integration tests require `MONGODB_CONNECTION_STRING` and `POSTGRES_CONNECTION_STRING` env vars
 - Kafka producing is mocked - tests verify outbox behavior, not Kafka connectivity
+- Use `NullLogger<T>.Instance` for internal classes (Moq cannot proxy internal types)
+- Use `Options.Create(...)` to wrap options in tests
