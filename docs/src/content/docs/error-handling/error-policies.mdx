@@ -63,7 +63,7 @@ err.When<SomeException>(action => action.DeadLetter());           // default nam
 err.When<SomeException>(action => action.DeadLetter("my.dlq"));  // explicit topic
 ```
 
-Forwards the raw message bytes to a dead-letter topic. See [Dead Letter Queue](/error-handling/dead-letter-queue/) for how the sink is configured and what headers are added.
+Forwards the raw message bytes to a dead-letter topic. See [Dead Letter Queue](./dead-letter-queue/) for how the sink is configured and what headers are added.
 
 ### Discard
 

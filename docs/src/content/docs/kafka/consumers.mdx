@@ -51,7 +51,7 @@ Consumers are resolved from the DI container per message, so constructor injecti
 | `Features` | `IFeatureCollection` | Type-safe feature bag |
 | `Transaction` | `ITransactionContext?` | Active transaction, if any |
 
-Kafka-specific data (topic, partition, offset, key, headers) is in the feature collection. See [Feature Collection](/advanced/feature-collection/) for the full list.
+Kafka-specific data (topic, partition, offset, key, headers) is in the feature collection. See [Feature Collection](../advanced/feature-collection/) for the full list.
 
 ## Worker pool
 
@@ -228,7 +228,7 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-For error handling, validation, circuit breakers, and rate limiting at the group level, see [Error Policies](/error-handling/error-policies/) and [Resilience](/error-handling/resilience/).
+For error handling, validation, circuit breakers, and rate limiting at the group level, see [Error Policies](../error-handling/error-policies/) and [Resilience](../error-handling/resilience/).
 
 ## Graceful shutdown
 
@@ -300,4 +300,4 @@ For transport-agnostic consume lifecycle hooks, use `IConsumeObserver` at the gl
 emit.AddConsumeObserver<MyConsumeObserver>();
 ```
 
-See [Observers](/observability/observers/) for details on both.
+See [Observers](../observability/observers/) for details on both.
