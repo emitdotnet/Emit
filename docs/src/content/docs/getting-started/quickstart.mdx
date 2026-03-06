@@ -142,5 +142,5 @@ This gets you from zero to a working producer/consumer pair in about five minute
 The endpoint returns as soon as `CommitAsync` completes. Delivery to Kafka is asynchronous and durable. If your service crashes between the commit and the delivery, the outbox worker picks it up again on restart. If anything throws before `CommitAsync`, `await using` aborts the transaction and neither the order document nor the outbox entry are written.
 
 :::note
-You need to add JSON or another serializer for `PizzaOrdered`. See [Serialization](/kafka/serialization/) for the available options. For a quick smoke test, System.Text.Json + a manual serializer wrapper is enough.
+You need to add JSON or another serializer for `PizzaOrdered`. See [Serialization](../kafka/serialization/) for the available options. For a quick smoke test, System.Text.Json + a manual serializer wrapper is enough.
 :::

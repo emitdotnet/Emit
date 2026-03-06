@@ -3,7 +3,7 @@ title: Kafka Setup
 description: Connecting Emit to Kafka and registering topics, producers, and consumer groups.
 ---
 
-All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](/kafka/producers/) and [Consumers](/kafka/consumers/) for the specifics of each.
+All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](../kafka/producers/) and [Consumers](../kafka/consumers/) for the specifics of each.
 
 ## Package
 
@@ -86,7 +86,7 @@ kafka.ConfigureSchemaRegistry(cfg =>
 });
 ```
 
-See [Serialization](/kafka/serialization/) for how to wire schema-aware serializers to topics.
+See [Serialization](../kafka/serialization/) for how to wire schema-aware serializers to topics.
 
 ## Topics
 
@@ -148,4 +148,4 @@ emit.AddKafka(kafka =>
 });
 ```
 
-This is the Provider level of the [three-level pipeline model](/concepts/pipeline-model/).
+This is the Provider level of the [three-level pipeline model](../concepts/pipeline-model/).

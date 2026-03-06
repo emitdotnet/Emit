@@ -7,7 +7,7 @@ import Mermaid from '../../../components/Mermaid.astro';
 
 The transactional outbox is the core reliability mechanism in Emit. It solves the dual-write problem by ensuring that your business data write and your message enqueue happen in the same database transaction. Either both commit, or neither does. No more "saved to DB but broker publish failed" horror stories.
 
-The outbox is opt-in. If you don't call `UseOutbox()`, producers write directly to the broker. See [Installation](/getting-started/installation/) for the distinction.
+The outbox is opt-in. If you don't call `UseOutbox()`, producers write directly to the broker. See [Installation](../getting-started/installation/) for the distinction.
 
 ## How it works
 
@@ -36,7 +36,7 @@ Concretely: if you produce three pizza orders in a single transaction, they arri
 
 ## Single-worker guarantee
 
-The outbox worker is coordinated via [leader election](/persistence/distributed-locks/). Exactly one instance in your cluster runs the worker at any time. If the leader dies, another node takes over and picks up where it left off.
+The outbox worker is coordinated via [leader election](../persistence/distributed-locks/). Exactly one instance in your cluster runs the worker at any time. If the leader dies, another node takes over and picks up where it left off.
 
 This prevents duplicate delivery from concurrent workers processing the same group.
 

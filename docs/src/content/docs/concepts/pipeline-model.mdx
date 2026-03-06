@@ -72,7 +72,7 @@ if (context.Features.TryGetValue<IRetryAttemptFeature>(out var retry))
 }
 ```
 
-The built-in features cover things like message headers, the raw key/value bytes, the active activity, dead-letter sink access, consumer flow control, and more. See [Feature Collection](/advanced/feature-collection/) for the full list.
+The built-in features cover things like message headers, the raw key/value bytes, the active activity, dead-letter sink access, consumer flow control, and more. See [Feature Collection](../advanced/feature-collection/) for the full list.
 
 ## Middleware lifetimes
 
@@ -89,4 +89,4 @@ group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per mes
 
 Emit always registers tracing, metrics, and observer middleware at the global level; you don't add them manually. The order is fixed: tracing wraps metrics, which wraps observers, which wraps everything else. Your custom middleware runs inside all of that.
 
-For more on writing middleware, see [Custom Middleware](/advanced/custom-middleware/).
+For more on writing middleware, see [Custom Middleware](../advanced/custom-middleware/).
