@@ -1,0 +1,48 @@
+core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit/**
+          - src/Emit.Abstractions/**
+
+kafka:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit.Provider.Kafka/**
+          - src/Emit.Kafka.*/**
+
+mongodb:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit.Persistence.MongoDB/**
+          - src/Emit.MongoDB.*/**
+
+efcore:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit.Persistence.EntityFrameworkCore/**
+          - src/Emit.EntityFrameworkCore.*/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+
+mediator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit.Mediator/**
+
+observability:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/Emit.OpenTelemetry/**

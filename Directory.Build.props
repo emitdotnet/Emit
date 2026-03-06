@@ -12,9 +12,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Authors>ChuckNovice</Authors>
-    <Company>ChuckNovice</Company>
-    <Copyright>Copyright © 2026 ChuckNovice</Copyright>
+    <Authors>Miguel Tremblay</Authors>
+    <Company>Miguel Tremblay</Company>
+    <Copyright>Copyright © 2026 Miguel Tremblay</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/emitdotnet/Emit</PackageProjectUrl>
     <RepositoryUrl>https://github.com/emitdotnet/Emit</RepositoryUrl>

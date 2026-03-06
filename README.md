@@ -9,6 +9,8 @@
 
 ---
 
+> **Alpha** — Emit is under active development. APIs will change between releases. Pin your package versions and do not use in production yet. A stable `1.0.0` release is the goal, but we are not there yet.
+
 A .NET transactional outbox library that actually cares about message ordering.
 
 Emit sits between your application and your message broker, making sure every message gets delivered exactly once and in the right order. If your app crashes mid-write, Emit picks up where you left off. No lost messages, no duplicates, no existential dread.
