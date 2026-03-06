@@ -4,8 +4,8 @@ using System.Threading.RateLimiting;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
-using global::Emit.Metrics;
 using global::Emit.Kafka.Consumer;
+using global::Emit.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

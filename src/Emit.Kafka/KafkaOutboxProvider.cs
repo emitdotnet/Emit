@@ -2,9 +2,9 @@ namespace Emit.Kafka;
 
 using System.Diagnostics;
 using Emit.Abstractions;
-using Emit.Models;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Serialization;
+using Emit.Models;
 using Emit.Tracing;
 using MessagePack;
 using Microsoft.Extensions.Logging;

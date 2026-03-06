@@ -2,9 +2,9 @@ namespace Emit.EntityFrameworkCore.Tests.Outbox;
 
 using Emit.Abstractions;
 using Emit.DependencyInjection;
-using Emit.IntegrationTests.Integration.Compliance;
 using Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
+using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
 using Emit.Testing;

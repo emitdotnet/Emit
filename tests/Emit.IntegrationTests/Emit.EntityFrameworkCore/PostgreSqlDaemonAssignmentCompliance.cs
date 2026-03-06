@@ -2,10 +2,10 @@ namespace Emit.EntityFrameworkCore.Tests.Daemon;
 
 using Emit.Abstractions.Daemon;
 using Emit.DependencyInjection;
-using Emit.IntegrationTests.Integration.Compliance;
 using Emit.EntityFrameworkCore;
 using Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
+using Emit.IntegrationTests.Integration.Compliance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;

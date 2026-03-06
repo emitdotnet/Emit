@@ -1,10 +1,10 @@
 namespace Emit.Kafka.Tests;
 
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Models;
 using global::Emit.Kafka;
 using global::Emit.Kafka.Metrics;
 using global::Emit.Kafka.Serialization;
+using global::Emit.Models;
 using MessagePack;
 using Microsoft.Extensions.Logging;
 using Moq;

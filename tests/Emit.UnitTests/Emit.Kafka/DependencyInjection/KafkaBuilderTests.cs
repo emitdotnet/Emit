@@ -1,7 +1,7 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
-using global::Emit.Pipeline;
 using global::Emit.Kafka.DependencyInjection;
+using global::Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;

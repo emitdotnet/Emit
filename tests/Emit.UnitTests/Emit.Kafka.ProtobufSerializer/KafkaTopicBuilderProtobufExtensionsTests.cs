@@ -1,7 +1,7 @@
 namespace Emit.Kafka.ProtobufSerializer.Tests;
 
-using global::Emit.Pipeline;
 using global::Emit.Kafka.DependencyInjection;
+using global::Emit.Pipeline;
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;

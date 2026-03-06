@@ -1,8 +1,8 @@
 namespace Emit.EntityFrameworkCore.DependencyInjection;
 
 using System.Text.Json;
-using Emit.Models;
 using Emit.EntityFrameworkCore.Models;
+using Emit.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 

@@ -2,8 +2,8 @@ namespace Emit.Kafka;
 
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
-using Emit.Pipeline;
 using Emit.Kafka.Consumer;
+using Emit.Pipeline;
 
 /// <summary>
 /// Kafka producer that invokes the outbound middleware pipeline before serializing and producing.
