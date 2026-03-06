@@ -7,6 +7,7 @@ Each sample is a self-contained project that demonstrates real-world usage of Em
 | Sample | What it demonstrates |
 |---|---|
 | [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka router consumer, multiple consumer groups, OpenTelemetry metrics and tracing |
+| [distributed-locks](distributed-locks/) | Distributed locking with contention, lock TTL, dual persistence (MongoDB/PostgreSQL), OpenTelemetry lock metrics |
 
 ---
 

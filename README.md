@@ -3,7 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/emitdotnet/Emit/releases/latest"><img src="https://img.shields.io/github/v/release/emitdotnet/Emit?style=flat-square" alt="GitHub Release" /></a>
   <a href="https://github.com/emitdotnet/Emit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/emitdotnet/Emit/ci.yml?branch=main&style=flat-square&label=build" alt="Build Status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/emitdotnet/Emit?style=flat-square" alt="License" /></a>
 </p>
