@@ -1,0 +1,159 @@
+---
+title: Configuration Reference
+description: All configuration options across Emit, organized by component.
+---
+
+All configuration in Emit is validated at startup via `IValidateOptions<T>`. Misconfiguration surfaces as a startup error, not a runtime surprise.
+
+## Outbox options
+
+Applies to both MongoDB and EF Core when `UseOutbox()` is called.
+
+| Option | Default | Description |
+|---|---|---|
+| `PollingInterval` | 5s | Wait between poll cycles when the outbox is empty or a batch completes |
+| `BatchSize` | 100 | Max entries fetched per cycle across all groups |
+| `MaxGroupsPerCycle` | 1000 | Max distinct group heads evaluated per cycle |
+
+## Kafka client options
+
+`ConfigureClient` maps directly to Confluent.Kafka's `ClientConfig`. All standard Confluent.Kafka client properties are available. Common ones:
+
+| Option | Description |
+|---|---|
+| `BootstrapServers` | (required) Comma-separated broker addresses |
+| `ClientId` | Client identifier reported to the broker |
+| `SecurityProtocol` | `Plaintext`, `Ssl`, `SaslPlaintext`, or `SaslSsl` |
+| `SaslMechanism` | `Plain`, `ScramSha256`, `ScramSha512`, or `Gssapi` |
+| `SaslUsername` / `SaslPassword` | SASL credentials |
+| `SslCaLocation` | Path to the CA certificate file |
+
+## Kafka producer options
+
+`ConfigureProducer` maps to Confluent.Kafka's `ProducerConfig`. Common options:
+
+| Option | Default | Description |
+|---|---|---|
+| `Acks` | `Leader` | Acknowledgement level: `None`, `Leader`, or `All` |
+| `EnableIdempotence` | `false` | Prevents duplicate messages on retry |
+| `CompressionType` | `None` | `Gzip`, `Snappy`, `Lz4`, or `Zstd` |
+| `Linger` | `0` | Batching delay before sending |
+
+## Kafka consumer group options
+
+Emit-specific options:
+
+| Option | Default | Description |
+|---|---|---|
+| `WorkerCount` | `1` | Number of parallel workers |
+| `WorkerDistribution` | `ByKeyHash` | `ByKeyHash` or `RoundRobin` |
+| `BufferSize` | `32` | Per-worker channel capacity |
+| `CommitInterval` | `5s` | Offset commit frequency |
+| `WorkerStopTimeout` | `30s` | Graceful shutdown wait for in-flight messages |
+
+Confluent consumer options (also settable on the group):
+
+| Option | Description |
+|---|---|
+| `AutoOffsetReset` | Where to start when no committed offset exists (`Earliest` or `Latest`) |
+| `SessionTimeout` | Broker marks the consumer dead after this without a heartbeat |
+| `HeartbeatInterval` | How often the consumer sends heartbeats to the broker |
+| `MaxPollInterval` | Maximum time between poll calls before the broker considers the consumer dead |
+| `IsolationLevel` | `ReadUncommitted` or `ReadCommitted` (for transactional producers) |
+
+## Schema Registry options
+
+`ConfigureSchemaRegistry` maps to Confluent.Kafka's `SchemaRegistryConfig`. Common options:
+
+| Option | Description |
+|---|---|
+| `Url` | (required) Schema Registry URL |
+| `BasicAuthUserInfo` | Credentials in `user:password` format |
+| `RequestTimeout` | Per-request timeout |
+| `MaxCachedSchemas` | In-memory schema cache size |
+
+## Circuit breaker options
+
+```csharp
+group.CircuitBreaker(cb =>
+{
+    cb.FailureThreshold(5)
+    cb.SamplingWindow(TimeSpan.FromSeconds(60))
+    cb.PauseDuration(TimeSpan.FromSeconds(30))
+    cb.TripOn<HttpRequestException>()  // optional; default trips on any exception
+})
+```
+
+## DLQ options
+
+```csharp
+kafka.DeadLetter(dlq =>
+{
+    // Default: appends ".dlt" to the source topic name (e.g. "orders" → "orders.dlt")
+    dlq.TopicNamingConvention = sourceTopic => $"{sourceTopic}.dlt";
+})
+```
+
+`TopicNamingConvention` is a `Func<string, string>` — override it for org-wide naming conventions.
+
+## Leader election options
+
+Controls how Emit elects a leader across instances. Tuning is rarely needed except in high-latency networks or when the default lease duration is too long for your failover requirements.
+
+| Option | Default | Description |
+|---|---|---|
+| `HeartbeatInterval` | `15s` | How often each node attempts to renew leadership |
+| `LeaseDuration` | `60s` | How long a lease lasts; another node takes over if not renewed in time |
+| `QueryTimeout` | `5s` | Max time for a heartbeat database query; node drops leadership on timeout |
+| `NodeRegistrationTtl` | `90s` | How long before a silent node is considered dead and removed |
+| `InstanceId` | `MachineName` | Human-readable node identifier visible in leader records |
+
+```csharp
+emit.ConfigureLeaderElection(le =>
+{
+    le.HeartbeatInterval = TimeSpan.FromSeconds(10);
+    le.LeaseDuration = TimeSpan.FromSeconds(45);
+    le.InstanceId = Environment.GetEnvironmentVariable("POD_NAME");
+});
+```
+
+## Daemon coordination options
+
+Controls how the outbox daemon is assigned to leader nodes.
+
+| Option | Default | Description |
+|---|---|---|
+| `AcknowledgeTimeout` | `30s` | How long a node has to acknowledge a daemon assignment before the leader reassigns it |
+| `DrainTimeout` | `30s` | How long a node has to stop a revoked daemon before the leader force-reassigns it |
+
+```csharp
+emit.ConfigureDaemons(d =>
+{
+    d.AcknowledgeTimeout = TimeSpan.FromSeconds(15);
+    d.DrainTimeout = TimeSpan.FromSeconds(20);
+});
+```
+
+## OpenTelemetry instrumentation options
+
+| Option | Default | Description |
+|---|---|---|
+| `EnableEmitMeter` | `true` | Core pipeline instruments |
+| `EnableOutboxMeter` | `true` | Outbox worker instruments |
+| `EnableLockMeter` | `true` | Distributed lock instruments |
+| `EnableMediatorMeter` | `true` | Mediator instruments |
+| `EnableKafkaMeter` | `true` | Kafka consumer/producer instruments |
+| `EnableKafkaBrokerMeter` | `true` | Broker-level Kafka instruments |
+
+Call `options.EnrichWithTag("key", "value")` to add a global dimension to all instruments.
+
+## Middleware lifetimes
+
+```csharp
+group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // default: one shared instance
+group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);     // one instance per message
+```
+
+## Validation on startup
+
+All options classes implement `IValidateOptions<T>` and are registered with `ValidateOnStart()`. If a required field is missing or a value is out of range, the application will throw on startup before accepting any requests. You will see a descriptive error in the logs pointing to the misconfigured option.

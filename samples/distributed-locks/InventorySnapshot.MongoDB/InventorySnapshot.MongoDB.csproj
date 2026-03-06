@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>InventorySnapshot.MongoDB</RootNamespace>
+    <AssemblyName>InventorySnapshot.MongoDB</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../InventorySnapshot.Common/InventorySnapshot.Common.csproj" />
+    <ProjectReference Include="../../../src/Emit/Emit.csproj" />
+    <ProjectReference Include="../../../src/Emit.MongoDB/Emit.MongoDB.csproj" />
+    <ProjectReference Include="../../../src/Emit.MongoDB.HealthChecks/Emit.MongoDB.HealthChecks.csproj" />
+    <ProjectReference Include="../../../src/Emit.OpenTelemetry/Emit.OpenTelemetry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+  </ItemGroup>
+
+</Project>

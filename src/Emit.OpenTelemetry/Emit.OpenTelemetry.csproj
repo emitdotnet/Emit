@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.OpenTelemetry</RootNamespace>
+    <AssemblyName>Emit.OpenTelemetry</AssemblyName>
+    <PackageId>Emit.OpenTelemetry</PackageId>
+    <Description>OpenTelemetry instrumentation for the Emit library. Provides AddEmitInstrumentation() for registering Emit meters with OpenTelemetry and configuring static tag enrichment.</Description>
+    <PackageTags>emit;opentelemetry;metrics;instrumentation;observability</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit\Emit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+    <InternalsVisibleTo Include="Emit.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

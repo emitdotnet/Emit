@@ -1,0 +1,96 @@
+---
+interface Props {
+  code: string;
+}
+
+const { code } = Astro.props;
+const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<div class="mermaid-container" id={id} data-code={code}></div>
+
+<script>
+  import mermaid from 'mermaid';
+
+  const darkThemeVars = {
+    primaryColor: '#B2315C',
+    primaryTextColor: '#e0e0ec',
+    primaryBorderColor: '#B2315C',
+    lineColor: '#9898b8',
+    secondaryColor: '#280a12',
+    tertiaryColor: '#0d0d1a',
+    background: '#08080e',
+    mainBkg: '#13132a',
+    nodeBorder: '#B2315C',
+    clusterBkg: '#13132a',
+    clusterBorder: '#2e2e48',
+    titleColor: '#f0a8c0',
+    edgeLabelBackground: '#280a12',
+    fontSize: '14px',
+  };
+
+  const lightThemeVars = {
+    primaryColor: '#B2315C',
+    primaryTextColor: '#17191e',
+    primaryBorderColor: '#B2315C',
+    lineColor: '#686880',
+    background: '#f0eef8',
+    mainBkg: '#ebe8f4',
+    nodeBorder: '#B2315C',
+    clusterBkg: '#eae8f4',
+    clusterBorder: '#9898b8',
+    titleColor: '#8a1234',
+    fontSize: '14px',
+  };
+
+  function isDark() {
+    return document.documentElement.dataset['theme'] !== 'light';
+  }
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: isDark() ? darkThemeVars : lightThemeVars,
+  });
+
+  async function renderAll() {
+    const containers = document.querySelectorAll<HTMLElement>('.mermaid-container[data-code]');
+    for (const el of containers) {
+      const code = el.dataset['code']!;
+      const svgId = `${el.id}-svg`;
+      try {
+        const { svg } = await mermaid.render(svgId, code);
+        el.innerHTML = svg;
+      } catch {
+        el.textContent = code;
+      }
+    }
+  }
+
+  renderAll();
+
+  // Re-render on theme change
+  const observer = new MutationObserver(() => {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: isDark() ? darkThemeVars : lightThemeVars,
+    });
+    renderAll();
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+
+<style>
+  .mermaid-container {
+    margin: 1.5rem 0;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }
+
+  .mermaid-container svg {
+    max-width: 100%;
+    height: auto;
+  }
+</style>

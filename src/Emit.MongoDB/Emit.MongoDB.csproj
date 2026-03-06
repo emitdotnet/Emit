@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.MongoDB</RootNamespace>
+    <AssemblyName>Emit.MongoDB</AssemblyName>
+    <PackageId>Emit.MongoDB</PackageId>
+    <Description>MongoDB persistence provider for Emit. Stores outbox entries in MongoDB with support for sharding and atomic sequence generation.</Description>
+    <PackageTags>outbox;transactional;mongodb;messaging;reliability</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit\Emit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+    <InternalsVisibleTo Include="Emit.IntegrationTests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.MongoDB.HealthChecks</RootNamespace>
+    <AssemblyName>Emit.MongoDB.HealthChecks</AssemblyName>
+    <PackageId>Emit.MongoDB.HealthChecks</PackageId>
+    <Description>ASP.NET Core health check for Emit's MongoDB persistence provider. Registers a ping probe that can be wired into Kubernetes liveness and readiness endpoints.</Description>
+    <PackageTags>emit;mongodb;healthchecks;aspnetcore;kubernetes</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.MongoDB\Emit.MongoDB.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+  </ItemGroup>
+
+</Project>

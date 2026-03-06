@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>BuildingSentinel.PostgreSQL</RootNamespace>
+    <AssemblyName>BuildingSentinel.PostgreSQL</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../BuildingSentinel.Common/BuildingSentinel.Common.csproj" />
+    <ProjectReference Include="../../../src/Emit.EntityFrameworkCore/Emit.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="../../../src/Emit.EntityFrameworkCore.HealthChecks/Emit.EntityFrameworkCore.HealthChecks.csproj" />
+    <ProjectReference Include="../../../src/Emit.Kafka.HealthChecks/Emit.Kafka.HealthChecks.csproj" />
+    <ProjectReference Include="../../../src/Emit.OpenTelemetry/Emit.OpenTelemetry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+</Project>

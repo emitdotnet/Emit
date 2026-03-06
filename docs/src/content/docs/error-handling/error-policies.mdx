@@ -1,0 +1,137 @@
+---
+title: Error Policies
+description: "Configuring what happens when a consumer throws: retry, dead-letter, or discard."
+---
+
+When a consumer throws, Emit evaluates an error policy to decide what to do next. The policy is configured per consumer group via `OnError`, and it's worth spending five minutes getting right rather than discovering your defaults at 11pm on a Friday.
+
+## OnError
+
+```csharp
+topic.ConsumerGroup("pizza-kitchen", group =>
+{
+    group.OnError(err =>
+    {
+        // Kitchen gets slammed during dinner rush; retry with backoff
+        err.When<KitchenCapacityException>(action => action
+            .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(200)))
+            .DeadLetter());
+
+        // Bad address can't be fixed by retrying; send to DLQ for human review
+        err.When<InvalidAddressException>(action => action.DeadLetter());
+
+        err.Default(action => action.DeadLetter());
+    });
+
+    group.AddConsumer<PizzaOrderedConsumer>();
+});
+```
+
+Clauses are evaluated in order. The first matching clause wins. `Default` applies when no clause matches.
+
+## Error actions
+
+### Retry
+
+```csharp
+err.When<KitchenCapacityException>(action => action
+    .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(200)))
+    .DeadLetter());  // exhaustion action
+```
+
+Retries the message up to `maxAttempts` times using the specified backoff strategy. Chain `.DeadLetter()` or `.Discard()` after `.Retry()` to define what happens when retries are exhausted.
+
+Backoff strategies:
+
+| Strategy | Signature | Behavior |
+|---|---|---|
+| Fixed | `Backoff.Fixed(delay)` | Same delay between every retry |
+| Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt with ±20% jitter; capped at `maxDelay` (default 5 min) |
+| None | `Backoff.None` | No delay between retries |
+
+The current attempt number is available in middleware via `IRetryAttemptFeature`:
+
+```csharp
+var retry = context.Features.Get<IRetryAttemptFeature>();
+// retry.Attempt: 0 = initial attempt, 1 = first retry, ...
+```
+
+### Dead-letter
+
+```csharp
+err.When<SomeException>(action => action.DeadLetter());           // default naming convention
+err.When<SomeException>(action => action.DeadLetter("my.dlq"));  // explicit topic
+```
+
+Forwards the raw message bytes to a dead-letter topic. See [Dead Letter Queue](/error-handling/dead-letter-queue/) for how the sink is configured and what headers are added.
+
+### Discard
+
+```csharp
+err.When<SomeException>(action => action.Discard());
+```
+
+Logs the error and moves on. The message is acknowledged and never retried. Use this for known-invalid messages you never want to see again.
+
+## Exception matching
+
+`When<TException>` matches exact exception types and subclasses:
+
+```csharp
+err.When<TimeoutException>(action => action
+    .Retry(5, Backoff.Exponential(TimeSpan.FromSeconds(1)))
+    .DeadLetter());
+err.When<InvalidOperationException>(action => action.Discard());
+```
+
+If no `Default` is configured and no clause matches, the error is logged and the message is discarded. Configure `Default` explicitly if you want a different fallback.
+
+## Validation
+
+Validation runs before the consumer pipeline and has its own policy:
+
+```csharp
+group.Validate<PizzaValidator>(err =>
+{
+    err.DeadLetter("pizzas.validation.dlq");
+});
+```
+
+Or with an inline validator:
+
+```csharp
+group.Validate(
+    (msg, ct) => Task.FromResult(
+        msg.Toppings.Length > 0
+            ? MessageValidationResult.Success()
+            : MessageValidationResult.Failure("At least one topping is required")),
+    err => err.DeadLetter());
+```
+
+Implement `IMessageValidator<TValue>` for reusable validators:
+
+```csharp
+public class PizzaValidator : IMessageValidator<PizzaOrdered>
+{
+    public Task<MessageValidationResult> ValidateAsync(PizzaOrdered message, CancellationToken ct)
+    {
+        if (message.Toppings.Length == 0)
+            return Task.FromResult(MessageValidationResult.Failure("At least one topping is required"));
+
+        return Task.FromResult(MessageValidationResult.Success());
+    }
+}
+```
+
+## Deserialization errors
+
+Handle errors that occur before the message is even deserialized:
+
+```csharp
+group.OnDeserializationError(err =>
+{
+    err.DeadLetter("pizzas.dlq");
+});
+```
+
+Without this, deserialization errors are logged and the message is skipped.

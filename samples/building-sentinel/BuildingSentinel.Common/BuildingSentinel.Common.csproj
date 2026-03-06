@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>BuildingSentinel.Common</RootNamespace>
+    <AssemblyName>BuildingSentinel.Common</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Emit/Emit.csproj" />
+    <ProjectReference Include="../../../src/Emit.Mediator/Emit.Mediator.csproj" />
+    <ProjectReference Include="../../../src/Emit.Kafka/Emit.Kafka.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.EntityFrameworkCore.HealthChecks</RootNamespace>
+    <AssemblyName>Emit.EntityFrameworkCore.HealthChecks</AssemblyName>
+    <PackageId>Emit.EntityFrameworkCore.HealthChecks</PackageId>
+    <Description>ASP.NET Core health check for Emit's Entity Framework Core persistence provider. Registers a database connectivity probe that can be wired into Kubernetes liveness and readiness endpoints.</Description>
+    <PackageTags>emit;efcore;postgresql;healthchecks;aspnetcore;kubernetes</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.EntityFrameworkCore\Emit.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+  </ItemGroup>
+
+</Project>

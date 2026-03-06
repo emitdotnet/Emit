@@ -1,0 +1,87 @@
+---
+title: Installation
+description: Add Emit to your .NET project.
+---
+
+## Packages
+
+Emit is split into focused packages so you only take what you need.
+
+| Package | Purpose |
+|---|---|
+| `Emit` | Core library (required) |
+| `Emit.Kafka` | Kafka producers and consumers |
+| `Emit.MongoDB` | MongoDB outbox and distributed lock persistence |
+| `Emit.EntityFrameworkCore` | EF Core outbox and distributed lock persistence (PostgreSQL) |
+| `Emit.Mediator` | In-process request/response mediator |
+| `Emit.OpenTelemetry` | Metrics and distributed tracing integration |
+| `Emit.Kafka.JsonSerializer` | JSON Schema serializer for Kafka topics |
+| `Emit.Kafka.AvroSerializer` | Avro serializer for Kafka topics |
+| `Emit.Kafka.ProtobufSerializer` | Protobuf serializer for Kafka topics |
+| `Emit.Testing` | Test utilities: `MessageSink<T>`, `SinkConsumer<T>` |
+
+For a typical Kafka + MongoDB setup:
+
+```bash
+dotnet add package Emit
+dotnet add package Emit.Kafka
+dotnet add package Emit.MongoDB
+```
+
+## Registering Emit
+
+Everything flows through `AddEmit`. Call it once in your service registration and chain the providers you need:
+
+```csharp title="Program.cs"
+builder.Services.AddEmit(emit =>
+{
+    emit.AddMongoDb(mongo =>
+    {
+        mongo.Configure((sp, ctx) =>
+        {
+            ctx.Client = sp.GetRequiredService<IMongoClient>();
+            ctx.Database = ctx.Client.GetDatabase("pizzeria-db");
+        })
+        .UseOutbox()
+        .UseDistributedLock();
+    });
+
+    emit.AddKafka(kafka =>
+    {
+        kafka.ConfigureClient(cfg =>
+        {
+            cfg.BootstrapServers = "localhost:9092";
+        });
+
+        kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+        {
+            topic.Producer();
+
+            topic.ConsumerGroup("pizza-kitchen", group =>
+            {
+                group.AddConsumer<PizzaOrderedConsumer>();
+            });
+        });
+    });
+});
+```
+
+`AddEmit` returns your `IServiceCollection`, so it chains normally with the rest of your registration.
+
+`UseOutbox()` and `UseDistributedLock()` are both opt-in. Skip `UseOutbox()` and producers write directly to the broker; no background worker, no persistence required. You can use Emit purely as a Kafka integration layer without pulling in any persistence package at all.
+
+## What gets registered
+
+Emit registers its own background services (outbox worker, leader election, offset committer) automatically. You don't start them manually; they're `BackgroundService` implementations that the host lifecycle manages.
+
+Configuration is validated at startup with `IValidateOptions<T>`. If something is misconfigured, you'll find out when the application starts, not three hours into a production incident.
+
+## A note on DI lifetimes
+
+`IEventProducer<TKey, TValue>` is registered as a **singleton**. Injecting it into a scoped or transient service is fine. If you inject it into another singleton and something in the resolution chain is scoped, you'll get a captive dependency exception at startup. This is .NET DI doing its job.
+
+The fix is almost always to inject `IServiceProvider` and resolve the scoped dependency per-operation, or restructure the dependency chain.
+
+:::tip
+If you see `Cannot resolve scoped service from root provider` at startup, check whether `IEventProducer` (or any Emit service) is being resolved through a singleton that also depends on something scoped.
+:::

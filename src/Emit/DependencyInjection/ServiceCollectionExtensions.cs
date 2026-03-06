@@ -1,10 +1,19 @@
 namespace Emit.DependencyInjection;
 
+using System.Diagnostics.Metrics;
+using Emit.Abstractions;
+using Emit.Abstractions.Daemon;
+using Emit.Abstractions.LeaderElection;
+using Emit.Abstractions.Metrics;
 using Emit.Configuration;
-using Emit.Resilience;
-using Emit.Worker;
-using FluentValidation;
+using Emit.Daemon;
+using Emit.LeaderElection;
+using Emit.Metrics;
+using Emit.Observability;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 /// <summary>
@@ -13,43 +22,20 @@ using Microsoft.Extensions.Options;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds Emit outbox services to the service collection.
+    /// Adds Emit services to the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">The configuration action for the Emit builder.</param>
     /// <returns>The service collection for method chaining.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown if no persistence provider is registered, if both MongoDB and PostgreSQL
-    /// are registered, or if no outbox provider is registered.
+    /// Thrown if Emit has already been registered, or if the outbox is enabled
+    /// without an outbox provider, or if the outbox or distributed lock is registered
+    /// by more than one persistence provider.
     /// </exception>
     /// <remarks>
     /// <para>
-    /// This method configures the Emit transactional outbox system. You must:
-    /// <list type="bullet">
-    /// <item><description>Register exactly one persistence provider (MongoDB or PostgreSQL)</description></item>
-    /// <item><description>Register at least one outbox provider (e.g., Kafka)</description></item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// Example usage:
-    /// <code>
-    /// services.AddEmit(builder =&gt;
-    /// {
-    ///     builder.UseMongoDb((sp, options) =&gt;
-    ///     {
-    ///         options.ConnectionString = "mongodb://localhost:27017";
-    ///         options.DatabaseName = "myapp";
-    ///     });
-    ///
-    ///     builder.AddKafka((sp, kafka) =&gt;
-    ///     {
-    ///         kafka.AddProducer&lt;string, OrderCreated&gt;(producer =&gt;
-    ///         {
-    ///             producer.Topic = "orders";
-    ///         });
-    ///     });
-    /// });
-    /// </code>
+    /// Enable the transactional outbox by calling <c>UseOutbox()</c> inside a persistence
+    /// provider builder. Without it, producers send directly to the external system.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddEmit(
@@ -59,56 +45,105 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
+        // Prevent double registration
+        if (services.Any(d => d.ServiceType == typeof(EmitMarkerService)))
+        {
+            throw new InvalidOperationException(
+                $"{nameof(AddEmit)} has already been called. Emit services should only be registered once.");
+        }
+
+        services.AddSingleton<EmitMarkerService>();
+
+        // Register infrastructure dependencies
+        services.TryAddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IRandomProvider, DefaultRandomProvider>();
+
+        // Register metrics infrastructure
+        services.TryAddSingleton(new EmitMetricsEnrichment());
+        services.TryAddSingleton(sp => new LockMetrics(
+            sp.GetService<IMeterFactory>(),
+            sp.GetRequiredService<EmitMetricsEnrichment>()));
+        services.TryAddSingleton(sp => new OutboxMetrics(
+            sp.GetService<IMeterFactory>(),
+            sp.GetRequiredService<EmitMetricsEnrichment>()));
+        services.TryAddSingleton(sp => new EmitMetrics(
+            sp.GetService<IMeterFactory>(),
+            sp.GetRequiredService<EmitMetricsEnrichment>()));
+
+        // Register scoped EmitContext
+        services.AddScoped<EmitContext>();
+        services.AddScoped<IEmitContext>(sp => sp.GetRequiredService<EmitContext>());
+
         var builder = new EmitBuilder(services);
+
+        // Register tracing infrastructure
+        services.AddSingleton<IValidateOptions<Tracing.EmitTracingOptions>, Tracing.EmitTracingOptionsValidator>();
+        services.AddOptions<Tracing.EmitTracingOptions>().ValidateOnStart();
+        services.AddScoped<Tracing.ActivityEnricherInvoker>();
+
+        // Auto-insert tracing middleware first (outermost), then metrics, then observers
+        builder.OutboundPipeline.Use(typeof(Tracing.ProduceTracingMiddleware<>));
+        builder.InboundPipeline.Use(typeof(Tracing.ConsumeTracingMiddleware<>));
+
+        builder.OutboundPipeline.Use(typeof(ProduceMetricsMiddleware<>));
+        builder.OutboundPipeline.Use(typeof(ProduceObserverMiddleware<>));
+        builder.InboundPipeline.Use(typeof(ConsumeMetricsMiddleware<>));
+        builder.InboundPipeline.Use(typeof(ConsumeObserverMiddleware<>));
+
         configure(builder);
         builder.Validate();
 
-        // Register configuration options with validation
-        services.AddOptions<EmitOptions>()
-            .ValidateOnStart();
-        services.AddSingleton<IValidateOptions<EmitOptions>, FluentValidateOptions<EmitOptions, EmitOptionsValidator>>();
+        // Register global middleware types with appropriate lifetimes
+        builder.InboundPipeline.RegisterServices(services);
+        builder.OutboundPipeline.RegisterServices(services);
 
-        services.AddOptions<WorkerOptions>()
-            .ValidateOnStart();
-        services.AddSingleton<IValidateOptions<WorkerOptions>, FluentValidateOptions<WorkerOptions, WorkerOptionsValidator>>();
+        // Register outbox observer invoker (zero overhead when no observers registered)
+        services.AddSingleton<OutboxObserverInvoker>();
 
-        services.AddOptions<CleanupOptions>()
-            .ValidateOnStart();
-        services.AddSingleton<IValidateOptions<CleanupOptions>, FluentValidateOptions<CleanupOptions, CleanupOptionsValidator>>();
+        // Register outbox-specific services only when outbox mode is enabled
+        if (builder.OutboxEnabled)
+        {
+            ConfigureOptions<OutboxOptions, OutboxOptionsValidator>(services, builder.OutboxOptionsConfiguration);
 
-        // Register resilience policy (global or default)
-        var globalPolicy = builder.BuildGlobalResiliencePolicy() ?? ResiliencePolicy.Default;
-        services.AddSingleton(globalPolicy);
+            services.AddSingleton<OutboxDaemon>();
+            services.AddSingleton<IDaemonAgent>(sp => sp.GetRequiredService<OutboxDaemon>());
+        }
 
-        // Register background workers
-        services.AddHostedService<OutboxWorker>();
-        services.AddHostedService<CompletedEntriesCleanupWorker>();
+        // Register leader election and daemon coordination when a persistence provider is present
+        if (services.Any(d => d.ImplementationInstance is EmitBuilder.PersistenceProviderMarker))
+        {
+            ConfigureOptions<LeaderElectionOptions, LeaderElectionOptionsValidator>(
+                services, builder.LeaderElectionOptionsConfiguration);
+            ConfigureOptions<DaemonOptions, DaemonOptionsValidator>(
+                services, builder.DaemonOptionsConfiguration);
+
+            services.AddSingleton<LeaderElectionObserverInvoker>();
+            services.AddSingleton<DaemonObserverInvoker>();
+            services.AddSingleton<DaemonCoordinator>();
+            services.AddSingleton<HeartbeatWorker>();
+            services.AddSingleton<ILeaderElectionService>(sp => sp.GetRequiredService<HeartbeatWorker>());
+            services.AddHostedService(sp => sp.GetRequiredService<HeartbeatWorker>());
+        }
 
         return services;
     }
-}
 
-/// <summary>
-/// Adapts FluentValidation validators to <see cref="IValidateOptions{TOptions}"/>.
-/// </summary>
-/// <typeparam name="TOptions">The options type to validate.</typeparam>
-/// <typeparam name="TValidator">The FluentValidation validator type.</typeparam>
-internal sealed class FluentValidateOptions<TOptions, TValidator> : IValidateOptions<TOptions>
-    where TOptions : class
-    where TValidator : IValidator<TOptions>, new()
-{
-    private readonly TValidator validator = new();
-
-    /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, TOptions options)
+    private static void ConfigureOptions<TOptions, TValidator>(
+        IServiceCollection services,
+        Action<TOptions>? configuration)
+        where TOptions : class
+        where TValidator : class, IValidateOptions<TOptions>
     {
-        var result = validator.Validate(options);
-        if (result.IsValid)
+        var optionsBuilder = services.AddOptions<TOptions>();
+        if (configuration is not null)
         {
-            return ValidateOptionsResult.Success;
+            optionsBuilder.Configure(configuration);
         }
 
-        var errors = result.Errors.Select(e => e.ErrorMessage);
-        return ValidateOptionsResult.Fail(errors);
+        optionsBuilder.ValidateOnStart();
+        services.AddSingleton<IValidateOptions<TOptions>, TValidator>();
     }
+
+    private sealed class EmitMarkerService;
 }

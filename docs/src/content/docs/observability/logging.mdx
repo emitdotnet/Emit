@@ -1,0 +1,98 @@
+---
+title: Logging
+description: What Emit logs, at what levels, and how to filter or extend it.
+---
+
+Emit uses `Microsoft.Extensions.Logging` throughout and follows standard .NET structured logging conventions. It does not configure any logging providers; log output goes wherever your application routes it.
+
+## Log levels
+
+| Level | Examples |
+|---|---|
+| `Debug` | Successful retry attempts, individual offset commits |
+| `Information` | Circuit breaker closed, consumer group started/stopped |
+| `Warning` | Failed retry attempts, messages discarded, validation failures, circuit breaker opened, dead-letter forwards |
+| `Error` | Unhandled exceptions from the worker, DLQ sink failures |
+
+Emit does not use `Critical` or `Trace`.
+
+## Filtering Emit logs
+
+All Emit loggers are in categories that start with `Emit.`. To suppress verbose logs in development:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Emit": "Warning"
+    }
+  }
+}
+```
+
+To see only specific subsystems:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Emit.Outbox": "Debug",
+      "Emit": "Warning"
+    }
+  }
+}
+```
+
+## Structured log properties
+
+Emit uses named placeholders in log messages, which means structured logging backends (Serilog, Seq, Application Insights) capture them as queryable properties:
+
+```
+Retry {Attempt}/{MaxAttempts} failed for message from {Source}
+Dead-lettered message from {Source} to {DlqDestination}
+Validation failed for message from {Source}: {Errors}. Discarding.
+Circuit breaker opened, pausing consumer group. Pause duration: {PauseDuration}
+```
+
+`{Source}` is a compact string from `IMessageSourceFeature` that includes topic, partition, and offset. In a structured log query you can filter on `Source` to find all events for a specific partition.
+
+## Adding log context in your consumers
+
+Standard `ILogger` scopes work in consumers because each message runs in its own scope. Wrap your consumer logic in a scope for richer log context:
+
+```csharp
+public class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsumer<OrderPlaced>
+{
+    public async Task ConsumeAsync(InboundContext<OrderPlaced> context, CancellationToken ct)
+    {
+        using var scope = logger.BeginScope(new Dictionary<string, object>
+        {
+            ["OrderId"] = context.Message.OrderId,
+            ["CustomerId"] = context.Message.CustomerId,
+        });
+
+        logger.LogInformation("Processing order");
+        // ...
+    }
+}
+```
+
+## Logging middleware
+
+For cross-cutting log context (for example, adding a tenant ID to every message log), use middleware to add a scope once and let all downstream code benefit:
+
+```csharp
+public class TenantLoggingMiddleware<T>(ILogger<TenantLoggingMiddleware<T>> logger, ITenantResolver tenant)
+    : IMiddleware<InboundContext<T>>
+{
+    public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+    {
+        var tenantId = await tenant.ResolveAsync(context, context.CancellationToken);
+        using var scope = logger.BeginScope(new { TenantId = tenantId });
+        await next(context);
+    }
+}
+```
+
+Register it at the global or provider level to apply to all consumers.

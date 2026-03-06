@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.EntityFrameworkCore</RootNamespace>
+    <AssemblyName>Emit.EntityFrameworkCore</AssemblyName>
+    <PackageId>Emit.EntityFrameworkCore</PackageId>
+    <Description>Entity Framework Core persistence provider for Emit. Stores outbox entries using Entity Framework Core with support for PostgreSQL via Npgsql.</Description>
+    <PackageTags>outbox;transactional;efcore;postgresql;messaging;reliability</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit\Emit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+    <InternalsVisibleTo Include="Emit.IntegrationTests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

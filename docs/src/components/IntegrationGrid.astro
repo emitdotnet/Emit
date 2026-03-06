@@ -1,0 +1,126 @@
+---
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const integrations = [
+  {
+    icon: `${base}/icons/mongodb.svg`,
+    title: 'MongoDB',
+    description:
+      'Document-native persistence. Outbox entries land in the same session as your business write — one atomic operation, no two-phase commit required.',
+    link: `${base}/persistence/mongodb/`,
+    brandColor: '#47A248',
+  },
+  {
+    icon: `${base}/icons/postgresql.svg`,
+    title: 'PostgreSQL',
+    description:
+      'EF Core over PostgreSQL. Bring your own DbContext; Emit extends it with outbox tables and IDENTITY-sequenced entries. No separate migration tool needed.',
+    link: `${base}/persistence/efcore/`,
+    brandColor: '#4169E1',
+  },
+  {
+    icon: `${base}/icons/kafka.svg`,
+    title: 'Apache Kafka',
+    description:
+      'Typed producers, consumer groups, fan-out, content-based routing, circuit breakers, and dead-letter queues. The entire Kafka stack, wired and ready.',
+    link: `${base}/kafka/setup/`,
+    brandColor: '#FF6B00',
+  },
+  {
+    icon: `${base}/icons/opentelemetry.svg`,
+    title: 'OpenTelemetry',
+    description:
+      'W3C trace propagation, per-subsystem metrics, and structured logging across every layer. Zero-friction observability — no configuration tax.',
+    link: `${base}/observability/tracing/`,
+    brandColor: '#F5A800',
+  },
+];
+---
+
+<div class="integration-grid">
+  {integrations.map((item) => (
+    <a href={item.link} class="integration-card">
+      <div class="integration-icon" style={`--brand: ${item.brandColor}`}>
+        <img src={item.icon} alt={item.title} width="20" height="20" loading="lazy" />
+      </div>
+      <h3 class="integration-title">{item.title}</h3>
+      <p class="integration-desc">{item.description}</p>
+    </a>
+  ))}
+</div>
+
+<style>
+  .integration-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.25rem;
+    margin: 2rem 0 3rem;
+  }
+
+  .integration-card {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 0.625rem;
+    row-gap: 0.5rem;
+    align-items: start;
+    padding: 1.25rem 1.375rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--sl-color-bg-sidebar) 90%, transparent);
+    text-decoration: none;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .integration-card:hover {
+    transform: translateY(-3px);
+    text-decoration: none;
+  }
+
+  .integration-icon {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--brand) 55%, var(--sl-color-bg-inline-code));
+    border: 1px solid color-mix(in srgb, var(--brand) 75%, var(--sl-color-hairline));
+  }
+
+  .integration-icon img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+  }
+
+  :global([data-theme='light']) .integration-icon img {
+    filter: brightness(0);
+  }
+
+  .integration-title {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: var(--sl-text-base) !important;
+    font-weight: 600 !important;
+    color: var(--sl-color-white) !important;
+    letter-spacing: -0.02em;
+    border: none !important;
+  }
+
+  .integration-desc {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 !important;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-2);
+    line-height: 1.65;
+  }
+</style>

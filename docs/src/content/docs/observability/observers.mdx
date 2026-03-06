@@ -1,0 +1,107 @@
+---
+title: Observers
+description: Lifecycle hooks for produce, consume, and outbox operations without writing middleware.
+---
+
+Observers are a lightweight alternative to middleware for cross-cutting concerns. They receive lifecycle notifications at fixed points (before, after, on error) without needing to call `next`. They are simpler than middleware when you don't need to intercept or transform the message, only observe it.
+
+Exceptions thrown by observers are caught and logged individually. A failing observer never affects other observers or the message pipeline.
+
+## IConsumeObserver
+
+Receives notifications for every inbound message, across all transport consumers:
+
+```csharp
+public class AuditConsumeObserver(IAuditLog audit) : IConsumeObserver
+{
+    public Task OnConsumingAsync<T>(InboundContext<T> context)
+    {
+        audit.Record($"Consuming {typeof(T).Name} at {context.Timestamp}");
+        return Task.CompletedTask;
+    }
+
+    public Task OnConsumedAsync<T>(InboundContext<T> context)
+    {
+        audit.Record($"Consumed {typeof(T).Name}: success");
+        return Task.CompletedTask;
+    }
+
+    public Task OnConsumeErrorAsync<T>(InboundContext<T> context, Exception exception)
+    {
+        audit.Record($"Consume error: {exception.Message}");
+        return Task.CompletedTask;
+    }
+}
+```
+
+All three methods have default implementations that return `Task.CompletedTask`, so you only implement what you need.
+
+Register at the global level:
+
+```csharp
+emit.AddConsumeObserver<AuditConsumeObserver>();
+```
+
+`IConsumeObserver` fires for Kafka consumers. It does not fire for mediator requests; use `IMediatorObserver` for those.
+
+## IProduceObserver
+
+Fires for every produce call through the outbound pipeline.
+
+| Method | When it fires |
+|---|---|
+| `OnProducedAsync<T>(OutboundContext<T>)` | Produce succeeded |
+| `OnProduceErrorAsync<T>(OutboundContext<T>, Exception)` | Pipeline threw before or during the outbox write |
+
+Register globally:
+
+```csharp
+emit.AddProduceObserver<MyProduceObserver>();
+```
+
+## IOutboxObserver
+
+Fires at outbox entry lifecycle points: enqueue and the worker's processing stages.
+
+| Method | When it fires |
+|---|---|
+| `OnEnqueuedAsync` | Entry was written to the outbox (fires from the outbound pipeline) |
+| `OnProcessingAsync` | Worker is about to attempt delivery |
+| `OnProcessedAsync` | Delivery succeeded; entry will be deleted |
+| `OnProcessErrorAsync` | Delivery failed; entry stays for the next poll cycle |
+
+Register globally:
+
+```csharp
+emit.AddOutboxObserver<MyOutboxObserver>();
+```
+
+`OnEnqueuedAsync` fires in your request scope. The remaining three fire from the background worker.
+
+## IMediatorObserver
+
+Fires for mediator request/response operations.
+
+| Method | When it fires |
+|---|---|
+| `OnHandlingAsync<T>(InboundContext<T>)` | Before the handler is invoked |
+| `OnHandledAsync<T>(InboundContext<T>)` | After the handler completes successfully |
+| `OnHandleErrorAsync<T>(InboundContext<T>, Exception)` | If the handler throws |
+
+Register on the mediator builder, not on `EmitBuilder`:
+
+```csharp
+emit.AddMediator(mediator =>
+{
+    mediator.AddObserver<MyMediatorObserver>();
+});
+```
+
+## Observer vs. middleware
+
+Use observers when you need simple before/after/error hooks and do not need to:
+- Intercept or modify the message
+- Short-circuit the pipeline
+- Call async code that the pipeline should wait for in a specific position
+
+Use middleware when you need any of the above, or when you need fine-grained control over execution order relative to other middleware.

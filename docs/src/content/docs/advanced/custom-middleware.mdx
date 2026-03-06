@@ -1,0 +1,135 @@
+---
+title: Custom Middleware
+description: Writing and registering your own middleware for the inbound and outbound pipelines.
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Middleware in Emit follows the same pattern as ASP.NET: each component receives the context and a `next` delegate. Call `next` to continue the pipeline, skip it to short-circuit.
+
+## Implementing middleware
+
+```csharp
+public class TimingMiddleware<T> : IMiddleware<InboundContext<T>>
+{
+    private readonly ILogger<TimingMiddleware<T>> _logger;
+
+    public TimingMiddleware(ILogger<TimingMiddleware<T>> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            await next(context);
+        }
+        finally
+        {
+            _logger.LogDebug("Message handled in {ElapsedMs}ms", sw.ElapsedMilliseconds);
+        }
+    }
+}
+```
+
+For outbound middleware, replace `InboundContext<T>` with `OutboundContext<T>`.
+
+The type parameter `T` is the message type for that specific pipeline level. Emit closes the open generic at registration time for each message type it handles.
+
+## Registering middleware
+
+### Global (all messages, all providers)
+
+```csharp
+builder.Services.AddEmit(emit =>
+{
+    emit.InboundPipeline.Use<TimingMiddleware<>>();   // open generic
+    emit.OutboundPipeline.Use<SigningMiddleware<>>();
+});
+```
+
+### Provider level (all Kafka messages)
+
+```csharp
+emit.AddKafka(kafka =>
+{
+    kafka.InboundPipeline.Use<KafkaHeaderMiddleware<>>();
+});
+```
+
+### Consumer group level (one group)
+
+```csharp
+topic.ConsumerGroup("order-processor", group =>
+{
+    group.Use<OrderValidationMiddleware<OrderPlaced>>();  // closed generic is fine here
+    group.AddConsumer<OrderPlacedConsumer>();
+});
+```
+
+### Per-consumer level
+
+```csharp
+group.AddConsumer<OrderPlacedConsumer>(consumer =>
+{
+    consumer.Use<ConsumerSpecificMiddleware<OrderPlaced>>();
+});
+```
+
+## Middleware lifetimes
+
+```csharp
+group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // one shared instance (default)
+group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);     // one instance per message
+```
+
+`Singleton` is the default: one instance shared across all concurrent workers. It must be thread-safe and cannot hold per-message state. `Scoped` middleware gets a fresh instance for each message and can safely hold per-message state.
+
+## Accessing services
+
+Middleware is resolved from the DI container. For scoped dependencies, use constructor injection directly (works with `Scoped` lifetime). For singletons that need per-message scoped services, resolve from `context.Services`:
+
+```csharp
+public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+{
+    var repo = context.Services.GetRequiredService<IOrderRepository>();
+    // ...
+    await next(context);
+}
+```
+
+## Short-circuiting
+
+Skip `next` to abort the pipeline without throwing. The message is acknowledged (offset committed) and not retried:
+
+```csharp
+public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+{
+    if (context.Features.Get<IKeyFeature<string>>()?.Key == "__test__")
+    {
+        logger.LogDebug("Skipping test message");
+        return; // pipeline ends here
+    }
+
+    await next(context);
+}
+```
+
+If you want the message to be treated as failed (triggering error policy), throw instead of returning.
+
+## Execution order
+
+Middleware executes in the order it is registered, outermost to innermost. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your global middleware.
+
+<Mermaid chart={`
+flowchart LR
+    A[Built-in\nTracing/Metrics] --> B[Global\nmiddleware]
+    B --> C[Provider\nmiddleware]
+    C --> D[Group\nmiddleware]
+    D --> E[Consumer\nmiddleware]
+    E --> F[Handler]
+`} />
+
+The last-registered middleware at each level is closest to the handler.

@@ -1,0 +1,151 @@
+---
+title: Kafka Setup
+description: Connecting Emit to Kafka and registering topics, producers, and consumer groups.
+---
+
+All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](/kafka/producers/) and [Consumers](/kafka/consumers/) for the specifics of each.
+
+## Package
+
+```bash
+dotnet add package Emit.Kafka
+```
+
+## Minimal registration
+
+```csharp title="Program.cs"
+builder.Services.AddEmit(emit =>
+{
+    emit.AddKafka(kafka =>
+    {
+        kafka.ConfigureClient(cfg =>
+        {
+            cfg.BootstrapServers = "localhost:9092";
+        });
+
+        kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+        {
+            topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
+            topic.SetValueSerializer(/* your serializer */);
+            topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
+            topic.SetValueDeserializer(/* your deserializer */);
+
+            topic.Producer();
+
+            topic.ConsumerGroup("pizza-kitchen", group =>
+            {
+                group.AddConsumer<PizzaOrderedConsumer>();
+            });
+        });
+    });
+});
+```
+
+`ConfigureClient` is required. Everything else is opt-in per topic.
+
+## Client configuration
+
+`ConfigureClient` applies to all producers and consumers. The most common options:
+
+```csharp
+kafka.ConfigureClient(cfg =>
+{
+    cfg.BootstrapServers = "broker1:9092,broker2:9092";
+    cfg.ClientId = "my-service";
+
+    // SASL/SSL
+    cfg.SecurityProtocol = SecurityProtocol.SaslSsl;
+    cfg.SaslMechanism = SaslMechanism.Plain;
+    cfg.SaslUsername = "user";
+    cfg.SaslPassword = "pass";
+    cfg.SslCaLocation = "/etc/ssl/certs/ca-bundle.crt";
+});
+```
+
+For producer-specific tuning (batching, compression, idempotence):
+
+```csharp
+kafka.ConfigureProducer(cfg =>
+{
+    cfg.Acks = Acks.All;
+    cfg.EnableIdempotence = true;
+    cfg.CompressionType = CompressionType.Snappy;
+    cfg.Linger = TimeSpan.FromMilliseconds(5);
+});
+```
+
+## Schema Registry
+
+If you use Avro, JSON Schema, or Protobuf serializers, configure the Schema Registry connection:
+
+```csharp
+kafka.ConfigureSchemaRegistry(cfg =>
+{
+    cfg.Url = "http://schema-registry:8081";
+    cfg.BasicAuthUserInfo = "user:password";
+});
+```
+
+See [Serialization](/kafka/serialization/) for how to wire schema-aware serializers to topics.
+
+## Topics
+
+Each topic is declared with `Topic<TKey, TValue>`. The type parameters determine the serializer and deserializer types for that topic.
+
+```csharp
+kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+{
+    // Serializers (required if this topic has a producer)
+    topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
+    topic.SetValueSerializer(mySerializer);
+
+    // Deserializers (required if this topic has consumer groups)
+    topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
+    topic.SetValueDeserializer(myDeserializer);
+
+    topic.Producer();
+
+    topic.ConsumerGroup("my-group", group =>
+    {
+        group.AddConsumer<MyConsumer>();
+    });
+});
+```
+
+A single topic can have both a producer and multiple consumer groups. These are independent; declaring a producer does not require a consumer group on the same topic.
+
+## Fan-out
+
+Calling `ConsumerGroup` multiple times on the same topic registers separate consumer groups; each group receives every message. The pizza kitchen and the analytics pipeline both get every order:
+
+```csharp
+kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+{
+    topic.ConsumerGroup("pizza-kitchen", group =>
+    {
+        group.AddConsumer<PizzaOrderedConsumer>();
+    });
+
+    topic.ConsumerGroup("pizza-analytics", group =>
+    {
+        group.AddConsumer<PizzaAnalyticsConsumer>();
+    });
+});
+```
+
+This is standard Kafka consumer group semantics; Emit does not add any special fan-out mechanism.
+
+## Provider-level middleware
+
+Middleware registered on `kafka.InboundPipeline` or `kafka.OutboundPipeline` runs for all Kafka consumers or producers, respectively:
+
+```csharp
+emit.AddKafka(kafka =>
+{
+    kafka.InboundPipeline.Use<TracingMiddleware>();
+    kafka.OutboundPipeline.Use<SigningMiddleware>();
+    // ...
+});
+```
+
+This is the Provider level of the [three-level pipeline model](/concepts/pipeline-model/).

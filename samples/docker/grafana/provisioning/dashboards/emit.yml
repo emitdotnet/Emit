@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: Emit
+    type: file
+    folder: Emit
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/provisioning/dashboards

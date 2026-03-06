@@ -1,0 +1,89 @@
+---
+title: Health Checks
+description: ASP.NET Core health check probes for Kafka, MongoDB, and PostgreSQL.
+---
+
+Emit ships separate health check packages for each provider. Each package registers a lightweight probe against the infrastructure already wired up in your DI container, so no extra connections are created.
+
+## Installation
+
+Install only the packages that match your registered providers:
+
+```bash
+dotnet add package Emit.Kafka.HealthChecks
+dotnet add package Emit.MongoDB.HealthChecks
+dotnet add package Emit.EntityFrameworkCore.HealthChecks
+```
+
+## Registration
+
+Chain the Emit health checks into `AddHealthChecks()`:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddEmitKafka()
+    .AddEmitMongoDB();
+```
+
+For the EF Core provider, pass your `DbContext` type:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddEmitKafka()
+    .AddEmitPostgreSQL<AppDbContext>();
+```
+
+Then map the endpoint:
+
+```csharp
+app.MapHealthChecks("/health");
+```
+
+## What each probe does
+
+| Method | Probe | Package |
+|---|---|---|
+| `AddEmitKafka()` | Cluster metadata request via the registered `IProducer` | `Emit.Kafka.HealthChecks` |
+| `AddEmitMongoDB()` | `db.runCommand({ping: 1})` against the configured database | `Emit.MongoDB.HealthChecks` |
+| `AddEmitPostgreSQL<T>()` | `CanConnectAsync()` via `IDbContextFactory<T>` | `Emit.EntityFrameworkCore.HealthChecks` |
+
+All probes are read-only and non-destructive.
+
+## Options
+
+Every method accepts the same optional parameters:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddEmitKafka(
+        name: "kafka",
+        failureStatus: HealthStatus.Degraded,
+        tags: ["messaging"],
+        timeout: TimeSpan.FromSeconds(10))
+    .AddEmitMongoDB(
+        name: "mongodb",
+        failureStatus: HealthStatus.Degraded,
+        tags: ["database"]);
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `name` | `emit-kafka` / `emit-mongodb` / `emit-postgresql` | Name shown in health check results |
+| `failureStatus` | `Unhealthy` | Status reported on failure; use `Degraded` to avoid hard-failing readiness probes |
+| `tags` | `["emit", "<provider>"]` | Tags for filtering checks by endpoint |
+| `timeout` | 30 s (ASP.NET Core default), 5 s for Kafka | Per-check timeout |
+
+## Filtering by tag
+
+Use tags to separate liveness from readiness probes in Kubernetes:
+
+```csharp
+// Liveness: is the process alive?
+app.MapHealthChecks("/health/live");
+
+// Readiness: are downstream services reachable?
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("emit")
+});
+```

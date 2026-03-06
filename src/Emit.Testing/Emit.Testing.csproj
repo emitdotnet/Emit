@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.Testing</RootNamespace>
+    <AssemblyName>Emit.Testing</AssemblyName>
+    <PackageId>Emit.Testing</PackageId>
+    <Description>Test utilities for the Emit library. Provides MessageSink and SinkConsumer for capturing consumed messages in integration and functional tests.</Description>
+    <PackageTags>emit;testing;outbox;consumer;test-utilities</PackageTags>
+    <DevelopmentDependency>true</DevelopmentDependency>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.Abstractions\Emit.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

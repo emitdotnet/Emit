@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/InventorySnapshot/">
+    <Project Path="InventorySnapshot.Common/InventorySnapshot.Common.csproj" />
+    <Project Path="InventorySnapshot.MongoDB/InventorySnapshot.MongoDB.csproj" />
+    <Project Path="InventorySnapshot.PostgreSQL/InventorySnapshot.PostgreSQL.csproj" />
+  </Folder>
+</Solution>

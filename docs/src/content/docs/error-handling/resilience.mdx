@@ -1,0 +1,77 @@
+---
+title: Resilience
+description: Circuit breakers and rate limiting for Kafka consumer groups.
+---
+
+Beyond retry policies, Emit provides two resilience mechanisms at the consumer group level: circuit breakers to stop hammering a downstream system that is clearly broken, and rate limiting to protect a system that is struggling.
+
+## Circuit breaker
+
+A circuit breaker tracks failures in a sliding window. When failures exceed the threshold, it opens, pausing the consumer group entirely until the pause duration elapses.
+
+```csharp
+topic.ConsumerGroup("order-processor", group =>
+{
+    group.CircuitBreaker(cb =>
+    {
+        cb.FailureThreshold(5);
+        cb.SamplingWindow(TimeSpan.FromSeconds(60));
+        cb.PauseDuration(TimeSpan.FromSeconds(30));
+    });
+
+    group.AddConsumer<OrderPlacedConsumer>();
+});
+```
+
+| Option | Description |
+|---|---|
+| `FailureThreshold` | Number of failures in the sampling window before the circuit opens |
+| `SamplingWindow` | Rolling window of time in which failures are counted |
+| `PauseDuration` | How long the consumer group is paused after the circuit opens |
+
+### Trip conditions
+
+By default, any exception trips the circuit. Narrow it to specific exception types:
+
+```csharp
+cb.TripOn<HttpRequestException>();
+cb.TripOn<TimeoutException>();
+```
+
+Only the listed exception types increment the failure counter. Other exceptions pass through to the error policy without affecting the circuit.
+
+### States
+
+The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open** and the consumer group is paused at the Kafka level; no new messages are fetched. After `PauseDuration` elapses, the circuit enters **Half-open** and allows one probe message through. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
+
+Circuit breaker state transitions are tracked by the `emit.consumer.circuit_breaker.state_transitions` metric and the `emit.consumer.circuit_breaker.state` gauge.
+
+## Rate limiter
+
+Rate limiting throttles message processing to protect a downstream service:
+
+```csharp
+topic.ConsumerGroup("order-processor", group =>
+{
+    group.RateLimit(rl =>
+    {
+        rl.TokenBucket(permitsPerSecond: 100, burstSize: 100);
+    });
+
+    group.AddConsumer<OrderPlacedConsumer>();
+});
+```
+
+Emit uses `System.Threading.RateLimiting` under the hood, so all four built-in algorithms are available:
+
+| Algorithm | Method | Best for |
+|---|---|---|
+| Token bucket | `rl.TokenBucket(permitsPerSecond, burstSize)` | Smooth throughput with burst tolerance |
+| Fixed window | `rl.FixedWindow(permits, window)` | Simple per-interval cap |
+| Sliding window | `rl.SlidingWindow(permits, window, segmentsPerWindow)` | Smoother than fixed window; prevents edge-of-window bursts |
+
+When a permit cannot be acquired immediately, the consumer waits. Wait duration is tracked by the `emit.consumer.rate_limit.wait_duration` metric.
+
+## Ordering
+
+When both are configured, the circuit breaker evaluates first. A tripped circuit short-circuits before the rate limiter or error policy are reached. The full order is: circuit breaker, rate limiter, error policy, consumer.

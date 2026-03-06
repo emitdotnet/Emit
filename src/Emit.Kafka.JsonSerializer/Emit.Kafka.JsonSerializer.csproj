@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.Kafka.JsonSerializer</RootNamespace>
+    <AssemblyName>Emit.Kafka.JsonSerializer</AssemblyName>
+    <PackageId>Emit.Kafka.JsonSerializer</PackageId>
+    <Description>JSON Schema serializer/deserializer extensions for Emit.Kafka. Adds convenience methods for schema-registry-backed JSON serialization.</Description>
+    <PackageTags>outbox;transactional;kafka;json;schema-registry;serialization</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.Kafka\Emit.Kafka.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.SchemaRegistry.Serdes.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+  </ItemGroup>
+
+</Project>

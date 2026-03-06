@@ -1,0 +1,94 @@
+---
+title: EF Core (PostgreSQL)
+description: Using EF Core with PostgreSQL as the persistence backend for the outbox and distributed locks.
+---
+
+The `Emit.EntityFrameworkCore` package provides EF Core-backed implementations of the outbox repository and distributed lock provider, with PostgreSQL as the supported database.
+
+## Installation
+
+```bash
+dotnet add package Emit.EntityFrameworkCore
+```
+
+## Registration
+
+```csharp title="Program.cs"
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+builder.Services.AddEmit(emit =>
+{
+    emit.AddEntityFrameworkCore<AppDbContext>(ef =>
+    {
+        ef.UseNpgsql()
+          .UseOutbox()
+          .UseDistributedLock();
+    });
+});
+```
+
+You register `IDbContextFactory<TDbContext>` yourself using the standard EF Core pattern. Emit resolves the factory internally to access the database without interfering with your application's DbContext lifetimes.
+
+`UseNpgsql()` is required to configure PostgreSQL-specific type mappings. `UseOutbox()` and `UseDistributedLock()` are independent.
+
+## Model configuration
+
+Add Emit's entity model to your `DbContext`:
+
+```csharp title="AppDbContext.cs"
+public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.AddEmitModel(emit => emit.UseNpgsql());
+
+        // your own model configuration
+    }
+}
+```
+
+`AddEmitModel` registers all Emit entity types with PostgreSQL-appropriate column types. Run a migration after adding it.
+
+## Migrations
+
+Run a standard EF Core migration after adding `AddEmitModel`:
+
+```bash
+dotnet ef migrations add AddEmitTables
+dotnet ef database update
+```
+
+Emit does not run migrations automatically. Your migration history stays under your control.
+
+## Transactional outbox
+
+For EF Core, share the same `DbContext` transaction between your business write and the produce call. Emit's EF Core repository reads the active transaction from `IEmitContext.Transaction`.
+
+```csharp
+public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
+{
+    await using var dbContext = await dbContextFactory.CreateDbContextAsync(ct);
+    await using var dbTransaction = await dbContext.Database.BeginTransactionAsync(ct);
+
+    // Wire the transaction to Emit
+    emitContext.Transaction = new EfCoreTransactionContext(dbTransaction);
+
+    dbContext.PizzaOrders.Add(new PizzaOrder(request));
+    await dbContext.SaveChangesAsync(ct);
+
+    await producer.ProduceAsync(
+        new EventMessage<string, PizzaOrdered>(request.PizzaId.ToString(), new PizzaOrdered(request)),
+        ct);
+
+    await dbTransaction.CommitAsync(ct);
+}
+```
+
+:::note
+The `EfCoreTransactionContext` wrapper and the exact integration API may differ depending on the version. Check the `Emit.EntityFrameworkCore` package for the current helper types.
+:::
+
+## Lock cleanup
+
+The EF Core provider includes a background worker that periodically deletes expired lock rows. This runs automatically; you do not configure it separately.
