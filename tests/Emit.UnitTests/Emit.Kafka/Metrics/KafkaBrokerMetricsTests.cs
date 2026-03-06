@@ -5,6 +5,7 @@ using global::Emit.Abstractions.Metrics;
 using global::Emit.Kafka.Metrics;
 using Xunit;
 
+[Collection("MetricsTests")]
 public sealed class KafkaBrokerMetricsTests : IDisposable
 {
     private readonly MeterListener listener = new();
