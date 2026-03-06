@@ -1,0 +1,56 @@
+---
+title: Emit
+description: A .NET library for reliable, ordered messaging with a transactional outbox, mediator, distributed locks, and Kafka integration.
+template: splash
+hero:
+  title: Emit
+  tagline: Reliable, ordered messaging for .NET. Batteries included.
+  image:
+    file: ../../assets/logo.png
+    alt: Emit logo
+  actions:
+    - text: Get started
+      link: /getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/emitdotnet/Emit
+      icon: github
+      variant: minimal
+---
+
+import IntegrationGrid from '../../components/IntegrationGrid.astro';
+
+## The problem worth solving
+
+Your service just processed a pizza order. You saved it to the database and, in the same breath, tried to publish an event to a message broker. The publish failed. Your database says the order exists. The kitchen heard nothing. Somewhere, a hungry customer is waiting.
+
+This is the **dual-write problem**, and it corrupts systems in ways that are particularly fun to debug at 2am.
+
+## How Emit solves it
+
+Emit implements the **transactional outbox pattern**. Messages are written to a database table inside the same transaction as your business data. A background worker delivers them to the broker, retrying until confirmed. Your handler commits everything or nothing.
+
+The outbox is one of several tools Emit provides. The library also covers in-process request dispatch, distributed coordination, and deep Kafka integration, all sharing the same layered middleware pipeline.
+
+## Integrations
+
+<IntegrationGrid />
+
+## What's in the box
+
+**Transactional outbox**: atomic message enqueue with your business data, durable background delivery, and ordering guarantees per group key. No message goes missing because a broker hiccupped at the wrong moment.
+
+**In-process mediator**: a typed request/response dispatcher with the same middleware pipeline model as the outbox. Useful for CQRS handlers that also need to publish events.
+
+**Kafka integration**: typed producers, consumer groups with configurable worker pools, fan-out, content-based routing, dead-letter queues, circuit breakers, and rate limiting.
+
+**Pluggable persistence**: MongoDB and PostgreSQL (EF Core) backends. You bring your own client; Emit handles the rest.
+
+**Distributed locks**: built-in leader election and distributed locking, used internally by the outbox worker and available to your own code.
+
+**OpenTelemetry**: distributed tracing with W3C propagation, metrics across every subsystem, and structured logging throughout.
+
+## License
+
+Emit is released under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0).

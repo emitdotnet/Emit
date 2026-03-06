@@ -1,0 +1,92 @@
+---
+title: Pipeline Model
+description: How middleware composes across the three levels of the Emit pipeline.
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Every message in Emit, whether inbound from Kafka or outbound from a producer call, passes through a layered middleware pipeline before reaching its handler or its destination. Understanding this model is what separates "I configured something and it seems to work" from actually knowing what your code is doing.
+
+## Three levels, two directions
+
+The pipeline has three levels, each narrowing the scope of which messages are affected:
+
+| Level | Scope | Configured on |
+|---|---|---|
+| **Global** | Every message, every provider | `EmitBuilder` |
+| **Provider** | Messages for a specific provider (Kafka, Mediator) | `KafkaBuilder`, `MediatorBuilder` |
+| **Leaf** | A specific consumer group, producer, or handler | `KafkaConsumerGroupBuilder`, `KafkaProducerBuilder`, `MediatorHandlerBuilder` |
+
+Middleware registered at a higher level runs *outside* middleware registered at a lower level, just like ASP.NET middleware wraps your endpoint.
+
+## Inbound pipeline (consuming)
+
+When a Kafka message arrives, it passes through the full stack before reaching your `IConsumer<T>`:
+
+<Mermaid code={`flowchart TB
+    K[["Kafka"]]
+    subgraph G["Global"]
+        G1["Tracing · Metrics · Observers"]
+    end
+    subgraph P["Kafka provider"]
+        P1["Provider middleware"]
+    end
+    subgraph CG["Consumer group"]
+        CG1["Error policy · Validation · Circuit breaker · Rate limit"]
+        H["IConsumer&lt;T&gt;"]
+    end
+    K --> G1 --> P1 --> CG1 --> H`} />
+
+## Outbound pipeline (producing)
+
+When you call `IEventProducer.ProduceAsync()`, the message passes through the outbound stack before landing in the outbox:
+
+<Mermaid code={`flowchart TB
+    A["IEventProducer.ProduceAsync()"]
+    subgraph G["Global"]
+        G1["Tracing · Metrics · Observers"]
+    end
+    subgraph P["Kafka provider"]
+        P1["Provider middleware"]
+    end
+    subgraph PR["Per-producer"]
+        PM1["Custom middleware"]
+    end
+    O[("Outbox")]
+    A --> G1 --> P1 --> PM1 --> O`} />
+
+## Context objects
+
+Middleware receives a typed context. The type tells you which direction you're in:
+
+- **`InboundContext<TValue>`**: carries the inbound message, its metadata, and access to pipeline features
+- **`OutboundContext<TValue>`**: carries the outbound message and producer configuration
+
+Both extend `MessageContext`, which holds a **feature bag** (`IFeatureCollection`), a type-safe dictionary of named capabilities attached to the current message. This is how middleware communicates across layers without knowing about each other.
+
+```csharp
+// Reading a feature in middleware
+if (context.Features.TryGetValue<IRetryAttemptFeature>(out var retry))
+{
+    logger.LogDebug("Attempt {Attempt}", retry.Attempt);
+}
+```
+
+The built-in features cover things like message headers, the raw key/value bytes, the active activity, dead-letter sink access, consumer flow control, and more. See [Feature Collection](/advanced/feature-collection/) for the full list.
+
+## Middleware lifetimes
+
+When you register middleware, you specify its lifetime:
+
+```csharp
+group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // one shared instance (default)
+group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per message
+```
+
+`Singleton` is the default: one instance shared across all concurrent workers. It must be thread-safe and cannot hold per-message state. `Scoped` middleware gets a fresh instance for each message and can safely hold per-message state.
+
+## What's registered automatically
+
+Emit always registers tracing, metrics, and observer middleware at the global level; you don't add them manually. The order is fixed: tracing wraps metrics, which wraps observers, which wraps everything else. Your custom middleware runs inside all of that.
+
+For more on writing middleware, see [Custom Middleware](/advanced/custom-middleware/).

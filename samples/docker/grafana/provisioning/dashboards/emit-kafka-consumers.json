@@ -1,0 +1,595 @@
+{
+  "uid": "emit-kafka-consumers",
+  "title": "Emit — Kafka Consumers",
+  "tags": ["emit", "kafka"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "consumer_group",
+        "label": "Consumer Group",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+        "query": "label_values(emit_kafka_consume_messages_total, consumer_group)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Consumer Groups",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active Consumer Groups",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum(emit_kafka_consume_groups_active)",
+          "legendFormat": ""
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total Workers",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum(emit_kafka_consume_worker_pool_size)",
+          "legendFormat": ""
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Worker Pool Size by Group",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_consume_worker_pool_size",
+          "legendFormat": "{{consumer_group}}"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 1 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Messages Consumed / s",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(consumer_group, topic)(rate(emit_kafka_consume_messages_total[1m]))",
+          "legendFormat": "{{consumer_group}} / {{topic}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Consumer Lag by Partition",
+      "description": "Growing lag means the consumer is falling behind.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_consumer_lag",
+          "legendFormat": "{{topic}} p{{partition}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Worker Channel Depth",
+      "description": "Growing depth indicates a worker cannot keep up.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_consume_worker_channel_depth",
+          "legendFormat": "{{consumer_group}} w{{worker_index}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Offset Commits",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(consumer_group, result)(rate(emit_kafka_consume_offset_commits_total[1m]))",
+          "legendFormat": "{{consumer_group}} — {{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Partition Events (Rebalances)",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(consumer_group, type)(rate(emit_kafka_consume_partition_events_total[1m]))",
+          "legendFormat": "{{consumer_group}} — {{type}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Worker Faults",
+      "description": "Each fault triggers a worker pool restart.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(consumer_group)(rate(emit_kafka_consume_worker_faults_total[5m]))",
+          "legendFormat": "{{consumer_group}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Errors & Dead Letters",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Consumer Error Actions",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(action)(rate(emit_consumer_error_actions_total[1m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "DLQ Messages Produced",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(reason)(rate(emit_consumer_dlq_produced_total[1m]))",
+          "legendFormat": "middleware: {{reason}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(source_topic)(rate(emit_kafka_consume_dlq_produced_total[1m]))",
+          "legendFormat": "deser: {{source_topic}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Deserialization Errors",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(consumer_group, component)(rate(emit_kafka_consume_deserialization_errors_total[1m]))",
+          "legendFormat": "{{consumer_group}} — {{component}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Discarded Messages",
+      "description": "Any non-zero value represents silent message loss.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum(rate(emit_consumer_discards_total[1m]))",
+          "legendFormat": "discarded"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 }
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Retry & Circuit Breaker",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Circuit Breaker State",
+      "description": "0=closed (healthy), 1=open (paused), 2=half-open (probing).",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_consumer_circuit_breaker_state",
+          "legendFormat": "state"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Circuit Breaker Transitions",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(to_state)(rate(emit_consumer_circuit_breaker_state_transitions_total[1m]))",
+          "legendFormat": "→ {{to_state}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Retry Attempts p95",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(result, le)(rate(emit_consumer_retry_attempts_bucket[5m])))",
+          "legendFormat": "p95 {{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 55 }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Retry Duration p95",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(result, le)(rate(emit_consumer_retry_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 55 }
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Validation & Rate Limiting",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 63 }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Validation Rate",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(result)(rate(emit_consumer_validation_completed_total[1m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Rate Limiter Wait Duration p95",
+      "description": "High values indicate the rate limiter is the throughput bottleneck.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_consumer_rate_limit_wait_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 wait"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 }
+    }
+  ]
+}

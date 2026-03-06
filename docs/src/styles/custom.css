@@ -1,0 +1,159 @@
+/* No font import — use Starlight's system-ui stack, same as starlight.astro.build */
+
+/* ── Dark theme (default) ──────────────────────────────────────────────────── */
+/* Include ::backdrop so the search dialog is also themed */
+:root,
+[data-theme='dark'],
+::backdrop {
+  /* Accent: #B2315C rose/crimson */
+  --sl-color-accent-low:  #280a12;
+  --sl-color-accent:      #B2315C;
+  --sl-color-accent-high: #f0a8c0;
+
+  /* Near-pure-white foreground (Starlight uses --sl-color-white for h1, site title) */
+  --sl-color-white: #ffffff;
+  /* Near-black background (also used as button text color) */
+  --sl-color-black: #08080e;
+
+  /* Backgrounds */
+  --sl-color-bg:             #08080e;
+  --sl-color-bg-nav:         rgba(8, 8, 14, 0.72);
+  --sl-color-bg-sidebar:     #0d0d1a;
+  --sl-color-bg-inline-code: #17172a;
+
+  /* Text */
+  --sl-color-text:        #c0c0d8;
+  /* text-accent = primary button bg + accent link color */
+  --sl-color-text-accent: #B2315C;
+  /* text-invert = text on accent-colored surfaces (active nav, skip link) */
+  --sl-color-text-invert: #f0eef8;
+
+  /* Gray scale */
+  --sl-color-gray-1: #dcdcec;
+  --sl-color-gray-2: #9898b8;
+  --sl-color-gray-3: #585878;
+  --sl-color-gray-4: #2e2e48;
+  --sl-color-gray-5: #18182c;
+  --sl-color-gray-6: #10101e;
+  --sl-color-gray-7: #08080e;
+
+  /* Borders */
+  --sl-color-hairline:       #1c1c30;
+  --sl-color-hairline-light: #242438;
+  --sl-color-hairline-shade: #10101e;
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────── */
+/* Include ::backdrop so the search dialog picks up light theme bg */
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-color-accent-low:  #fce4ec;
+  --sl-color-accent:      #B2315C;
+  --sl-color-accent-high: #8a1234;
+
+  /* POLARITY FLIP (Starlight convention):
+     --sl-color-white = main FOREGROUND (near-black in light mode)
+     --sl-color-black = main BACKGROUND + button text (near-white in light mode) */
+  --sl-color-white: #17191e;
+  --sl-color-black: #f0eef8;
+
+  /* Backgrounds */
+  --sl-color-bg:             #f0eef8;
+  --sl-color-bg-nav:         rgba(240, 238, 248, 0.82);
+  --sl-color-bg-sidebar:     #ebe8f4;
+  --sl-color-bg-inline-code: #e2ddf0;
+
+  /* Text */
+  --sl-color-text:        #2a2a3e;
+  /* text-accent = primary button bg + accent link color */
+  --sl-color-text-accent: #B2315C;
+
+  /* Gray scale (flipped: gray-1 = darkest, gray-7 = lightest) */
+  --sl-color-gray-1: #1a1a26;
+  --sl-color-gray-2: #3e3e56;
+  --sl-color-gray-3: #686880;
+  --sl-color-gray-4: #a8a8be;
+  --sl-color-gray-5: #d4d2e8;
+  --sl-color-gray-6: #eae8f4;
+  --sl-color-gray-7: #f5f4fa;
+
+  /* Borders */
+  --sl-color-hairline:       #d0ccec;
+  --sl-color-hairline-light: #dbd8f0;
+  --sl-color-hairline-shade: #c8c2e4;
+}
+
+/* ── Body text density — matches Starlight's own docs ─────────────────────── */
+:root {
+  --sl-text-body: var(--sl-text-sm);   /* 14px — more information per page */
+}
+
+/* ── Headings ──────────────────────────────────────────────────────────────── */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  letter-spacing: -0.025em;
+  font-weight: 700;
+}
+
+/* ── Site title: white in dark, near-black in light; tight gap to logo ─────── */
+/* --sl-color-white flips with the theme, so this single rule handles both */
+.site-title {
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-size: 1.25rem;
+  color: var(--sl-color-white) !important;
+  gap: 0.4rem !important;
+}
+
+/* ── Background gradient ───────────────────────────────────────────────────── */
+:root {
+  --rose-hsl: 341, 56%, 45%;
+  --overlay-rose: hsla(var(--rose-hsl), 0.14);
+}
+
+:root[data-theme='light'] {
+  --rose-hsl: 341, 56%, 48%;
+  --overlay-rose: hsla(var(--rose-hsl), 0.09);
+}
+
+[data-has-hero] .page {
+  background:
+    linear-gradient(215deg, var(--overlay-rose), transparent 40%),
+    radial-gradient(var(--overlay-rose), transparent 40%) no-repeat
+      -60vw -40vh / 105vw 200vh,
+    radial-gradient(var(--overlay-rose), transparent 65%) no-repeat
+      50% calc(100% + 20rem) / 60rem 30rem;
+}
+
+/* ── Glass nav bar ─────────────────────────────────────────────────────────── */
+starlight-theme-provider ~ * header.header {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid color-mix(in srgb, var(--sl-color-accent) 22%, var(--sl-color-hairline));
+}
+
+/* ── Hero (splash page) ────────────────────────────────────────────────────── */
+.hero > .sl-flex {
+  gap: 1.5rem;
+}
+
+.hero .tagline {
+  font-size: var(--sl-text-xl);
+  color: var(--sl-color-gray-2);
+  font-weight: 400;
+  max-width: 42ch;
+  line-height: 1.6;
+}
+
+/* ── Primary link-button: near-white text in dark (--sl-color-black is near-black) ── */
+:root:not([data-theme='light']) .sl-link-button.primary,
+:root:not([data-theme='light']) .sl-link-button.primary:hover {
+  --sl-color-black: #f0eef8;
+}
+
+/* ── Code selection color ──────────────────────────────────────────────────── */
+::selection {
+  background-color: color-mix(in srgb, var(--sl-color-accent) 30%, transparent);
+}

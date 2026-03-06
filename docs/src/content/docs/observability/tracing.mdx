@@ -1,0 +1,136 @@
+---
+title: Distributed Tracing
+description: OpenTelemetry distributed tracing across the produce, outbox, and consume pipeline.
+---
+
+Emit instruments the full message lifecycle with OpenTelemetry activities. A trace started in your HTTP handler flows through the outbox and lands in the consumer span, giving you an end-to-end view in any compatible backend (Tempo, Zipkin, Datadog, etc.).
+
+## Setup
+
+```bash
+dotnet add package Emit.OpenTelemetry
+```
+
+Wire up the tracer provider:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.AddEmitInstrumentation();
+        tracing.AddOtlpExporter();  // or your preferred exporter
+    });
+```
+
+`AddEmitInstrumentation` registers all Emit activity sources. No additional configuration is required.
+
+## Activity sources
+
+| Source | Description |
+|---|---|
+| `Emit.Outbox` | Spans for outbox enqueue and delivery |
+| `Emit.Consumer` | Spans for inbound message processing |
+| `Emit.Provider.kafka` | Kafka-specific producer and consumer spans |
+
+The `Emit.Provider.*` wildcard captures any additional provider sources added in the future.
+
+## Trace propagation
+
+Emit propagates the W3C `traceparent` header across the async outbox boundary:
+
+1. When `ProduceAsync` is called inside an active activity, Emit captures the `traceparent` and stores it in the outbox entry's `TraceParent` field.
+2. When the outbox worker delivers the entry to the broker, it sets the `traceparent` as a Kafka message header.
+3. When the consumer processes the message, Emit extracts the `traceparent` and starts a linked consumer span.
+
+This gives you a connected trace even though the produce and consume operations run in different processes at different times.
+
+## What gets traced
+
+**Produce pipeline:** a span is started when `ProduceAsync` is called and completed when the outbox entry is written (or the direct produce completes). The span includes topic name and provider attributes.
+
+**Outbox delivery:** the worker creates a span when it picks up an entry and delivers it to the broker. The span is linked to the original produce span via `traceparent`.
+
+**Consume pipeline:** a span is started when a message is received and completed when `ConsumeAsync` returns. It is linked to the producer span.
+
+**Retries:** each retry attempt gets its own `emit.consume.retry` span.
+
+**Dead-letter:** when a message is forwarded to the DLQ, an `emit.dlq.publish` span is created and linked to the original consumer span.
+
+## Tracing options
+
+Configure tracing behavior via `ConfigureTracing` on the Emit builder:
+
+```csharp
+builder.Services.AddEmit(emit =>
+{
+    emit.ConfigureTracing(tracing =>
+    {
+        tracing.Configure(options =>
+        {
+            options.Enabled = true;               // set false to suppress all Emit spans
+            options.CreateRootActivities = true;  // false = only trace within an existing span
+            options.PropagateBaggage = true;      // propagate W3C baggage across message boundaries
+            options.MaxBaggageSizeBytes = 8192;   // excess items are dropped with a warning
+        });
+    });
+});
+```
+
+Set `CreateRootActivities = false` if you only want Emit to emit spans when your code is already inside an active trace — useful for keeping background-worker spans from polluting your backend.
+
+## Activity enrichment
+
+Add application-specific tags to every Emit span by implementing `IActivityEnricher`:
+
+```csharp
+public class TenantActivityEnricher : IActivityEnricher
+{
+    private readonly ITenantContext _tenant;
+
+    public TenantActivityEnricher(ITenantContext tenant) => _tenant = tenant;
+
+    public void Enrich(Activity activity, EnrichmentContext context)
+    {
+        activity.SetTag("tenant.id", _tenant.TenantId);
+    }
+}
+```
+
+Register it in DI:
+
+```csharp
+builder.Services.AddScoped<IActivityEnricher, TenantActivityEnricher>();
+```
+
+For inline enrichment without a dedicated class, register a delegate directly:
+
+```csharp
+emit.ConfigureTracing(tracing =>
+{
+    tracing.EnrichActivity((activity, context) =>
+    {
+        activity.SetTag("env", "production");
+    });
+});
+```
+
+Enrichers are invoked after Emit sets its own standard tags. `EnrichmentContext.Phase` tells you which pipeline stage created the span:
+
+| Phase | When |
+|---|---|
+| `produce` | `ProduceAsync` was called |
+| `process` | Outbox worker is delivering the entry |
+| `consume` | Message is being processed by a consumer |
+| `dlq_publish` | Message is being forwarded to the DLQ |
+| `dlq_replay` | DLQ message is being replayed |
+
+## Accessing the current activity in middleware
+
+The current activity is available from `Activity.Current`. The feature bag also exposes the W3C context via `IActivityFeature`:
+
+```csharp
+var activityFeature = context.Features.Get<IActivityFeature>();
+// activityFeature.TraceParent
+// activityFeature.TraceState
+// activityFeature.Baggage
+```

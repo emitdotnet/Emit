@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/BuildingSentinel/">
+    <Project Path="BuildingSentinel.Common/BuildingSentinel.Common.csproj" />
+    <Project Path="BuildingSentinel.MongoDB/BuildingSentinel.MongoDB.csproj" />
+    <Project Path="BuildingSentinel.PostgreSQL/BuildingSentinel.PostgreSQL.csproj" />
+  </Folder>
+</Solution>

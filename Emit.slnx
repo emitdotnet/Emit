@@ -1,12 +1,19 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Emit.Abstractions/Emit.Abstractions.csproj" />
     <Project Path="src/Emit/Emit.csproj" />
-    <Project Path="src/Emit.Provider.Kafka/Emit.Provider.Kafka.csproj" />
-    <Project Path="src/Emit.Persistence.MongoDB/Emit.Persistence.MongoDB.csproj" />
-    <Project Path="src/Emit.Persistence.PostgreSQL/Emit.Persistence.PostgreSQL.csproj" />
+    <Project Path="src/Emit.Kafka/Emit.Kafka.csproj" />
+    <Project Path="src/Emit.MongoDB/Emit.MongoDB.csproj" />
+    <Project Path="src/Emit.EntityFrameworkCore/Emit.EntityFrameworkCore.csproj" />
+    <Project Path="src/Emit.Kafka.AvroSerializer/Emit.Kafka.AvroSerializer.csproj" />
+    <Project Path="src/Emit.Kafka.JsonSerializer/Emit.Kafka.JsonSerializer.csproj" />
+    <Project Path="src/Emit.Kafka.ProtobufSerializer/Emit.Kafka.ProtobufSerializer.csproj" />
+    <Project Path="src/Emit.Mediator/Emit.Mediator.csproj" />
+    <Project Path="src/Emit.OpenTelemetry/Emit.OpenTelemetry.csproj" />
+    <Project Path="src/Emit.Testing/Emit.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Emit.Tests/Emit.Tests.csproj" />
+    <Project Path="tests/Emit.UnitTests/Emit.UnitTests.csproj" />
     <Project Path="tests/Emit.IntegrationTests/Emit.IntegrationTests.csproj" />
   </Folder>
 </Solution>

@@ -1,54 +1,17 @@
 namespace Emit.DependencyInjection;
 
+using System.ComponentModel;
+using Emit.Abstractions.Pipeline;
 using Emit.Configuration;
-using Emit.Resilience;
+using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Builder for configuring Emit services.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Use this builder to configure the outbox persistence provider, outbox providers (e.g., Kafka),
-/// resilience policies, and worker options.
-/// </para>
-/// <para>
-/// <b>Persistence Provider Constraint:</b>
-/// Exactly one persistence provider (MongoDB XOR PostgreSQL) must be registered.
-/// Attempting to register both will throw an exception.
-/// </para>
-/// <para>
-/// Example usage:
-/// <code>
-/// services.AddEmit(builder =&gt;
-/// {
-///     builder.ConfigureResilience(policy =&gt; policy
-///         .WithRetry(5, BackoffStrategy.Exponential, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(2)));
-///
-///     builder.UseMongoDb((sp, options) =&gt;
-///     {
-///         options.ConnectionString = "mongodb://localhost:27017";
-///         options.DatabaseName = "myapp";
-///     });
-///
-///     builder.AddKafka((sp, kafka) =&gt;
-///     {
-///         kafka.AddProducer&lt;string, OrderCreated&gt;(producer =&gt;
-///         {
-///             producer.ProducerConfig = new ProducerConfig { BootstrapServers = "localhost:9092" };
-///         });
-///     });
-/// });
-/// </code>
-/// </para>
-/// </remarks>
-public sealed class EmitBuilder
+public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelineConfigurable
 {
     private readonly IServiceCollection services;
-    private readonly List<Action<IServiceProvider>> kafkaRegistrations = [];
-    private Action<ResiliencePolicyBuilder>? globalResilienceConfiguration;
-    private bool mongoDbRegistered;
-    private bool postgreSqlRegistered;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EmitBuilder"/> class.
@@ -56,256 +19,182 @@ public sealed class EmitBuilder
     /// <param name="services">The service collection.</param>
     internal EmitBuilder(IServiceCollection services)
     {
-        this.services = services ?? throw new ArgumentNullException(nameof(services));
+        ArgumentNullException.ThrowIfNull(services);
+        this.services = services;
     }
 
     /// <summary>
     /// Gets the service collection for registering provider-specific services.
     /// </summary>
-    /// <remarks>
-    /// This property is intended for use by provider packages (e.g., Emit.Provider.Kafka)
-    /// to register their own services.
-    /// </remarks>
     public IServiceCollection Services => services;
 
     /// <summary>
-    /// Gets a value indicating whether a MongoDB persistence provider has been registered.
+    /// Gets the global inbound middleware pipeline builder. Middleware registered here wraps
+    /// every inbound message regardless of pattern (Kafka, Mediator, Bus).
     /// </summary>
-    internal bool MongoDbRegistered => mongoDbRegistered;
+    public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
 
     /// <summary>
-    /// Gets a value indicating whether a PostgreSQL persistence provider has been registered.
+    /// Gets the global outbound middleware pipeline builder. Middleware registered here wraps
+    /// every outbound message regardless of pattern (Kafka, Mediator, Bus).
     /// </summary>
-    internal bool PostgreSqlRegistered => postgreSqlRegistered;
+    public IMessagePipelineBuilder OutboundPipeline { get; } = new MessagePipelineBuilder();
 
     /// <summary>
-    /// Gets the configured Kafka registration actions.
+    /// Gets a value indicating whether outbox mode is enabled.
     /// </summary>
-    internal IReadOnlyList<Action<IServiceProvider>> KafkaRegistrations => kafkaRegistrations;
-
-    /// <summary>
-    /// Gets a value indicating whether at least one outbox provider has been registered.
-    /// </summary>
-    internal bool HasOutboxProvider => kafkaRegistrations.Count > 0;
-
-    /// <summary>
-    /// Configures the global resilience policy.
-    /// </summary>
-    /// <param name="configure">The configuration action.</param>
-    /// <returns>This builder instance for method chaining.</returns>
     /// <remarks>
-    /// The global policy applies to all providers and producers unless overridden
-    /// at the provider or producer level.
+    /// When <c>true</c>, producers enqueue messages to the transactional outbox and
+    /// background workers deliver them. When <c>false</c>, producers send directly
+    /// to the external system.
     /// </remarks>
-    public EmitBuilder ConfigureResilience(Action<ResiliencePolicyBuilder> configure)
+    public bool OutboxEnabled => services.Any(d => d.ImplementationInstance is OutboxRegistrationMarker);
+
+    /// <summary>
+    /// Gets or sets the outbox options configuration action, set by the persistence provider
+    /// that enables the outbox.
+    /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public Action<OutboxOptions>? OutboxOptionsConfiguration { get; set; }
+
+    /// <summary>
+    /// Gets the leader election options configuration action, set by <see cref="ConfigureLeaderElection"/>.
+    /// </summary>
+    internal Action<LeaderElectionOptions>? LeaderElectionOptionsConfiguration { get; private set; }
+
+    /// <summary>
+    /// Gets the daemon options configuration action, set by <see cref="ConfigureDaemons"/>.
+    /// </summary>
+    internal Action<DaemonOptions>? DaemonOptionsConfiguration { get; private set; }
+
+    /// <summary>
+    /// Configures leader election interval options.
+    /// </summary>
+    /// <param name="configure">The configuration delegate.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// Calling this method is optional. Leader election auto-activates when a persistence
+    /// provider is registered; these options only override the default intervals.
+    /// </remarks>
+    public EmitBuilder ConfigureLeaderElection(Action<LeaderElectionOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        globalResilienceConfiguration = configure;
+
+        LeaderElectionOptionsConfiguration = configure;
         return this;
     }
 
     /// <summary>
-    /// Configures MongoDB as the persistence provider.
+    /// Configures daemon assignment options.
     /// </summary>
-    /// <param name="configure">The configuration action for MongoDB options.</param>
-    /// <returns>This builder instance for method chaining.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown if PostgreSQL has already been registered as the persistence provider.
-    /// </exception>
+    /// <param name="configure">The configuration delegate.</param>
+    /// <returns>The builder for chaining.</returns>
     /// <remarks>
-    /// Only one persistence provider can be registered. Use either <c>UseMongoDb</c> or
-    /// <c>UsePostgreSql</c>, not both.
+    /// Calling this method is optional. Daemon coordination auto-activates when a persistence
+    /// provider is registered; these options only override the default timeouts.
     /// </remarks>
-    public EmitBuilder UseMongoDb(Action<IServiceProvider, MongoDbOptions> configure)
+    public EmitBuilder ConfigureDaemons(Action<DaemonOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        if (postgreSqlRegistered)
-        {
-            throw new InvalidOperationException(
-                "Cannot register MongoDB persistence provider: PostgreSQL persistence provider has already been registered. " +
-                "Only one persistence provider can be used. Choose either UseMongoDb() or UsePostgreSql(), not both.");
-        }
-
-        mongoDbRegistered = true;
-        // Actual MongoDB service registration will be done by Emit.Persistence.MongoDB
+        DaemonOptionsConfiguration = configure;
         return this;
     }
 
     /// <summary>
-    /// Configures PostgreSQL as the persistence provider.
+    /// Configures distributed tracing options.
     /// </summary>
-    /// <param name="configure">The configuration action for PostgreSQL options.</param>
-    /// <returns>This builder instance for method chaining.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown if MongoDB has already been registered as the persistence provider.
-    /// </exception>
-    /// <remarks>
-    /// Only one persistence provider can be registered. Use either <c>UseMongoDb</c> or
-    /// <c>UsePostgreSql</c>, not both.
-    /// </remarks>
-    public EmitBuilder UsePostgreSql(Action<IServiceProvider, PostgreSqlOptions> configure)
+    /// <param name="configure">The configuration delegate.</param>
+    /// <returns>The builder for chaining.</returns>
+    public EmitBuilder ConfigureTracing(Action<EmitTracingBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        if (mongoDbRegistered)
-        {
-            throw new InvalidOperationException(
-                "Cannot register PostgreSQL persistence provider: MongoDB persistence provider has already been registered. " +
-                "Only one persistence provider can be used. Choose either UseMongoDb() or UsePostgreSql(), not both.");
-        }
-
-        postgreSqlRegistered = true;
-        // Actual PostgreSQL service registration will be done by Emit.Persistence.PostgreSQL
+        var builder = new EmitTracingBuilder(services);
+        configure(builder);
         return this;
-    }
-
-    /// <summary>
-    /// Adds a default (unnamed) Kafka outbox provider.
-    /// </summary>
-    /// <param name="configure">The configuration action for the Kafka provider.</param>
-    /// <returns>This builder instance for method chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Producers registered through this method are available as standard DI services
-    /// (without keyed resolution). Users inject them using normal constructor injection:
-    /// <c>IProducer&lt;string, OrderCreated&gt; producer</c>
-    /// </para>
-    /// <para>
-    /// Multiple default Kafka registrations are allowed (though typically not needed).
-    /// Use <see cref="AddKafka(string, Action{IServiceProvider, KafkaBuilder})"/> for
-    /// named registrations that require keyed service resolution.
-    /// </para>
-    /// </remarks>
-    public EmitBuilder AddKafka(Action<IServiceProvider, KafkaBuilder> configure)
-    {
-        return AddKafka(EmitConstants.DefaultRegistrationKey, configure);
-    }
-
-    /// <summary>
-    /// Adds a named Kafka outbox provider.
-    /// </summary>
-    /// <param name="key">The registration key for keyed service resolution.</param>
-    /// <param name="configure">The configuration action for the Kafka provider.</param>
-    /// <returns>This builder instance for method chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Producers registered through this method are available as keyed DI services.
-    /// Users resolve them using:
-    /// <c>[FromKeyedServices("analytics")] IProducer&lt;string, string&gt; producer</c>
-    /// </para>
-    /// <para>
-    /// Named registrations are useful when connecting to multiple Kafka clusters,
-    /// each with its own configuration.
-    /// </para>
-    /// </remarks>
-    public EmitBuilder AddKafka(string key, Action<IServiceProvider, KafkaBuilder> configure)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentNullException.ThrowIfNull(configure);
-
-        kafkaRegistrations.Add(sp =>
-        {
-            var kafkaBuilder = new KafkaBuilder(sp, key);
-            configure(sp, kafkaBuilder);
-        });
-
-        return this;
-    }
-
-    /// <summary>
-    /// Builds the global resilience policy from the configured settings.
-    /// </summary>
-    /// <returns>The global resilience policy, or null if not configured.</returns>
-    internal ResiliencePolicy? BuildGlobalResiliencePolicy()
-    {
-        if (globalResilienceConfiguration is null)
-        {
-            return null;
-        }
-
-        var builder = new ResiliencePolicyBuilder();
-        globalResilienceConfiguration(builder);
-        return builder.Build();
     }
 
     /// <summary>
     /// Validates the builder configuration.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown if no persistence provider is registered or if no outbox provider is registered.
+    /// Thrown if outbox mode is enabled without an outbox provider, or if the outbox or
+    /// distributed lock is registered by more than one persistence provider.
     /// </exception>
     internal void Validate()
     {
-        if (!mongoDbRegistered && !postgreSqlRegistered)
+        var persistenceProviders = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<PersistenceProviderMarker>()
+            .Select(m => m.ProviderName)
+            .Distinct()
+            .ToList();
+
+        if (persistenceProviders is [var firstProvider, var secondProvider, ..])
         {
             throw new InvalidOperationException(
-                "No persistence provider has been registered. " +
-                "You must call either UseMongoDb() or UsePostgreSql() to configure the outbox storage.");
+                $"Multiple persistence providers registered: {firstProvider}, {secondProvider}. " +
+                "Only one persistence provider is allowed.");
         }
 
-        if (!HasOutboxProvider)
+        var outboxProviders = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<OutboxRegistrationMarker>()
+            .Select(m => m.ProviderName)
+            .Distinct()
+            .ToList();
+
+        if (outboxProviders is [var firstOutbox, var secondOutbox, ..])
+        {
+            throw new InvalidOperationException(
+                $"The outbox is registered by multiple persistence providers: {firstOutbox}, {secondOutbox}. " +
+                "Only one persistence provider can register the outbox.");
+        }
+
+        var lockProviders = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<DistributedLockRegistrationMarker>()
+            .Select(m => m.ProviderName)
+            .Distinct()
+            .ToList();
+
+        if (lockProviders is [var firstLock, var secondLock, ..])
+        {
+            throw new InvalidOperationException(
+                $"The distributed lock is registered by multiple persistence providers: {firstLock}, {secondLock}. " +
+                "Only one persistence provider can register the distributed lock.");
+        }
+
+        if (OutboxEnabled && !services.Any(d => d.ImplementationInstance is OutboxProviderMarker))
         {
             throw new InvalidOperationException(
                 "No outbox provider has been registered. " +
-                "You must register at least one outbox provider (e.g., AddKafka()) to use Emit.");
+                "Outbox mode requires at least one outbox provider.");
         }
     }
-}
-
-/// <summary>
-/// Configuration options for MongoDB persistence.
-/// </summary>
-public sealed class MongoDbOptions
-{
-    /// <summary>
-    /// Gets or sets the MongoDB connection string.
-    /// </summary>
-    public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the database name.
+    /// Marker registered by persistence providers to signal their presence for validation.
     /// </summary>
-    public string DatabaseName { get; set; } = string.Empty;
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public sealed record PersistenceProviderMarker(string ProviderName);
 
     /// <summary>
-    /// Gets or sets the outbox collection name.
+    /// Marker registered by outbox providers to signal their presence for validation.
     /// </summary>
-    public string CollectionName { get; set; } = "outbox";
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public sealed class OutboxProviderMarker;
 
     /// <summary>
-    /// Gets or sets the counter collection name for sequence number generation.
+    /// Marker registered by a persistence provider when the outbox is enabled.
     /// </summary>
-    public string CounterCollectionName { get; set; } = "outbox_counters";
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public sealed record OutboxRegistrationMarker(string ProviderName);
 
     /// <summary>
-    /// Gets or sets the lease collection name.
+    /// Marker registered by a persistence provider when the distributed lock is enabled.
     /// </summary>
-    public string LeaseCollectionName { get; set; } = "outbox_lease";
-}
-
-/// <summary>
-/// Configuration options for PostgreSQL persistence.
-/// </summary>
-public sealed class PostgreSqlOptions
-{
-    /// <summary>
-    /// Gets or sets the PostgreSQL connection string.
-    /// </summary>
-    public string ConnectionString { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the database schema.
-    /// </summary>
-    public string Schema { get; set; } = "public";
-
-    /// <summary>
-    /// Gets or sets the outbox table name.
-    /// </summary>
-    public string TableName { get; set; } = "outbox";
-
-    /// <summary>
-    /// Gets or sets the lease table name.
-    /// </summary>
-    public string LeaseTableName { get; set; } = "outbox_lease";
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public sealed record DistributedLockRegistrationMarker(string ProviderName);
 }

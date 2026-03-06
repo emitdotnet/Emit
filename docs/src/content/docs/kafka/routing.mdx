@@ -1,0 +1,84 @@
+---
+title: Content-Based Routing
+description: Dispatching messages to different consumers based on message content or key.
+---
+
+Content-based routing lets you inspect an incoming message and dispatch it to a different consumer depending on what it contains. This is useful when a single topic carries multiple logical event types, or when you want to shard work across handlers based on a field value.
+
+## AddRouter
+
+Call `AddRouter` on the consumer group instead of `AddConsumer`:
+
+```csharp
+topic.ConsumerGroup("pizza-kitchen", group =>
+{
+    group.AddRouter(
+        identifier: "crust-type-router",
+        selector: ctx => ctx.Message.CrustType,  // extract the routing key
+        configure: router =>
+        {
+            router.Route<ThinCrustHandler>("thin");
+            router.Route<DeepDishHandler>("deep-dish");
+            router.Route<GlutenFreeHandler>("gluten-free");
+        });
+});
+```
+
+The `selector` receives the full `InboundContext<TValue>` and returns the route key. The key is matched against the routes you registered. The matching consumer is instantiated from the DI container and invoked.
+
+## Route key types
+
+The route key type is inferred from the `selector` return type. It must be `notnull`. Common choices:
+
+```csharp
+// String discriminator field
+selector: ctx => ctx.Message.EventType
+
+// Enum value
+selector: ctx => ctx.Message.OrderKind
+
+// Prefix of a string field
+selector: ctx => ctx.Message.CorrelationId.StartsWith("B2B") ? "b2b" : "b2c"
+```
+
+## Per-route middleware
+
+Each route can have its own middleware layer, which wraps only that handler:
+
+```csharp
+router.Route<DeepDishHandler>("deep-dish", route =>
+{
+    route.Use<PriorityTracingMiddleware>();
+});
+```
+
+## Unmatched messages
+
+If the selector returns a key that has no registered route, an `UnmatchedRouteException` is thrown. Configure how this is handled via the group's `OnError` policy:
+
+```csharp
+group.OnError(err =>
+{
+    err.WhenRouteUnmatched(ErrorAction.Discard());
+    err.Default(ErrorAction.Retry(3, Backoff.Constant(TimeSpan.FromSeconds(1)), ErrorAction.DeadLetter()));
+});
+```
+
+If the selector returns `null`, the message is silently skipped.
+
+## Accessing the matched route in middleware
+
+After routing, the matched route key is available via `IConsumerIdentityFeature`:
+
+```csharp
+var identity = context.Features.Get<IConsumerIdentityFeature>();
+// identity.RouteKey:     the matched key ("thin", "deep-dish", etc.)
+// identity.Kind:         ConsumerKind.Router
+// identity.ConsumerType: the resolved handler type
+```
+
+This is useful in shared middleware to branch behavior based on which route was selected.
+
+## Router vs. multiple consumer groups
+
+Use a router when all messages arrive on the same topic and you need to dispatch them differently based on content. Use multiple consumer groups when you need independent Kafka consumer group offsets (different replay positions, different lag tracking, etc.).

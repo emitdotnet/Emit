@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.Kafka.AvroSerializer</RootNamespace>
+    <AssemblyName>Emit.Kafka.AvroSerializer</AssemblyName>
+    <PackageId>Emit.Kafka.AvroSerializer</PackageId>
+    <Description>Avro serializer/deserializer extensions for Emit.Kafka. Adds convenience methods for schema-registry-backed Avro serialization.</Description>
+    <PackageTags>outbox;transactional;kafka;avro;schema-registry;serialization</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.Kafka\Emit.Kafka.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.SchemaRegistry.Serdes.Avro" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,162 @@
+---
+title: Metrics
+description: All OpenTelemetry metric instruments emitted by Emit, organized by meter.
+---
+
+Emit emits metrics through six OpenTelemetry meters. All meters are registered via `AddEmitInstrumentation`.
+
+## Setup
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics.AddEmitInstrumentation();
+        metrics.AddOtlpExporter();
+    });
+```
+
+Selectively enable or disable individual meters:
+
+```csharp
+metrics.AddEmitInstrumentation(options =>
+{
+    options.EnableKafkaBrokerMeter = false;  // skip librdkafka statistics
+});
+```
+
+`AddEmitInstrumentation` also registers histogram views with second-scale bucket boundaries for all `*duration` instruments and byte-scale boundaries for `emit.kafka.produce.message_size`. The OTel SDK default boundaries (`[0, 5, 10, 25, ...]`) assume milliseconds; without this, every sub-second observation lands in the `le=5` bucket and `histogram_quantile` returns nonsense values.
+
+## Meter: `Emit`
+
+Pipeline and consumer middleware metrics.
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.pipeline.produce.duration` | Histogram (s) | `provider`, `result` | Time from `ProduceAsync` call to outbox write or direct delivery |
+| `emit.pipeline.produce.completed` | Counter | `provider`, `result` | Produce operations completed |
+| `emit.pipeline.consume.duration` | Histogram (s) | `provider`, `result`, `consumer` | Time from message receipt to handler return |
+| `emit.pipeline.consume.completed` | Counter | `provider`, `result`, `consumer` | Consume operations completed |
+| `emit.consumer.error.actions` | Counter | `action` | Error actions taken (`retry`, `dead_letter`, `discard`) |
+| `emit.consumer.retry.attempts` | Histogram | `result` | Retry counts per sequence (`success`, `exhausted`) |
+| `emit.consumer.retry.duration` | Histogram (s) | `result` | Total time spent in retry loops |
+| `emit.consumer.discards` | Counter | — | Messages discarded by error policy |
+| `emit.consumer.validation.completed` | Counter | `result`, `action` | Validation results |
+| `emit.consumer.validation.duration` | Histogram (s) | — | Time spent in validation |
+| `emit.consumer.circuit_breaker.state_transitions` | Counter | `to_state` | Circuit state changes |
+| `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | — | How long the circuit stayed open |
+| `emit.consumer.circuit_breaker.state` | Gauge | — | Current circuit state: 0=closed, 1=open, 2=half-open |
+| `emit.consumer.rate_limit.acquired` | Counter | — | Rate limit permits acquired |
+| `emit.consumer.rate_limit.wait_duration` | Histogram (s) | — | Time waiting for a rate limit permit |
+| `emit.consumer.dlq.produced` | Counter | `reason`, `dlq_topic` | Messages forwarded to DLQ |
+| `emit.consumer.dlq.produce_errors` | Counter | `reason`, `dlq_topic` | Failures while forwarding to DLQ |
+
+## Meter: `Emit.Outbox`
+
+Outbox entry lifecycle and worker health.
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.outbox.enqueued` | Counter | `provider` | Entries written to the outbox |
+| `emit.outbox.processing.duration` | Histogram (s) | `provider`, `result` | Time to deliver one entry |
+| `emit.outbox.processing.completed` | Counter | `provider`, `result` | Entries processed |
+| `emit.outbox.critical_time` | Histogram (s) | `provider` | End-to-end latency from enqueue to delivery |
+| `emit.outbox.worker.poll_cycles` | Counter | `has_entries` | Worker poll cycles |
+| `emit.outbox.worker.batch_entries` | Histogram | — | Entries per poll cycle |
+| `emit.outbox.worker.active_groups` | Gauge | — | Concurrent group processing count |
+| `emit.outbox.worker.errors` | Counter | — | Worker-level errors |
+
+`emit.outbox.critical_time` is particularly useful for alerting: it measures the total delay from when a message was produced to when it was delivered to the broker.
+
+## Meter: `Emit.Lock`
+
+Distributed lock acquisition and hold duration.
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.lock.acquire.duration` | Histogram (s) | `result` | Time to acquire a lock (including retries) |
+| `emit.lock.acquire.retries` | Histogram | — | Retry count before a lock was acquired |
+| `emit.lock.renewal.completed` | Counter | `result` | Lock renewal attempts |
+| `emit.lock.held.duration` | Histogram (s) | — | How long a lock was held before release |
+
+## Meter: `Emit.Mediator`
+
+Mediator request dispatch.
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.mediator.send.duration` | Histogram (s) | `request_type`, `result` | Time for `SendAsync` to complete |
+| `emit.mediator.send.completed` | Counter | `request_type`, `result` | Mediator dispatches completed |
+| `emit.mediator.send.active` | UpDownCounter | — | In-flight mediator requests |
+
+## Meter: `Emit.Kafka`
+
+Kafka producer and consumer client metrics.
+
+### Producer
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.produce.duration` | Histogram (s) | `topic`, `result` | Broker round-trip time for produce operations |
+| `emit.kafka.produce.messages` | Counter | `topic`, `result` | Kafka produce operations |
+| `emit.kafka.produce.message_size` | Histogram (By) | `topic` | Message size distribution (key + value bytes) |
+
+### Consumer
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.consume.messages` | Counter | `consumer_group`, `topic`, `partition` | Messages read from Kafka |
+| `emit.kafka.consume.deserialization.errors` | Counter | `consumer_group`, `topic`, `component`, `action` | Deserialization exceptions |
+| `emit.kafka.consume.deserialization.duration` | Histogram (s) | `consumer_group`, `component` | Deserializer execution time |
+| `emit.kafka.consume.partition.events` | Counter | `consumer_group`, `topic`, `type` | Partition rebalance events |
+| `emit.kafka.consume.offset.commits` | Counter | `consumer_group`, `result` | Offset commit operations |
+| `emit.kafka.consume.worker.faults` | Counter | `consumer_group` | Worker fault events |
+| `emit.kafka.consume.dlq.produced` | Counter | `consumer_group`, `source_topic`, `dlq_topic` | Deserialization errors forwarded to DLQ |
+| `emit.kafka.consume.worker.channel_depth` | Gauge | `consumer_group`, `worker_index` | Messages queued in worker channels |
+| `emit.kafka.consume.groups.active` | Gauge | — | Active consumer groups |
+| `emit.kafka.consume.worker_pool.size` | Gauge | `consumer_group` | Configured worker count per group |
+
+## Meter: `Emit.Kafka.Broker`
+
+Low-level librdkafka broker statistics. These come directly from Confluent's statistics callback and reflect the health of the underlying native client.
+
+**Prerequisite:** these instruments are only populated when `KafkaClientConfig.StatisticsInterval` is set to a non-zero value (e.g. `TimeSpan.FromSeconds(5)`). Without it, the callback never fires and all broker meter values remain zero.
+
+### Broker health
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.broker.request.rtt` | Gauge (s) | `broker_id`, `percentile` | Broker round-trip time (p50/p95/p99) |
+| `emit.kafka.broker.throttle.duration` | Gauge (s) | `broker_id` | Average broker throttle time |
+| `emit.kafka.broker.outbuf.messages` | Gauge | `broker_id` | Messages in outbound buffer |
+| `emit.kafka.broker.waitresp.messages` | Gauge | `broker_id` | Messages awaiting broker response |
+| `emit.kafka.broker.request.timeouts` | Counter | `broker_id` | Cumulative timed-out requests |
+| `emit.kafka.broker.tx.errors` | Counter | `broker_id` | Cumulative transmission errors |
+| `emit.kafka.broker.connection.state` | Gauge | `broker_id`, `state` | Connection state (1=UP, 0=DOWN, 2=INIT, 3=CONNECTING, 4=AUTH) |
+
+### Broker performance
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.broker.client.messages_queued` | Gauge | — | Total messages across all producer queues |
+| `emit.kafka.broker.client.bytes_queued` | Gauge (By) | — | Total size of all queued messages |
+| `emit.kafka.broker.tx.bytes` | Counter (By) | `broker_id` | Cumulative bytes transmitted |
+| `emit.kafka.broker.tx.retries` | Counter | `broker_id` | Cumulative transmission retries |
+| `emit.kafka.broker.internal_latency` | Gauge (μs) | `broker_id`, `percentile` | Internal queue latency before transmission (p50/p95/p99) |
+
+### Consumer lag and group health
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.broker.consumer.lag` | Gauge | `topic`, `partition` | Consumer lag per topic-partition |
+| `emit.kafka.broker.consumer_group.state` | Gauge | `state` | Consumer group state |
+| `emit.kafka.broker.consumer_group.rebalances` | Counter | — | Cumulative rebalance count |
+
+### Broker connectivity
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.kafka.broker.connects` | Counter | `broker_id` | Cumulative connection attempts |
+| `emit.kafka.broker.disconnects` | Counter | `broker_id` | Cumulative disconnections |
+
+These instruments are useful for diagnosing network-level issues but typically not needed for day-to-day monitoring. Disable them with `options.EnableKafkaBrokerMeter = false` if your metrics pipeline does not need this level of detail.

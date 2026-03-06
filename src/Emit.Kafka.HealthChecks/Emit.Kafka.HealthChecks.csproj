@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.Kafka.HealthChecks</RootNamespace>
+    <AssemblyName>Emit.Kafka.HealthChecks</AssemblyName>
+    <PackageId>Emit.Kafka.HealthChecks</PackageId>
+    <Description>ASP.NET Core health check for Emit's Kafka provider. Registers a broker connectivity probe that can be wired into Kubernetes liveness and readiness endpoints.</Description>
+    <PackageTags>emit;kafka;healthchecks;aspnetcore;kubernetes</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.Kafka\Emit.Kafka.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.Mediator</RootNamespace>
+    <AssemblyName>Emit.Mediator</AssemblyName>
+    <PackageId>Emit.Mediator</PackageId>
+    <Description>In-process mediator pattern for the Emit library. Provides request-response dispatching through IRequestHandler with a unified middleware pipeline.</Description>
+    <PackageTags>mediator;cqrs;request-response;messaging</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit\Emit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+    <InternalsVisibleTo Include="Emit.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

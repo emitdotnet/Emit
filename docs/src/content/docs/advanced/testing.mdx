@@ -1,0 +1,123 @@
+---
+title: Testing
+description: Testing consumers and producers with MessageSink and SinkConsumer from Emit.Testing.
+---
+
+```bash
+dotnet add package Emit.Testing
+```
+
+## MessageSink and SinkConsumer
+
+`MessageSink<T>` collects consumed messages in memory. Pair it with `SinkConsumer<T>` as a test double for your real consumer:
+
+```csharp
+public class PizzaKitchenTests
+{
+    [Fact]
+    public async Task Consumer_writes_to_sink()
+    {
+        // Arrange
+        var sink = new MessageSink<PizzaOrdered>();
+        var services = new ServiceCollection();
+
+        services.AddEmit(emit =>
+        {
+            emit.AddKafka(kafka =>
+            {
+                kafka.ConfigureClient(cfg => cfg.BootstrapServers = "localhost:9092");
+
+                kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+                {
+                    topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
+                    topic.SetValueDeserializer(myDeserializer);
+
+                    topic.ConsumerGroup("test-group", group =>
+                    {
+                        group.AddConsumer<SinkConsumer<PizzaOrdered>>();
+                    });
+                });
+            });
+        });
+
+        services.AddSingleton(sink);
+
+        // Act: produce a message using your real producer, or inject one via Kafka
+
+        // Assert
+        var context = await sink.WaitForMessageAsync(timeout: TimeSpan.FromSeconds(10));
+        Assert.Equal(expectedPizzaId, context.Message.PizzaId);
+    }
+}
+```
+
+For integration tests against a real Kafka broker, Testcontainers spins up the container automatically. See `tests/Emit.IntegrationTests/INSTRUCT.md` for the integration test patterns used in this repository.
+
+## WaitForMessageAsync
+
+`WaitForMessageAsync` blocks until a message arrives or the timeout elapses:
+
+```csharp
+var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(10), ct);
+```
+
+Throws `TimeoutException` if the timeout elapses, `OperationCanceledException` if the token fires.
+
+If you expect multiple messages:
+
+```csharp
+var first = await sink.WaitForMessageAsync(timeout);
+var second = await sink.WaitForMessageAsync(timeout);
+```
+
+Or inspect `sink.ReceivedMessages` after waiting for the expected count.
+
+## Testing with the mediator
+
+The mediator is a plain `IMediator` resolved from DI. Test it directly:
+
+```csharp
+[Fact]
+public async Task PlacePizzaOrder_saves_order()
+{
+    // Arrange
+    var services = new ServiceCollection();
+    services.AddEmit(emit =>
+    {
+        emit.AddMediator(mediator =>
+        {
+            mediator.AddHandler<PlacePizzaOrderHandler>();
+        });
+    });
+
+    services.AddScoped<IPizzaRepository, InMemoryPizzaRepository>();
+
+    var provider = services.BuildServiceProvider();
+    var mediator = provider.GetRequiredService<IMediator>();
+
+    // Act
+    await mediator.SendAsync(new PlacePizzaOrder("customer-1", ["margherita", "extra-cheese"], "123 Main St"));
+
+    // Assert
+    var repo = provider.GetRequiredService<IPizzaRepository>();
+    Assert.Single(await repo.GetAllAsync());
+}
+```
+
+## Testing error handling
+
+Register `SinkConsumer<T>` as the consumer, then produce a message that triggers the error condition. Use `MessageSink<T>.ReceivedMessages` to verify the message either arrived (on success) or did not (on discard/DLQ).
+
+For DLQ assertions, register a second sink on the DLQ topic.
+
+## Testing outbox behavior
+
+The outbox adds a database write to the mix. Integration tests for the outbox should:
+
+1. Begin a transaction
+2. Call `ProduceAsync`
+3. Commit
+4. Wait for the outbox worker to deliver
+5. Assert on `MessageSink`
+
+Use real containers (Testcontainers) rather than in-memory fakes for this; the outbox behavior depends on database-level atomicity that in-memory implementations cannot replicate.

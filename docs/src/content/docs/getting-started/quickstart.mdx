@@ -1,0 +1,146 @@
+---
+title: Quickstart
+description: Produce and consume your first message through the transactional outbox.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Mermaid from '../../../components/Mermaid.astro';
+
+This gets you from zero to a working producer/consumer pair in about five minutes. This example uses the transactional outbox, so you'll need both Kafka and MongoDB running. If you only want direct Kafka integration without the outbox, you can skip the MongoDB setup and the `UseOutbox()` call entirely; producers will write straight to Kafka.
+
+<Steps>
+
+1. **Define your message**
+
+   Messages are plain records or classes. No base types, no attributes required.
+
+   ```csharp title="Messages.cs"
+   public record PizzaOrdered(Guid PizzaId, string CustomerId, string[] Toppings, string DeliveryAddress);
+   ```
+
+2. **Register Emit**
+
+   ```csharp title="Program.cs"
+   using MongoDB.Driver;
+
+   // Register your MongoDB client however you normally would
+   builder.Services.AddSingleton<IMongoClient>(
+       new MongoClient("mongodb://localhost:27017"));
+
+   builder.Services.AddEmit(emit =>
+   {
+       emit.AddMongoDb(mongo =>
+       {
+           mongo.Configure((sp, ctx) =>
+           {
+               ctx.Client = sp.GetRequiredService<IMongoClient>();
+               ctx.Database = ctx.Client.GetDatabase("pizzeria-db");
+           })
+           .UseOutbox()
+           .UseDistributedLock();
+       });
+
+       emit.AddKafka(kafka =>
+       {
+           kafka.ConfigureClient(cfg =>
+           {
+               cfg.BootstrapServers = "localhost:9092";
+           });
+
+           kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+           {
+               topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
+               topic.SetValueSerializer(/* your serializer */);
+               topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
+               topic.SetValueDeserializer(/* your deserializer */);
+
+               topic.Producer();
+
+               topic.ConsumerGroup("pizza-kitchen", group =>
+               {
+                   group.AddConsumer<PizzaOrderedConsumer>();
+               });
+           });
+       });
+   });
+   ```
+
+3. **Implement your consumer**
+
+   ```csharp title="PizzaOrderedConsumer.cs"
+   public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
+       : IConsumer<PizzaOrdered>
+   {
+       public Task ConsumeAsync(InboundContext<PizzaOrdered> context, CancellationToken cancellationToken)
+       {
+           var pizza = context.Message;
+           logger.LogInformation("New order {PizzaId} for {CustomerId}: {Toppings}",
+               pizza.PizzaId, pizza.CustomerId, string.Join(", ", pizza.Toppings));
+
+           // Start preparing the pizza
+           return Task.CompletedTask;
+       }
+   }
+   ```
+
+4. **Produce a message inside a transaction**
+
+   The outbox only works its magic if the outbox write and your business write share a database transaction. Inject `IEmitContext`, start a transaction, write your data, produce the event, then commit, atomically.
+
+   ```csharp title="PlacePizzaOrderEndpoint.cs"
+   app.MapPost("/orders", async (
+       PlacePizzaOrderRequest request,
+       IEmitContext emitContext,
+       IMongoClient mongoClient,
+       IMongoDatabase database,
+       IEventProducer<string, PizzaOrdered> producer,
+       CancellationToken ct) =>
+   {
+       var pizza = new PizzaOrdered(Guid.NewGuid(), request.CustomerId, request.Toppings, request.DeliveryAddress);
+
+       // Begin a MongoDB transaction and wire it to emitContext.
+       // await using ensures rollback if anything throws.
+       await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
+
+       // Write your business data using the transactional session.
+       var orders = database.GetCollection<BsonDocument>("orders");
+       await orders.InsertOneAsync(transaction.Session, pizza.ToBsonDocument(), cancellationToken: ct);
+
+       // ProduceAsync writes the outbox entry inside the same session.
+       await producer.ProduceAsync(
+           new EventMessage<string, PizzaOrdered>(pizza.PizzaId.ToString(), pizza),
+           ct);
+
+       // Both writes (the order document and the outbox entry) commit together.
+       await transaction.CommitAsync(ct);
+
+       return Results.Accepted();
+   });
+   ```
+
+</Steps>
+
+## What just happened
+
+<Mermaid code={`flowchart TD
+    A["PlacePizzaOrderEndpoint"]
+    B["BeginMongoTransactionAsync()"]
+    C["InsertOneAsync(session, pizza)\nbusiness write"]
+    D["ProduceAsync()"]
+    subgraph P["Outbound pipeline"]
+        P1["Middleware"]
+        P2["MongoDB outbox write"]
+        P1 --> P2
+    end
+    E["CommitAsync()\nboth writes land atomically"]
+    F[["Background worker polls"]]
+    G[["Kafka: pizzas topic"]]
+    H["PizzaOrderedConsumer.ConsumeAsync()"]
+
+    A --> B --> C --> D --> P --> E --> F --> G --> H`} />
+
+The endpoint returns as soon as `CommitAsync` completes. Delivery to Kafka is asynchronous and durable. If your service crashes between the commit and the delivery, the outbox worker picks it up again on restart. If anything throws before `CommitAsync`, `await using` aborts the transaction and neither the order document nor the outbox entry are written.
+
+:::note
+You need to add JSON or another serializer for `PizzaOrdered`. See [Serialization](/kafka/serialization/) for the available options. For a quick smoke test, System.Text.Json + a manual serializer wrapper is enough.
+:::

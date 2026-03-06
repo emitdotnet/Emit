@@ -1,0 +1,84 @@
+---
+title: MongoDB
+description: Using MongoDB as the persistence backend for the outbox and distributed locks.
+---
+
+The `Emit.MongoDB` package provides MongoDB-backed implementations of the outbox repository and the distributed lock provider. You supply the connection; Emit handles everything else.
+
+## Installation
+
+```bash
+dotnet add package Emit.MongoDB
+```
+
+## Registration
+
+```csharp title="Program.cs"
+// Register your IMongoClient however you normally would
+builder.Services.AddSingleton<IMongoClient>(new MongoClient("mongodb://localhost:27017"));
+
+builder.Services.AddEmit(emit =>
+{
+    emit.AddMongoDb(mongo =>
+    {
+        mongo.Configure((sp, ctx) =>
+        {
+            ctx.Client = sp.GetRequiredService<IMongoClient>();
+            ctx.Database = ctx.Client.GetDatabase("pizzeria-db");
+        })
+        .UseOutbox()
+        .UseDistributedLock();
+    });
+});
+```
+
+`Configure` is required. You provide the `IMongoClient` and `IMongoDatabase`; Emit does not create or manage the connection.
+
+`UseOutbox()` and `UseDistributedLock()` are independent. Enable whichever you need.
+
+## Collections
+
+Emit creates and manages its own collections inside the database you provide. You do not need to create them manually; indexes and TTL configuration are applied on startup. All collection names are prefixed with `emit.` to avoid collisions with your own collections.
+
+## Transactional outbox
+
+For the outbox to work correctly, your produce call and your business write must share a MongoDB session. Use `BeginMongoTransactionAsync` to start a session, wire it to `IEmitContext`, and commit:
+
+```csharp
+public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
+{
+    await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
+
+    await ordersCollection.InsertOneAsync(transaction.Session, new PizzaOrderDocument(request), cancellationToken: ct);
+
+    await producer.ProduceAsync(
+        new EventMessage<string, PizzaOrdered>(request.PizzaId.ToString(), new PizzaOrdered(request)),
+        ct);
+
+    await transaction.CommitAsync(ct);
+}
+```
+
+If anything throws before `CommitAsync`, `await using` aborts the transaction automatically.
+
+:::caution
+MongoDB transactions require a **replica set** (or sharded cluster). A standalone `mongod` does not support multi-document transactions. For local development, run MongoDB as a single-node replica set.
+:::
+
+## Serialization
+
+Emit uses the official MongoDB.Driver BSON conventions. `OutboxEntry` fields are stored with camelCase keys by default, consistent with the rest of your MongoDB documents.
+
+## Outbox options
+
+Pass a configuration action to `UseOutbox()` to tune the worker:
+
+```csharp
+.UseOutbox(options =>
+{
+    options.PollingInterval = TimeSpan.FromSeconds(3);
+    options.BatchSize = 200;
+})
+```
+
+See [Transactional Outbox](/outbox/) for the full option reference.

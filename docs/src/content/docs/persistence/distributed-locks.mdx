@@ -1,0 +1,96 @@
+---
+title: Distributed Locks
+description: How Emit acquires and manages distributed locks across your cluster.
+---
+
+`IDistributedLockProvider` gives your application distributed mutual exclusion backed by the same persistence layer you already registered for the outbox. No extra infrastructure, no separate locking service.
+
+## Registration
+
+Distributed locks are registered automatically when you call `UseDistributedLock()` on a persistence backend:
+
+```csharp
+emit.AddMongoDb(mongo =>
+{
+    mongo.Configure((sp, ctx) => { ... })
+         .UseDistributedLock();
+});
+```
+
+You do not need to call `UseOutbox()` to use distributed locks; the two are independent.
+
+## Using IDistributedLockProvider
+
+Consider a building access control system that needs to serialize concurrent unlock requests for the same door. Inject `IDistributedLockProvider` and call `TryAcquireAsync`:
+
+```csharp
+public class BuildingAccessService(IDistributedLockProvider locks)
+{
+    public async Task UnlockDoorAsync(string doorId, CancellationToken ct)
+    {
+        await using var handle = await locks.TryAcquireAsync(
+            key: $"door:{doorId}",
+            ttl: TimeSpan.FromSeconds(30),
+            timeout: TimeSpan.FromSeconds(5),
+            cancellationToken: ct);
+
+        if (handle is null)
+        {
+            throw new InvalidOperationException("Could not acquire lock; another process is handling this door.");
+        }
+
+        // Process the access request
+    }
+}
+```
+
+`await using` releases the lock when the block exits. If the lock was not committed (you called `DisposeAsync` without a preceding release), it is automatically aborted.
+
+## TryAcquireAsync parameters
+
+| Parameter | Description |
+|---|---|
+| `key` | The resource being locked. Any string; use a prefix convention to avoid collisions. |
+| `ttl` | How long the lock lives before auto-expiring. Use `ExtendAsync` to renew. |
+| `timeout` | How long to retry before giving up. `TimeSpan.Zero` (default) tries once and returns `null` on failure. `Timeout.InfiniteTimeSpan` retries until acquired or the cancellation token fires. |
+| `cancellationToken` | Cancels the wait. |
+
+Returns `IDistributedLock` if acquired, `null` if the timeout elapsed without acquiring.
+
+## Extending a lock
+
+If your work takes longer than the TTL, call `ExtendAsync` before it expires:
+
+```csharp
+await using var handle = await locks.TryAcquireAsync("door:front-entrance", TimeSpan.FromSeconds(30));
+
+// ... work starts ...
+
+var extended = await handle!.ExtendAsync(TimeSpan.FromSeconds(30), ct);
+if (!extended)
+{
+    // The lock was lost (TTL expired before we could extend it)
+}
+```
+
+`ExtendAsync` returns `false` if the lock was already lost. Design for this: it means another node may have taken over.
+
+## Retry behavior
+
+When `timeout` is nonzero, the base class retries with exponential backoff:
+
+- Base interval: 100 ms
+- Maximum interval: 5 seconds
+- Jitter: +/-25%
+
+The backoff resets on each new `TryAcquireAsync` call.
+
+## Provider implementations
+
+### MongoDB
+
+The MongoDB implementation uses an atomic upsert with a TTL index. The upsert succeeds only when no document with the same key exists or the existing one has expired. All operations are atomic at the document level.
+
+### EF Core (PostgreSQL)
+
+The PostgreSQL implementation uses `INSERT ... ON CONFLICT DO NOTHING` to attempt lock insertion. Expired lock rows are cleaned up by a background worker that runs automatically.

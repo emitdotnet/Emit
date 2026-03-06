@@ -1,0 +1,546 @@
+{
+  "uid": "emit-kafka-broker",
+  "title": "Emit — Kafka Broker & Producer",
+  "tags": ["emit", "kafka"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "broker_id",
+        "label": "Broker",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+        "query": "label_values(emit_kafka_broker_request_rtt, broker_id)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Producer",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Messages Queued",
+      "description": "Total messages across all producer queues.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_client_messages_queued",
+          "legendFormat": ""
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Bytes Queued",
+      "description": "Total queued bytes — monitor for memory pressure.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_client_bytes_queued",
+          "legendFormat": ""
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Messages Produced / s",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum by(topic, result)(rate(emit_kafka_produce_messages_total[1m]))",
+          "legendFormat": "{{topic}} — {{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Produce Duration p95 by Topic",
+      "description": "Kafka broker round-trip latency per ProduceAsync call.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(topic, le)(rate(emit_kafka_produce_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{topic}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Message Size Distribution (p50 / p95 / p99)",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.50, sum by(le)(rate(emit_kafka_produce_message_size_bytes_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_kafka_produce_message_size_bytes_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "histogram_quantile(0.99, sum by(le)(rate(emit_kafka_produce_message_size_bytes_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Broker Health",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Broker Connection",
+      "description": "1=UP, 0=DOWN.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_connection_state{state=\"UP\"}",
+          "legendFormat": "{{broker_id}} UP"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 22 }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Throttled Requests",
+      "description": "Any non-zero value means quota violations.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.001 },
+              { "color": "red", "value": 0.1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "sum(emit_kafka_broker_throttle_duration_seconds)",
+          "legendFormat": ""
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 22 }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Broker RTT",
+      "description": "Spike in P95/P99 indicates broker overload or network issues.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_request_rtt{percentile=\"p50\"}",
+          "legendFormat": "{{broker_id}} p50"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_request_rtt{percentile=\"p95\"}",
+          "legendFormat": "{{broker_id}} p95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_request_rtt{percentile=\"p99\"}",
+          "legendFormat": "{{broker_id}} p99"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Outbound & In-flight Messages",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_outbuf_messages",
+          "legendFormat": "outbound {{broker_id}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_waitresp_messages",
+          "legendFormat": "in-flight {{broker_id}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "TX Errors & Timeouts",
+      "description": "Non-zero indicates network issues or broker rejections.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_tx_errors_total[1m])",
+          "legendFormat": "errors {{broker_id}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_request_timeouts_total[1m])",
+          "legendFormat": "timeouts {{broker_id}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "TX Bytes Throughput",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_tx_bytes_total[1m])",
+          "legendFormat": "{{broker_id}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "TX Retries",
+      "description": "High retry rates indicate transient broker issues.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_tx_retries_total[1m])",
+          "legendFormat": "{{broker_id}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 }
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Consumer Lag",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Consumer Lag by Partition",
+      "description": "Growing lag means the consumer is falling behind.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_consumer_lag",
+          "legendFormat": "{{topic}} p{{partition}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Consumer Group State",
+      "description": "Non-stable state sustained over time indicates a rebalancing storm.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "emit_kafka_broker_consumer_group_state",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Rebalances Rate",
+      "description": "A high rate indicates consumer group instability.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_consumer_group_rebalances_total[5m])",
+          "legendFormat": "rebalances"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 59 }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Broker Connects / Disconnects",
+      "description": "Frequent reconnects indicate network instability.",
+      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_connects_total[1m])",
+          "legendFormat": "connects {{broker_id}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "expr": "rate(emit_kafka_broker_disconnects_total[1m])",
+          "legendFormat": "disconnects {{broker_id}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 59 }
+    }
+  ]
+}

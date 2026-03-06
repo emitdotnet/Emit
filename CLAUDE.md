@@ -1,104 +1,44 @@
-# CLAUDE.md
+# Emit
 
-Guidance for Claude Code when working with this repository. See `PRD.md` for detailed design decisions.
-
-## Project Overview
-
-Emit is a .NET 10.0+ transactional outbox library. It persists operations (e.g., Kafka messages) in an outbox within the user's database as part of an ACID transaction, then a background worker processes them with retry logic and ordering guarantees.
-
-## Project Structure
-
-```
-src/
-├── Emit/                           # Core library (abstractions, models, workers)
-│   ├── Abstractions/               # Interfaces (IOutboxRepository, ILeaseRepository)
-│   ├── Configuration/              # Options classes and validators
-│   ├── DependencyInjection/        # EmitBuilder and service registration
-│   ├── Models/                     # OutboxEntry, OutboxAttempt
-│   ├── Resilience/                 # Retry policies and backoff strategies
-│   └── Worker/                     # OutboxWorker, CleanupWorker
-├── Emit.Provider.Kafka/            # Kafka IProducer<TKey,TValue> implementation
-├── Emit.Persistence.MongoDB/       # MongoDB persistence
-└── Emit.Persistence.PostgreSQL/    # PostgreSQL persistence (EF Core)
-tests/
-├── Emit.Tests/                     # Unit tests
-└── Emit.IntegrationTests/          # Integration tests (require Docker services)
-```
-
-## Critical Rules
-
-1. **Documentation stays current** - Update XML docs and README files for any code changes
-2. **Run `dotnet format` before every commit**
-3. **No commercial libraries** (e.g., FluentAssertions is banned)
-4. **Convention over attributes** - Configure naming conventions globally (camelCase for JSON, BSON conventions for MongoDB)
-5. **Use FluentValidation** for validation rules on configuration and complex objects
-6. **Internal by default** - Only `public` for public API types; use `InternalsVisibleTo` for test access
-7. **No hardcoded durations** - All `TimeSpan` values must be configurable with sensible defaults
+.NET 10.0+ transactional outbox library with retry logic and ordering guarantees.
 
 ## Commands
 
 ```bash
-dotnet build                                    # Build
-dotnet test                                     # All tests
-dotnet test --filter 'Category!=Integration'   # Unit tests only
-dotnet test --filter 'Category=Integration'    # Integration tests only
-dotnet format                                   # Fix formatting
-dotnet format --verify-no-changes              # Check formatting
-dotnet pack -c Release                          # Pack NuGet
+dotnet build                                                           # Build
+dotnet format                                                          # Fix formatting (run before every commit)
+dotnet test tests/Emit.UnitTests/Emit.UnitTests.csproj                # Unit tests
+dotnet test tests/Emit.IntegrationTests/Emit.IntegrationTests.csproj  # Integration tests (needs Docker)
 ```
 
-## Key Dependencies
+## Rules
 
-- **Confluent.Kafka** - Kafka producer/consumer
-- **Transactional** - Transaction context abstractions (`ITransactionContext`, `IMongoTransactionContext`, `IPostgresTransactionContext`)
-- **MessagePack** - Payload serialization
-- **FluentValidation** - Configuration validation
-- **MongoDB.Driver** / **Entity Framework Core** - Persistence providers
-- **xUnit + Moq** - Testing (use xUnit `Assert`, NOT FluentAssertions)
+- **Internal by default** — only `public` for public API types. `InternalsVisibleTo` for test projects only. Never make internals public to satisfy tests — fix the test or the design instead.
+- **Abstractions in `src/Emit.Abstractions`** — interfaces, abstract classes, DTOs/records, enums. Implementations (workers, validators, DI, options) stay in `src/Emit`. Public service classes get a corresponding interface in Abstractions; XML docs go on the interface, implementation uses `<inheritdoc />`.
+- **Project boundary isolation** — each project is agnostic of projects it doesn't reference. Core `Emit` must not mention Kafka, MongoDB, or PostgreSQL. Provider projects reference core but not each other.
+- **No hardcoded durations** — all `TimeSpan` values configurable with sensible defaults
+- **No commercial libraries** (FluentAssertions is banned)
+- **Convention over attributes** — camelCase for JSON, BSON conventions for MongoDB
+- **IValidateOptions pattern** — implement `IValidateOptions<T>` directly, register with `ValidateOnStart()`
+- **Documentation stays current** — update XML docs, README files, and `/docs` pages for any code changes
 
 ## Code Style
 
 - File-scoped namespaces, using directives inside namespace
-- Collection expressions `[]` instead of `Array.Empty` or `new[]`
-- Prefer primary constructors
-- XML documentation on all public APIs
-- Use `nameof()` instead of hardcoded strings
+- Latest C# features: primary constructors, collection expressions `[]`, pattern matching, records
+- `ConfigureAwait(false)` in library code; `BackgroundService` + `PeriodicTimer` for workers
+- XML docs on all public APIs — write for the consumer, not the maintainer. No code samples. No internal implementation details.
+- Always use `nameof()` for any string referencing a code identifier
 - All DateTime fields in UTC
-- `BackgroundService` for long-running workers with `PeriodicTimer`
-- Use `ConfigureAwait(false)` in library code
-
-## Architecture Patterns
-
-### Builder Pattern for DI
-```csharp
-services.AddEmit(builder =>
-{
-    builder.UseMongoDb((sp, options) => { ... });
-    builder.AddKafka((sp, kafka) => { ... });
-});
-```
-
-### FluentValidation + IValidateOptions Adapter
-```csharp
-// Validator
-public class CleanupOptionsValidator : AbstractValidator<CleanupOptions> { ... }
-
-// Registration with adapter
-services.AddSingleton<IValidateOptions<CleanupOptions>,
-    FluentValidateOptions<CleanupOptions, CleanupOptionsValidator>>();
-services.AddOptions<CleanupOptions>().ValidateOnStart();
-```
-
-### Atomic Sequence Generation
-- **MongoDB**: `FindOneAndUpdate` with `$inc` on counter collection
-- **PostgreSQL**: `INSERT...ON CONFLICT...DO UPDATE...RETURNING`
+- Member ordering: constants, events, static members, properties, fields, constructors, instance methods, static methods, dispose
 
 ## Testing
 
-- Given-When-Then naming (e.g., `GivenPendingEntry_WhenWorkerProcesses_ThenStatusIsCompleted`)
-- AAA pattern with `// Arrange`, `// Act`, `// Assert` comments
-- **Tests are ground truth** - If a test fails, fix the implementation, not the test
-- Integration tests require `MONGODB_CONNECTION_STRING` and `POSTGRES_CONNECTION_STRING` env vars
-- Kafka producing is mocked - tests verify outbox behavior, not Kafka connectivity
-- Use `NullLogger<T>.Instance` for internal classes (Moq cannot proxy internal types)
-- Use `Options.Create(...)` to wrap options in tests
+- **xUnit + Moq** — use xUnit `Assert`, NOT FluentAssertions
+- Given-When-Then naming, AAA pattern (`// Arrange`, `// Act`, `// Assert`)
+- Tests are ground truth — if a test fails, fix the implementation
+- Only write meaningful tests — don't test the compiler, framework, or trivial property assignments
+- `NullLogger<T>.Instance` for internal classes; `Options.Create(...)` to wrap options
+- **Unit tests** — `tests/Emit.UnitTests/` with subfolders mirroring `src/` structure
+- **Integration tests** — `tests/Emit.IntegrationTests/` with subfolders per provider. All infra starts via Testcontainers (Docker). Read `tests/Emit.IntegrationTests/INSTRUCT.md` before writing integration tests.
+- **Compliance classes** — abstract test bases named `*Compliance` in `Emit/Integration/Compliance/`. Each provider inherits to prove correctness. Provider subclasses are named `{Provider}{Feature}Compliance` (e.g., `MongoDbDistributedLockCompliance`).
