@@ -3,9 +3,12 @@
     <Project Path="src/Emit.Abstractions/Emit.Abstractions.csproj" />
     <Project Path="src/Emit/Emit.csproj" />
     <Project Path="src/Emit.Kafka/Emit.Kafka.csproj" />
+    <Project Path="src/Emit.MongoDB.HealthChecks/Emit.MongoDB.HealthChecks.csproj" />
     <Project Path="src/Emit.MongoDB/Emit.MongoDB.csproj" />
+    <Project Path="src/Emit.EntityFrameworkCore.HealthChecks/Emit.EntityFrameworkCore.HealthChecks.csproj" />
     <Project Path="src/Emit.EntityFrameworkCore/Emit.EntityFrameworkCore.csproj" />
     <Project Path="src/Emit.Kafka.AvroSerializer/Emit.Kafka.AvroSerializer.csproj" />
+    <Project Path="src/Emit.Kafka.HealthChecks/Emit.Kafka.HealthChecks.csproj" />
     <Project Path="src/Emit.Kafka.JsonSerializer/Emit.Kafka.JsonSerializer.csproj" />
     <Project Path="src/Emit.Kafka.ProtobufSerializer/Emit.Kafka.ProtobufSerializer.csproj" />
     <Project Path="src/Emit.Mediator/Emit.Mediator.csproj" />
