@@ -262,7 +262,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         // Capture pipeline references for closure
         var kafkaOutbound = OutboundPipeline;
         var capturedGlobalOutbound = globalOutboundPipeline;
-        var capturedOutboxEnabled = outboxEnabled;
+        var useOutbox = producerBuilder?.OutboxEnabled == true;
         var producerPipeline = producerBuilder?.Pipeline;
 
         // Thread-safe lazy pipeline building (built once on first resolution)
@@ -283,7 +283,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                         var resolvedValueAsync = valueAsyncSerializer ?? valueAsyncSerializerFactory?.Invoke(
                             sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>());
 
-                        var terminal = capturedOutboxEnabled
+                        var terminal = useOutbox
                             ? CreateOutboxTerminal(topicName, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync)
                             : CreateDirectTerminal(topicName, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync);
 
