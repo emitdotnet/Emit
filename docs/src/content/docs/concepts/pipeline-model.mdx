@@ -39,7 +39,7 @@ When a Kafka message arrives, it passes through the full stack before reaching y
 
 ## Outbound pipeline (producing)
 
-When you call `IEventProducer.ProduceAsync()`, the message passes through the outbound stack before landing in the outbox:
+When you call `IEventProducer.ProduceAsync()`, the message passes through the outbound stack before reaching its terminal. The terminal is either the outbox (when the producer called `UseOutbox()`) or the Kafka broker directly:
 
 <Mermaid code={`flowchart TB
     A["IEventProducer.ProduceAsync()"]
@@ -52,8 +52,11 @@ When you call `IEventProducer.ProduceAsync()`, the message passes through the ou
     subgraph PR["Per-producer"]
         PM1["Custom middleware"]
     end
-    O[("Outbox")]
-    A --> G1 --> P1 --> PM1 --> O`} />
+    O[("Outbox\n(UseOutbox)")]
+    K[["Kafka broker\n(direct)"]]
+    A --> G1 --> P1 --> PM1
+    PM1 -->|"UseOutbox()"| O
+    PM1 -->|"direct"| K`} />
 
 ## Context objects
 

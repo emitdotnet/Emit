@@ -58,7 +58,7 @@ builder.Services.AddEmit(emit =>
 
         kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
         {
-            topic.Producer();
+            topic.Producer(p => p.UseOutbox());
 
             topic.ConsumerGroup("pizza-kitchen", group =>
             {
@@ -71,7 +71,9 @@ builder.Services.AddEmit(emit =>
 
 `AddEmit` returns your `IServiceCollection`, so it chains normally with the rest of your registration.
 
-`UseOutbox()` and `UseDistributedLock()` are both opt-in. Skip `UseOutbox()` and producers write directly to the broker; no background worker, no persistence required. You can use Emit purely as a Kafka integration layer without pulling in any persistence package at all.
+The outbox is a two-level opt-in. First, call `UseOutbox()` on your persistence provider to provision the infrastructure (outbox table/collection, background worker). Then, call `UseOutbox()` on each producer that should use the outbox. Producers without `UseOutbox()` write directly to the broker, even when the outbox infrastructure is enabled. You can mix outbox and direct producers on the same Kafka registration.
+
+`UseDistributedLock()` is also opt-in. You can use Emit purely as a Kafka integration layer without pulling in any persistence package at all.
 
 ## What gets registered
 
@@ -81,10 +83,4 @@ Configuration is validated at startup with `IValidateOptions<T>`. If something i
 
 ## A note on DI lifetimes
 
-`IEventProducer<TKey, TValue>` is registered as a **singleton**. Injecting it into a scoped or transient service is fine. If you inject it into another singleton and something in the resolution chain is scoped, you'll get a captive dependency exception at startup. This is .NET DI doing its job.
-
-The fix is almost always to inject `IServiceProvider` and resolve the scoped dependency per-operation, or restructure the dependency chain.
-
-:::tip
-If you see `Cannot resolve scoped service from root provider` at startup, check whether `IEventProducer` (or any Emit service) is being resolved through a singleton that also depends on something scoped.
-:::
+`IEventProducer<TKey, TValue>` is registered as **scoped**. Inject it into controllers, endpoint handlers, or any scoped service. If you need to use it from a singleton, inject `IServiceScopeFactory` and create a scope per operation.

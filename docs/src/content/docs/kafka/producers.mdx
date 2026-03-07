@@ -5,7 +5,7 @@ description: Producing messages to Kafka via IEventProducer, with or without the
 
 ## IEventProducer
 
-Once a topic has been declared with `topic.Producer()`, Emit registers `IEventProducer<TKey, TValue>` as a singleton in the DI container. Inject it wherever you need to produce messages:
+Once a topic has been declared with `topic.Producer()`, Emit registers `IEventProducer<TKey, TValue>` in the DI container. Inject it wherever you need to produce messages:
 
 ```csharp
 public class PizzeriaService(IEventProducer<string, PizzaOrdered> producer)
@@ -19,7 +19,7 @@ public class PizzeriaService(IEventProducer<string, PizzaOrdered> producer)
 }
 ```
 
-`IEventProducer` is a singleton. Inject it freely into scoped or transient services; the DI container handles the lifetime mismatch correctly.
+`IEventProducer` is scoped. Inject it into controllers, endpoint handlers, or any scoped service.
 
 ## EventMessage
 
@@ -40,13 +40,31 @@ Headers are passed through to Kafka as-is. Emit also appends its own tracing hea
 
 ## Outbox mode vs. direct mode
 
-Whether the message goes through the outbox or straight to Kafka depends on whether you called `UseOutbox()`:
+Each producer independently chooses whether to use the outbox or write directly to Kafka. Call `UseOutbox()` on the producer builder to opt in:
 
-**With outbox** (`UseOutbox()` called): `ProduceAsync` writes to the database outbox inside the current `IEmitContext.Transaction`. The background worker delivers to Kafka later. Your calling code must begin a transaction first.
+```csharp
+kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+{
+    // ... serializers ...
+    topic.Producer(p => p.UseOutbox());  // outbox mode
+});
 
-**Without outbox**: `ProduceAsync` calls the Kafka producer directly and waits for the broker acknowledgement before returning.
+kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
+{
+    // ... serializers ...
+    topic.Producer();  // direct mode
+});
+```
+
+**Outbox mode** (`p.UseOutbox()`): `ProduceAsync` writes to the database outbox inside the current `IEmitContext.Transaction`. The background worker delivers to Kafka later. Your calling code must begin a transaction first.
+
+**Direct mode** (no `UseOutbox()`): `ProduceAsync` calls the Kafka producer directly and waits for the broker acknowledgement before returning.
 
 Use the outbox when you need atomicity with your database writes. Use direct mode when you want simplicity and can tolerate the dual-write risk or don't have a database write to coordinate with.
+
+:::note
+`UseOutbox()` on the producer requires a persistence provider with its own `UseOutbox()` call (e.g. `mongo.UseOutbox()` or `ef.UseOutbox()`). If no persistence provider has enabled the outbox, calling `p.UseOutbox()` throws at registration time.
+:::
 
 ## Per-producer middleware
 
@@ -57,6 +75,7 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 {
     topic.Producer(producer =>
     {
+        producer.UseOutbox();
         producer.Use<EnrichmentMiddleware>();
     });
 });

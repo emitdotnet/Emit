@@ -6,7 +6,7 @@ description: Produce and consume your first message through the transactional ou
 import { Steps } from '@astrojs/starlight/components';
 import Mermaid from '../../../components/Mermaid.astro';
 
-This gets you from zero to a working producer/consumer pair in about five minutes. This example uses the transactional outbox, so you'll need both Kafka and MongoDB running. If you only want direct Kafka integration without the outbox, you can skip the MongoDB setup and the `UseOutbox()` call entirely; producers will write straight to Kafka.
+This gets you from zero to a working producer/consumer pair in about five minutes. This example uses the transactional outbox, so you'll need both Kafka and MongoDB running. If you only want direct Kafka integration without the outbox, skip the MongoDB setup and omit `UseOutbox()` on both the persistence provider and the producer; messages will go straight to Kafka.
 
 <Steps>
 
@@ -54,7 +54,7 @@ This gets you from zero to a working producer/consumer pair in about five minute
                topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
                topic.SetValueDeserializer(/* your deserializer */);
 
-               topic.Producer();
+               topic.Producer(p => p.UseOutbox());
 
                topic.ConsumerGroup("pizza-kitchen", group =>
                {

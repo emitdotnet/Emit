@@ -19,6 +19,5 @@ Shared application logic for BuildingSentinel: domain, consumers, handlers, endp
 | `Extensions/` | KafkaBuilderExtensions and MediatorBuilderExtensions for registering topics and handlers | Understand how Kafka and mediator are configured for the sample |
 | `Handlers/` | SubmitBuildingEventHandler: mediator handler that persists and enqueues events transactionally | Understand the transactional outbox pattern or modify command handling |
 | `Repositories/` | Repository interfaces: IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Implement a new persistence backend or understand the repository contracts |
-| `Serialization/` | JsonKafkaSerializer: JSON-based Kafka serializer for building events | Understand or replace the Kafka serialization strategy |
 | `Simulation/` | BuildingSimulatorService: background service that fires realistic events automatically after startup | Understand the automatic event generation or tune simulator behavior |
 | `Transactions/` | ITransactionFactory: abstraction for creating persistence-backend-specific transactions | Understand how transactions are created across MongoDB and PostgreSQL |
