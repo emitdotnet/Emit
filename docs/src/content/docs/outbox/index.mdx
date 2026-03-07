@@ -7,7 +7,7 @@ import Mermaid from '../../../components/Mermaid.astro';
 
 The transactional outbox is the core reliability mechanism in Emit. It solves the dual-write problem by ensuring that your business data write and your message enqueue happen in the same database transaction. Either both commit, or neither does. No more "saved to DB but broker publish failed" horror stories.
 
-The outbox is opt-in. If you don't call `UseOutbox()`, producers write directly to the broker. See [Installation](../getting-started/installation/) for the distinction.
+The outbox requires two opt-ins: first, enable the outbox infrastructure on your persistence provider (`mongo.UseOutbox()` or `ef.UseOutbox()`), then opt each producer in individually with `topic.Producer(p => p.UseOutbox())`. Producers that don't call `UseOutbox()` write directly to the broker, even when the outbox infrastructure is enabled. See [Installation](../getting-started/installation/) for the full setup.
 
 ## How it works
 
@@ -42,6 +42,8 @@ This prevents duplicate delivery from concurrent workers processing the same gro
 
 ## Configuration
 
+Enable the outbox infrastructure on your persistence provider, then opt individual producers in:
+
 ```csharp
 emit.AddMongoDb(mongo =>
 {
@@ -52,6 +54,23 @@ emit.AddMongoDb(mongo =>
              options.BatchSize = 100;                            // default
              options.MaxGroupsPerCycle = 1000;                   // default
          });
+});
+
+emit.AddKafka(kafka =>
+{
+    kafka.ConfigureClient(cfg => cfg.BootstrapServers = "localhost:9092");
+
+    kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+    {
+        // ... serializers ...
+        topic.Producer(p => p.UseOutbox());  // this producer uses the outbox
+    });
+
+    kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
+    {
+        // ... serializers ...
+        topic.Producer();  // this producer writes directly to Kafka
+    });
 });
 ```
 

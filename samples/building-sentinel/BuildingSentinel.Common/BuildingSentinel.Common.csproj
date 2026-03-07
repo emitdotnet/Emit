@@ -13,10 +13,7 @@
     <ProjectReference Include="../../../src/Emit/Emit.csproj" />
     <ProjectReference Include="../../../src/Emit.Mediator/Emit.Mediator.csproj" />
     <ProjectReference Include="../../../src/Emit.Kafka/Emit.Kafka.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Confluent.Kafka" />
+    <ProjectReference Include="../../../src/Emit.Kafka.JsonSerializer/Emit.Kafka.JsonSerializer.csproj" />
   </ItemGroup>
 
 </Project>

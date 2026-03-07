@@ -70,6 +70,9 @@ builder.Services.AddEmit(emit =>
         kafka.ConfigureClient(config =>
             config.BootstrapServers = builder.Configuration["Kafka:BootstrapServers"]);
 
+        kafka.ConfigureSchemaRegistry(sr =>
+            sr.Url = builder.Configuration["SchemaRegistry:Url"]);
+
         kafka.AddBuildingSentinelTopics();
     });
 

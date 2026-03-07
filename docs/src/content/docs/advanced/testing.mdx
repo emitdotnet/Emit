@@ -112,7 +112,13 @@ For DLQ assertions, register a second sink on the DLQ topic.
 
 ## Testing outbox behavior
 
-The outbox adds a database write to the mix. Integration tests for the outbox should:
+The outbox adds a database write to the mix. Make sure the producer under test calls `UseOutbox()`:
+
+```csharp
+topic.Producer(p => p.UseOutbox());
+```
+
+Integration tests for the outbox should:
 
 1. Begin a transaction
 2. Call `ProduceAsync`

@@ -30,7 +30,7 @@ builder.Services.AddEmit(emit =>
 
 You register `IDbContextFactory<TDbContext>` yourself using the standard EF Core pattern. Emit resolves the factory internally to access the database without interfering with your application's DbContext lifetimes.
 
-`UseNpgsql()` is required to configure PostgreSQL-specific type mappings. `UseOutbox()` and `UseDistributedLock()` are independent.
+`UseNpgsql()` is required to configure PostgreSQL-specific type mappings. `UseOutbox()` and `UseDistributedLock()` are independent. Calling `UseOutbox()` here provisions the outbox infrastructure (tables, background worker). Each producer must also call `UseOutbox()` individually to route messages through the outbox — see [Producers](../kafka/producers/).
 
 ## Model configuration
 

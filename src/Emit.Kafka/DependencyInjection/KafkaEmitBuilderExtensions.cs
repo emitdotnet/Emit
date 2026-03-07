@@ -66,7 +66,7 @@ public static class KafkaEmitBuilderExtensions
         if (builder.OutboxEnabled)
         {
             RegisterOutboxProvider(builder.Services);
-            builder.Services.AddSingleton(new EmitBuilder.OutboxProviderMarker());
+            builder.Services.AddSingleton(new OutboxProviderMarker());
         }
 
         return builder;

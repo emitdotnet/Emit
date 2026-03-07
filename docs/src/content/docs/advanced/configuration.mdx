@@ -7,7 +7,7 @@ All configuration in Emit is validated at startup via `IValidateOptions<T>`. Mis
 
 ## Outbox options
 
-Applies to both MongoDB and EF Core when `UseOutbox()` is called.
+Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persistence provider. These options control the background worker that delivers outbox entries to the broker. Individual producers opt into the outbox separately via `topic.Producer(p => p.UseOutbox())`.
 
 | Option | Default | Description |
 |---|---|---|

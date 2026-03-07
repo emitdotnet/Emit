@@ -104,19 +104,22 @@ public static class ServiceCollectionExtensions
         // Register outbox-specific services only when outbox mode is enabled
         if (builder.OutboxEnabled)
         {
-            ConfigureOptions<OutboxOptions, OutboxOptionsValidator>(services, builder.OutboxOptionsConfiguration);
+            // Options are registered by the persistence provider; we only add validation here
+            services.AddOptions<OutboxOptions>().ValidateOnStart();
+            services.AddSingleton<IValidateOptions<OutboxOptions>, OutboxOptionsValidator>();
 
             services.AddSingleton<OutboxDaemon>();
             services.AddSingleton<IDaemonAgent>(sp => sp.GetRequiredService<OutboxDaemon>());
         }
 
         // Register leader election and daemon coordination when a persistence provider is present
-        if (services.Any(d => d.ImplementationInstance is EmitBuilder.PersistenceProviderMarker))
+        if (services.Any(d => d.ImplementationInstance is PersistenceProviderMarker))
         {
-            ConfigureOptions<LeaderElectionOptions, LeaderElectionOptionsValidator>(
-                services, builder.LeaderElectionOptionsConfiguration);
-            ConfigureOptions<DaemonOptions, DaemonOptionsValidator>(
-                services, builder.DaemonOptionsConfiguration);
+            // Options are registered by ConfigureLeaderElection/ConfigureDaemons; we only add validation here
+            services.AddOptions<LeaderElectionOptions>().ValidateOnStart();
+            services.AddSingleton<IValidateOptions<LeaderElectionOptions>, LeaderElectionOptionsValidator>();
+            services.AddOptions<DaemonOptions>().ValidateOnStart();
+            services.AddSingleton<IValidateOptions<DaemonOptions>, DaemonOptionsValidator>();
 
             services.AddSingleton<LeaderElectionObserverInvoker>();
             services.AddSingleton<DaemonObserverInvoker>();
@@ -127,22 +130,6 @@ public static class ServiceCollectionExtensions
         }
 
         return services;
-    }
-
-    private static void ConfigureOptions<TOptions, TValidator>(
-        IServiceCollection services,
-        Action<TOptions>? configuration)
-        where TOptions : class
-        where TValidator : class, IValidateOptions<TOptions>
-    {
-        var optionsBuilder = services.AddOptions<TOptions>();
-        if (configuration is not null)
-        {
-            optionsBuilder.Configure(configuration);
-        }
-
-        optionsBuilder.ValidateOnStart();
-        services.AddSingleton<IValidateOptions<TOptions>, TValidator>();
     }
 
     private sealed class EmitMarkerService;

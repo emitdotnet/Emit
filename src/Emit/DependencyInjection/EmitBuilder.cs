@@ -1,6 +1,5 @@
 namespace Emit.DependencyInjection;
 
-using System.ComponentModel;
 using Emit.Abstractions.Pipeline;
 using Emit.Configuration;
 using Emit.Pipeline;
@@ -51,23 +50,6 @@ public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelin
     public bool OutboxEnabled => services.Any(d => d.ImplementationInstance is OutboxRegistrationMarker);
 
     /// <summary>
-    /// Gets or sets the outbox options configuration action, set by the persistence provider
-    /// that enables the outbox.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public Action<OutboxOptions>? OutboxOptionsConfiguration { get; set; }
-
-    /// <summary>
-    /// Gets the leader election options configuration action, set by <see cref="ConfigureLeaderElection"/>.
-    /// </summary>
-    internal Action<LeaderElectionOptions>? LeaderElectionOptionsConfiguration { get; private set; }
-
-    /// <summary>
-    /// Gets the daemon options configuration action, set by <see cref="ConfigureDaemons"/>.
-    /// </summary>
-    internal Action<DaemonOptions>? DaemonOptionsConfiguration { get; private set; }
-
-    /// <summary>
     /// Configures leader election interval options.
     /// </summary>
     /// <param name="configure">The configuration delegate.</param>
@@ -80,7 +62,7 @@ public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelin
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        LeaderElectionOptionsConfiguration = configure;
+        services.Configure(configure);
         return this;
     }
 
@@ -97,7 +79,7 @@ public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelin
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        DaemonOptionsConfiguration = configure;
+        services.Configure(configure);
         return this;
     }
 
@@ -173,28 +155,4 @@ public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelin
                 "Outbox mode requires at least one outbox provider.");
         }
     }
-
-    /// <summary>
-    /// Marker registered by persistence providers to signal their presence for validation.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public sealed record PersistenceProviderMarker(string ProviderName);
-
-    /// <summary>
-    /// Marker registered by outbox providers to signal their presence for validation.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public sealed class OutboxProviderMarker;
-
-    /// <summary>
-    /// Marker registered by a persistence provider when the outbox is enabled.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public sealed record OutboxRegistrationMarker(string ProviderName);
-
-    /// <summary>
-    /// Marker registered by a persistence provider when the distributed lock is enabled.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public sealed record DistributedLockRegistrationMarker(string ProviderName);
 }

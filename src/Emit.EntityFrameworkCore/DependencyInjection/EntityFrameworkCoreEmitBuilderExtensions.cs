@@ -3,6 +3,7 @@ namespace Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
+using Emit.Configuration;
 using Emit.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,27 +30,6 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown if no database provider method was called inside <paramref name="configure"/>.
     /// </exception>
-    /// <remarks>
-    /// <para>
-    /// The caller is responsible for registering <see cref="IDbContextFactory{TContext}"/>
-    /// for <typeparamref name="TDbContext"/> in the DI container before building the service provider.
-    /// </para>
-    /// <para>
-    /// Example:
-    /// <code>
-    /// services.AddDbContextFactory&lt;AppDbContext&gt;(options =&gt; options.UseNpgsql(connectionString));
-    ///
-    /// services.AddEmit(builder =&gt;
-    /// {
-    ///     builder.AddEntityFrameworkCore&lt;AppDbContext&gt;(ef =&gt;
-    ///     {
-    ///         ef.UseNpgsql();
-    ///         ef.UseOutbox();
-    ///     });
-    /// });
-    /// </code>
-    /// </para>
-    /// </remarks>
     public static EmitBuilder AddEntityFrameworkCore<TDbContext>(
         this EmitBuilder builder,
         Action<EntityFrameworkCoreBuilder> configure)
@@ -60,7 +40,7 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
 
         ValidateDbContextRegistration<TDbContext>(builder.Services);
 
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("EntityFrameworkCore"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("EntityFrameworkCore"));
 
         var efBuilder = new EntityFrameworkCoreBuilder(builder.Services);
         configure(efBuilder);
@@ -138,8 +118,13 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
     private static void RegisterOutboxServices<TDbContext>(EmitBuilder builder, EntityFrameworkCoreBuilder efBuilder)
         where TDbContext : DbContext
     {
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("EntityFrameworkCore"));
-        builder.OutboxOptionsConfiguration = efBuilder.OutboxOptionsConfiguration;
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("EntityFrameworkCore"));
+
+        var optionsBuilder = builder.Services.AddOptions<OutboxOptions>();
+        if (efBuilder.OutboxOptionsConfiguration is { } configure)
+        {
+            optionsBuilder.Configure(configure);
+        }
 
         // Register as SCOPED (not singleton) to use user's scoped DbContext
         builder.Services.AddScoped<EfCoreOutboxRepository<TDbContext>>();
@@ -149,7 +134,7 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
     private static void RegisterDistributedLockServices<TDbContext>(EmitBuilder builder)
         where TDbContext : DbContext
     {
-        builder.Services.AddSingleton(new EmitBuilder.DistributedLockRegistrationMarker("EntityFrameworkCore"));
+        builder.Services.AddSingleton(new DistributedLockRegistrationMarker("EntityFrameworkCore"));
 
         builder.Services.TryAddSingleton<EfCoreDistributedLockProvider<TDbContext>>();
         builder.Services.AddSingleton<IDistributedLockProvider>(

@@ -2,7 +2,6 @@ namespace BuildingSentinel.Common.Extensions;
 
 using BuildingSentinel.Common.Consumers;
 using BuildingSentinel.Common.Domain;
-using BuildingSentinel.Common.Serialization;
 using Emit.Abstractions;
 using Emit.Kafka.DependencyInjection;
 using Emit.Routing;
@@ -15,16 +14,14 @@ public static class KafkaBuilderExtensions
     /// </summary>
     public static KafkaBuilder AddBuildingSentinelTopics(this KafkaBuilder kafka)
     {
-        var serializer = new JsonKafkaSerializer<BuildingEvent>();
-
         kafka.Topic<string, BuildingEvent>("building.events", topic =>
         {
-            topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
-            topic.SetValueSerializer(serializer);
-            topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
-            topic.SetValueDeserializer(serializer);
+            topic.SetUtf8KeySerializer();
+            topic.SetJsonSchemaValueSerializer<string, BuildingEvent>();
+            topic.SetUtf8KeyDeserializer();
+            topic.SetJsonSchemaValueDeserializer<string, BuildingEvent>();
 
-            topic.Producer();
+            topic.Producer(p => p.UseOutbox());
 
             // Consumer group 1: routes on event type, only handles access.denied
             topic.ConsumerGroup("building.classifier", group =>
