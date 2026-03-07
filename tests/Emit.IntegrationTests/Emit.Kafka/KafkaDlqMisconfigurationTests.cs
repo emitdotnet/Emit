@@ -56,8 +56,8 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
                         // The DLQ policy names a topic but no dead letter sink is registered (no kafka.DeadLetter(...)).
                         kafka.Topic<int, string>(sourceTopic, t =>
                         {
-                            t.SetKeyDeserializer(ConfluentKafka.Deserializers.Int32);
-                            t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                            t.SetInt32KeyDeserializer();
+                            t.SetUtf8ValueDeserializer();
 
                             t.ConsumerGroup(groupId, group =>
                             {

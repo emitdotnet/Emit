@@ -55,8 +55,8 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
                         // Source topic with Int32 key deserializer — 5-byte keys will fail.
                         kafka.Topic<int, string>(sourceTopic, t =>
                         {
-                            t.SetKeyDeserializer(ConfluentKafka.Deserializers.Int32);
-                            t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                            t.SetInt32KeyDeserializer();
+                            t.SetUtf8ValueDeserializer();
 
                             t.ConsumerGroup(groupId, group =>
                             {
@@ -69,8 +69,8 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
                         // DLQ topic — consumer only; captures dead-lettered messages.
                         kafka.Topic<string, string>(dlqTopic, t =>
                         {
-                            t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                            t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                            t.SetUtf8KeyDeserializer();
+                            t.SetUtf8ValueDeserializer();
 
                             t.ConsumerGroup(dlqGroupId, group =>
                             {

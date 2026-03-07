@@ -251,6 +251,14 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var producerBuilder = topicBuilder.ProducerBuilder;
         producerBuilder?.Pipeline.RegisterServices(services);
 
+        // Fail fast if the producer opted into the outbox but no persistence provider enabled it
+        if (producerBuilder?.OutboxEnabled == true && !outboxEnabled)
+        {
+            throw new InvalidOperationException(
+                $"Producer for topic '{topicName}' opted into the outbox, " +
+                "but no persistence provider has enabled the outbox.");
+        }
+
         // Capture pipeline references for closure
         var kafkaOutbound = OutboundPipeline;
         var capturedGlobalOutbound = globalOutboundPipeline;

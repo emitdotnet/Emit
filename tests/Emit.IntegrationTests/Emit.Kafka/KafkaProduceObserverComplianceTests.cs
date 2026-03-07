@@ -21,8 +21,8 @@ public class KafkaProduceObserverComplianceTests(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
 
                 t.Producer();
             });

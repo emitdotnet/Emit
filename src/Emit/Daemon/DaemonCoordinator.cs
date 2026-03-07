@@ -205,7 +205,7 @@ internal sealed class DaemonCoordinator
                         break;
 
                     case DaemonAssignmentState.Active:
-                        HandleActive(assignment, nodeId, workerToken);
+                        await HandleActiveAsync(assignment, nodeId, workerToken).ConfigureAwait(false);
                         break;
 
                     case DaemonAssignmentState.Revoking:
@@ -255,10 +255,10 @@ internal sealed class DaemonCoordinator
         logger.LogInformation("Acknowledged daemon {DaemonId} assignment (generation={Generation})",
             assignment.DaemonId, assignment.Generation);
 
-        StartDaemon(agent, assignment, nodeId, workerToken);
+        await StartDaemonAsync(agent, assignment, nodeId, workerToken).ConfigureAwait(false);
     }
 
-    private void HandleActive(
+    private async Task HandleActiveAsync(
         DaemonAssignment assignment,
         Guid nodeId,
         CancellationToken workerToken)
@@ -279,7 +279,7 @@ internal sealed class DaemonCoordinator
         logger.LogInformation("Restarting daemon {DaemonId} (active assignment, generation={Generation})",
             assignment.DaemonId, assignment.Generation);
 
-        StartDaemon(agent, assignment, nodeId, workerToken);
+        await StartDaemonAsync(agent, assignment, nodeId, workerToken).ConfigureAwait(false);
     }
 
     private async Task HandleRevokingAsync(
@@ -348,13 +348,13 @@ internal sealed class DaemonCoordinator
         }
     }
 
-    private void StartDaemon(IDaemonAgent agent, DaemonAssignment assignment, Guid nodeId, CancellationToken workerToken)
+    private async Task StartDaemonAsync(IDaemonAgent agent, DaemonAssignment assignment, Guid nodeId, CancellationToken workerToken)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(workerToken);
 
         try
         {
-            agent.StartAsync(cts.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+            await agent.StartAsync(cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -368,7 +368,7 @@ internal sealed class DaemonCoordinator
         logger.LogInformation("Started daemon {DaemonId} on node {NodeId} (generation={Generation})",
             agent.DaemonId, nodeId, assignment.Generation);
 
-        _ = observerInvoker.OnDaemonStartedAsync(agent.DaemonId, nodeId, default);
+        await observerInvoker.OnDaemonStartedAsync(agent.DaemonId, nodeId, default).ConfigureAwait(false);
     }
 
     private async Task StopDaemonAsync(string daemonId, Guid nodeId, CancellationToken stoppingToken)

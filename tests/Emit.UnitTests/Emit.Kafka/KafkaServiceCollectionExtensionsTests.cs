@@ -177,9 +177,9 @@ public sealed class KafkaServiceCollectionExtensionsTests
                 kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                 kafka.Topic<string, string>("orders", t =>
                 {
-                    t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                    t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                    t.Producer();
+                    t.SetUtf8KeySerializer();
+                    t.SetUtf8ValueSerializer();
+                    t.Producer(p => p.UseOutbox());
                 });
             });
         });
@@ -203,8 +203,8 @@ public sealed class KafkaServiceCollectionExtensionsTests
                 kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                 kafka.Topic<string, string>("orders", t =>
                 {
-                    t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                    t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
+                    t.SetUtf8KeySerializer();
+                    t.SetUtf8ValueSerializer();
                     t.Producer();
                 });
             });
@@ -229,8 +229,8 @@ public sealed class KafkaServiceCollectionExtensionsTests
                 kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                 kafka.Topic<string, string>("orders", t =>
                 {
-                    t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                    t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                    t.SetUtf8KeyDeserializer();
+                    t.SetUtf8ValueDeserializer();
                     t.ConsumerGroup("order-processor", cg =>
                     {
                         cg.AddConsumer<TestConsumer>();
@@ -258,8 +258,8 @@ public sealed class KafkaServiceCollectionExtensionsTests
                 kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                 kafka.Topic<string, string>("orders", t =>
                 {
-                    t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                    t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                    t.SetUtf8KeyDeserializer();
+                    t.SetUtf8ValueDeserializer();
                     t.ConsumerGroup("order-processor", cg =>
                     {
                         cg.AddConsumer<TestConsumer>();
@@ -310,7 +310,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
                     kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                     kafka.Topic<string, string>("orders", t =>
                     {
-                        t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
+                        t.SetUtf8KeySerializer();
                         t.Producer();
                     });
                 });
@@ -333,9 +333,9 @@ public sealed class KafkaServiceCollectionExtensionsTests
                     kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                     kafka.Topic<string, string>("orders", t =>
                     {
-                        t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
+                        t.SetUtf8KeySerializer();
                         t.SetKeySerializer(new Mock<ConfluentKafka.IAsyncSerializer<string>>().Object);
-                        t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
+                        t.SetUtf8ValueSerializer();
                         t.Producer();
                     });
                 });
@@ -383,7 +383,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
                     kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                     kafka.Topic<string, string>("orders", t =>
                     {
-                        t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
+                        t.SetUtf8KeyDeserializer();
                         t.ConsumerGroup("order-processor", cg =>
                         {
                             cg.AddConsumer<TestConsumer>();
@@ -409,9 +409,9 @@ public sealed class KafkaServiceCollectionExtensionsTests
                     kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
                     kafka.Topic<string, string>("orders", t =>
                     {
-                        t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
+                        t.SetUtf8KeyDeserializer();
                         t.SetKeyDeserializer(new Mock<ConfluentKafka.IAsyncDeserializer<string>>().Object);
-                        t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                        t.SetUtf8ValueDeserializer();
                         t.ConsumerGroup("order-processor", cg =>
                         {
                             cg.AddConsumer<TestConsumer>();

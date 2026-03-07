@@ -35,10 +35,10 @@ public class KafkaDeadLetterConventionComplianceTests(KafkaContainerFixture fixt
             // Source topic — producer + always-failing consumer, DLQ via convention (no explicit topic).
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -52,8 +52,8 @@ public class KafkaDeadLetterConventionComplianceTests(KafkaContainerFixture fixt
             // DLQ topic — consumer only.
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {

@@ -14,8 +14,8 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("PostgreSQL"));
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("PostgreSQL"));
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => builder.Validate());
@@ -28,8 +28,8 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.DistributedLockRegistrationMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.DistributedLockRegistrationMarker("PostgreSQL"));
+        builder.Services.AddSingleton(new DistributedLockRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new DistributedLockRegistrationMarker("PostgreSQL"));
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => builder.Validate());
@@ -42,8 +42,8 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("MongoDB"));
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("MongoDB"));
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => builder.Validate());
@@ -57,9 +57,9 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.OutboxProviderMarker());
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("MongoDB"));
+        builder.Services.AddSingleton(new OutboxProviderMarker());
 
         // Act & Assert (no exception means success)
         builder.Validate();
@@ -71,7 +71,7 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("MongoDB"));
 
         // Act
         builder.AddKafka(kafka =>
@@ -80,7 +80,7 @@ public class EmitBuilderTests
         });
 
         // Assert
-        Assert.Contains(services, d => d.ImplementationInstance is EmitBuilder.OutboxProviderMarker);
+        Assert.Contains(services, d => d.ImplementationInstance is OutboxProviderMarker);
     }
 
     [Fact]
@@ -135,8 +135,8 @@ public class EmitBuilderTests
         // Arrange
         var services = new ServiceCollection();
         var builder = new EmitBuilder(services);
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("MongoDB"));
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("EntityFrameworkCore"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("MongoDB"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("EntityFrameworkCore"));
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => builder.Validate());

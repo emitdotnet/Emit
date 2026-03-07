@@ -3,6 +3,7 @@ namespace Emit.MongoDB.DependencyInjection;
 using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
+using Emit.Configuration;
 using Emit.DependencyInjection;
 using Emit.Models;
 using Emit.MongoDB.Configuration;
@@ -39,7 +40,7 @@ public static class MongoDbEmitBuilderExtensions
                 $"{nameof(MongoDbBuilder.Configure)} must be called on the {nameof(MongoDbBuilder)} to provide MongoDB client and database configuration.");
         }
 
-        builder.Services.AddSingleton(new EmitBuilder.PersistenceProviderMarker("MongoDB"));
+        builder.Services.AddSingleton(new PersistenceProviderMarker("MongoDB"));
 
         BsonConfiguration.Configure();
 
@@ -148,8 +149,13 @@ public static class MongoDbEmitBuilderExtensions
 
     private static void RegisterOutboxServices(EmitBuilder builder, MongoDbBuilder mongoBuilder)
     {
-        builder.Services.AddSingleton(new EmitBuilder.OutboxRegistrationMarker("MongoDB"));
-        builder.OutboxOptionsConfiguration = mongoBuilder.OutboxOptionsConfiguration;
+        builder.Services.AddSingleton(new OutboxRegistrationMarker("MongoDB"));
+
+        var optionsBuilder = builder.Services.AddOptions<OutboxOptions>();
+        if (mongoBuilder.OutboxOptionsConfiguration is { } configure)
+        {
+            optionsBuilder.Configure(configure);
+        }
 
         builder.Services.AddScoped<MongoDbOutboxRepository>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<MongoDbOutboxRepository>());
@@ -157,7 +163,7 @@ public static class MongoDbEmitBuilderExtensions
 
     private static void RegisterDistributedLockServices(EmitBuilder builder)
     {
-        builder.Services.AddSingleton(new EmitBuilder.DistributedLockRegistrationMarker("MongoDB"));
+        builder.Services.AddSingleton(new DistributedLockRegistrationMarker("MongoDB"));
 
         builder.Services.TryAddSingleton<MongoDbDistributedLockProvider>();
         builder.Services.AddSingleton<IDistributedLockProvider>(

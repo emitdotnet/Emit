@@ -32,10 +32,10 @@ public class KafkaDeadLetterComplianceTests(KafkaContainerFixture fixture)
             // Source topic — producer + consumer that always fails, dead-lettering to dlqTopic.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -49,8 +49,8 @@ public class KafkaDeadLetterComplianceTests(KafkaContainerFixture fixture)
             // DLQ topic — consumer only; no producer registration needed (DlqProducer uses raw bytes).
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {

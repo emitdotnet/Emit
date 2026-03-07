@@ -165,6 +165,6 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
 
         // Assert
         Assert.Contains(services, d =>
-            d.ImplementationInstance is EmitBuilder.PersistenceProviderMarker { ProviderName: "EntityFrameworkCore" });
+            d.ImplementationInstance is PersistenceProviderMarker { ProviderName: "EntityFrameworkCore" });
     }
 }

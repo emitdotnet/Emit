@@ -75,10 +75,10 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
 
                         kafka.Topic<string, string>(topic, t =>
                         {
-                            t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                            t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                            t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                            t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                            t.SetUtf8KeySerializer();
+                            t.SetUtf8ValueSerializer();
+                            t.SetUtf8KeyDeserializer();
+                            t.SetUtf8ValueDeserializer();
 
                             t.Producer();
                             t.ConsumerGroup(groupId, group =>

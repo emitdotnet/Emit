@@ -26,10 +26,10 @@ public class KafkaWorkerDistributionComplianceTests(KafkaContainerFixture fixtur
 
             kafka.Topic<byte[], string>(topic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.ByteArray);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.ByteArray);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetByteArrayKeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetByteArrayKeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

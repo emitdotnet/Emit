@@ -27,10 +27,10 @@ public class KafkaValidationThrowsComplianceTests(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -65,10 +65,10 @@ public class KafkaValidationThrowsComplianceTests(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -85,8 +85,8 @@ public class KafkaValidationThrowsComplianceTests(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {
@@ -116,10 +116,10 @@ public class KafkaValidationThrowsComplianceTests(KafkaContainerFixture fixture)
             // Source topic: validator throws → exception propagates to OnError → dead-letters to DLQ.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -136,8 +136,8 @@ public class KafkaValidationThrowsComplianceTests(KafkaContainerFixture fixture)
             // DLQ topic: captures dead-lettered messages.
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {

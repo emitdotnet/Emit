@@ -31,10 +31,10 @@ public class KafkaErrorPolicyComplianceTests(KafkaContainerFixture fixture)
             // Source topic — producer + consumer with typed exception clause.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -50,8 +50,8 @@ public class KafkaErrorPolicyComplianceTests(KafkaContainerFixture fixture)
             // DLQ topic — consumer only; captures dead-lettered messages.
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {
@@ -82,10 +82,10 @@ public class KafkaErrorPolicyComplianceTests(KafkaContainerFixture fixture)
             // Source topic — producer + consumer that always throws; predicate filters by message content.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -103,8 +103,8 @@ public class KafkaErrorPolicyComplianceTests(KafkaContainerFixture fixture)
             // DLQ topic — consumer only.
             kafka.Topic<string, string>(dlqTopic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup(dlqGroupId, group =>
                 {

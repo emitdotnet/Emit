@@ -22,8 +22,8 @@ public class KafkaExternalMessageComplianceTests(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Utf8);
-                t.SetValueDeserializer(ConfluentKafka.Deserializers.Utf8);
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
 
                 t.ConsumerGroup($"test-group-{Guid.NewGuid():N}", group =>
                 {
