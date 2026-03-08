@@ -3,12 +3,11 @@ namespace Emit.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Base context for all inbound (consumer/handler) pipelines.
-/// Each transport provides an internal subclass (e.g., <c>InboundKafkaContext</c>,
-/// <c>InboundMediatorContext</c>) that carries transport-specific metadata.
+/// Context for all inbound (consumer/handler) pipelines.
+/// Transport-specific metadata is carried via features on <see cref="MessageContext.Features"/>.
 /// </summary>
 /// <typeparam name="T">The message type.</typeparam>
-public abstract class InboundContext<T> : MessageContext<T>, IEmitContext
+public class InboundContext<T> : MessageContext<T>, IEmitContext
 {
     private IEmitContext? emitContext;
 

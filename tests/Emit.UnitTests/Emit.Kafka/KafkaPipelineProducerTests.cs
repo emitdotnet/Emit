@@ -64,13 +64,13 @@ public sealed class KafkaPipelineProducerTests
     }
 
     [Fact]
-    public async Task GivenValidMessage_WhenProduceAsync_ThenOutboundKafkaContextHasKeyAndTopic()
+    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKeyAndTopicViaFeatures()
     {
         // Arrange
-        OutboundKafkaContext<string, string>? capturedContext = null;
+        OutboundContext<string>? capturedContext = null;
         MessageDelegate<OutboundContext<string>> pipeline = ctx =>
         {
-            capturedContext = (OutboundKafkaContext<string, string>)ctx;
+            capturedContext = ctx;
             return Task.CompletedTask;
         };
         var producer = new KafkaPipelineProducer<string, string>(pipeline, "orders", null!, timeProvider);
@@ -81,8 +81,12 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        Assert.Equal("order-key", capturedContext.Key);
-        Assert.Equal("orders", capturedContext.Topic);
+        var keyFeature = capturedContext.Features.Get<IKeyFeature<string>>();
+        Assert.NotNull(keyFeature);
+        Assert.Equal("order-key", keyFeature.Key);
+        var kafkaFeature = capturedContext.Features.Get<IKafkaFeature>();
+        Assert.NotNull(kafkaFeature);
+        Assert.Equal("orders", kafkaFeature.Topic);
     }
 
     [Fact]

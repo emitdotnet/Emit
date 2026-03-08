@@ -330,18 +330,13 @@ internal sealed class ConsumerWorker<TKey, TValue>
         foreach (var entry in consumerPipelines)
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var context = new InboundKafkaContext<TKey, TValue>
+            var context = new InboundContext<TValue>
             {
                 MessageId = Guid.NewGuid().ToString(),
                 Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
                 CancellationToken = cancellationToken,
                 Services = scope.ServiceProvider,
                 Message = deserialized.Value,
-                Key = deserialized.Key,
-                Topic = deserialized.Topic,
-                Partition = deserialized.Partition,
-                Offset = deserialized.Offset,
-                Headers = deserialized.Headers,
             };
             var keyFeature = new KeyFeature<TKey>(deserialized.Key);
             context.Features.Set<IKeyFeature<TKey>>(keyFeature);

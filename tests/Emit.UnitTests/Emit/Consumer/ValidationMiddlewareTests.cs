@@ -6,7 +6,6 @@ using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.DependencyInjection;
-using global::Emit.Kafka.Consumer;
 using global::Emit.Metrics;
 using global::Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,20 +21,15 @@ public sealed class ValidationMiddlewareTests
 
     // ── Helpers ──
 
-    private static InboundKafkaContext<string, string> CreateContext(IServiceProvider? services = null)
+    private static InboundContext<string> CreateContext(IServiceProvider? services = null)
     {
-        var context = new InboundKafkaContext<string, string>
+        var context = new InboundContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
             Services = services ?? new ServiceCollection().BuildServiceProvider(),
             Message = "test-message",
-            Key = "test-key",
-            Topic = "orders",
-            Partition = 0,
-            Offset = 42,
-            Headers = [new("correlation-id", "abc")],
         };
         var properties = new Dictionary<string, string>
         {

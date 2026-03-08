@@ -9,7 +9,6 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | `README.md` | Kafka provider documentation: configuration, serialization, migration guide | Understand Kafka provider usage or configuration options |
 | `KafkaOutboxProvider.cs` | IOutboxProvider implementation: deserializes KafkaPayload and produces to real Kafka | Understand Kafka entry processing flow |
 | `KafkaPipelineProducer.cs` | IEventProducer implementation invoking outbound middleware pipeline before serializing and producing | Understand producer pipeline integration |
-| `OutboundKafkaContext.cs` | Outbound pipeline context carrying Kafka-specific message data for production | Understand Kafka outbound pipeline context |
 | `KafkaSerializationHelper.cs` | Shared serialization utilities for Kafka key/value serialization | Understand or modify Kafka message serialization |
 | `Provider.cs` | Well-known "kafka" provider identifier constant | Reference Kafka provider ID |
 | `Emit.Kafka.csproj` | Project file with Confluent.Kafka dependency | Configure Kafka provider dependencies |
