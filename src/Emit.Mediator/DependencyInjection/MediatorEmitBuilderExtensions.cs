@@ -140,7 +140,7 @@ public static class MediatorEmitBuilderExtensions
 
         return (request, services, timeProvider, ct, responseFeature) =>
         {
-            var context = new InboundMediatorContext<TRequest>
+            var context = new InboundContext<TRequest>
             {
                 MessageId = Guid.NewGuid().ToString(),
                 Timestamp = timeProvider.GetUtcNow(),

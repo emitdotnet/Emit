@@ -15,7 +15,6 @@ In-process mediator for request/response dispatching with middleware pipeline su
 | `MediatorHandlerInvoker.cs` | Terminal adapter resolving typed handler, invoking it, and writing response to IResponseFeature | Understand handler invocation |
 | `MediatorVoidHandlerInvoker.cs` | Terminal adapter for void request handlers without response | Understand void handler invocation |
 | `MediatorResponseFeature.cs` | IResponseFeature implementation storing typed responses in mediator patterns | Understand response flow |
-| `InboundMediatorContext.cs` | Inbound pipeline context carrying typed request for the mediator terminal adapter | Understand mediator pipeline context |
 
 ## Subdirectories
 

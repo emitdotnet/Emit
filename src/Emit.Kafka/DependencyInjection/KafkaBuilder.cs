@@ -302,24 +302,26 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         });
     }
 
-    private static async Task<(byte[]? KeyBytes, byte[]? ValueBytes, ConfluentKafka.Headers? ConvertedHeaders)> SerializeMessageAsync<TKey, TValue>(
-        OutboundKafkaContext<TKey, TValue> kafka,
+    private static async Task<(byte[]? KeyBytes, byte[]? ValueBytes)> SerializeMessageAsync<TKey, TValue>(
+        TKey key,
+        TValue value,
         string topicName,
+        IReadOnlyList<KeyValuePair<string, string>> headers,
         ConfluentKafka.ISerializer<TKey>? keySerializer,
         ConfluentKafka.ISerializer<TValue>? valueSerializer,
         ConfluentKafka.IAsyncSerializer<TKey>? keyAsyncSerializer,
         ConfluentKafka.IAsyncSerializer<TValue>? valueAsyncSerializer)
     {
-        var kafkaHeaders = KafkaSerializationHelper.ConvertHeaders(kafka.Headers);
+        var kafkaHeaders = KafkaSerializationHelper.ConvertHeaders(headers);
 
         var keyBytes = await KafkaSerializationHelper.SerializeAsync(
-            kafka.Key, topicName, kafkaHeaders, keySerializer, keyAsyncSerializer,
+            key, topicName, kafkaHeaders, keySerializer, keyAsyncSerializer,
             ConfluentKafka.MessageComponentType.Key).ConfigureAwait(false);
         var valueBytes = await KafkaSerializationHelper.SerializeAsync(
-            kafka.Message, topicName, kafkaHeaders, valueSerializer, valueAsyncSerializer,
+            value, topicName, kafkaHeaders, valueSerializer, valueAsyncSerializer,
             ConfluentKafka.MessageComponentType.Value).ConfigureAwait(false);
 
-        return (keyBytes, valueBytes, kafkaHeaders);
+        return (keyBytes, valueBytes);
     }
 
     private static MessageDelegate<OutboundContext<TValue>> CreateOutboxTerminal<TKey, TValue>(
@@ -331,16 +333,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     {
         return OutboxTerminalBuilder.Build<TValue>(async (context, ct) =>
         {
-            var kafka = (OutboundKafkaContext<TKey, TValue>)context;
+            var messageKey = context.Features.Get<IKeyFeature<TKey>>()!.Key;
+            var messageHeaders = context.Features.Get<IHeadersFeature>()?.Headers ?? [];
 
-            var (keyBytes, valueBytes, _) = await SerializeMessageAsync(
-                kafka, topicName, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+            var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
+                messageKey, context.Message, topicName, messageHeaders, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
             var headers = new List<KeyValuePair<string, byte[]>>();
 
-            if (kafka.Headers is { Count: > 0 })
+            if (messageHeaders is { Count: > 0 })
             {
-                foreach (var (key, value) in kafka.Headers)
+                foreach (var (key, value) in messageHeaders)
                     headers.Add(new(key, System.Text.Encoding.UTF8.GetBytes(value)));
             }
 
@@ -381,11 +384,12 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     {
         return async context =>
         {
-            var kafka = (OutboundKafkaContext<TKey, TValue>)context;
+            var messageKey = context.Features.Get<IKeyFeature<TKey>>()!.Key;
             var confluentProducer = context.Services.GetRequiredService<ConfluentKafka.IProducer<byte[], byte[]>>();
+            var messageHeaders = context.Features.Get<IHeadersFeature>()?.Headers ?? [];
 
-            var (keyBytes, valueBytes, _) = await SerializeMessageAsync(
-                kafka, topicName, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+            var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
+                messageKey, context.Message, topicName, messageHeaders, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
             var kafkaMessage = new ConfluentKafka.Message<byte[], byte[]>
             {
@@ -397,9 +401,9 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             kafkaMessage.Headers = [];
 
             // Add user-provided headers
-            if (kafka.Headers is { Count: > 0 })
+            if (messageHeaders is { Count: > 0 })
             {
-                foreach (var (key, value) in kafka.Headers)
+                foreach (var (key, value) in messageHeaders)
                     kafkaMessage.Headers.Add(key, System.Text.Encoding.UTF8.GetBytes(value));
             }
 

@@ -7,7 +7,6 @@
 | `ConsumerGroupWorker.cs` | BackgroundService managing Kafka consumer group lifecycle and partition assignment | Understand consumer group orchestration |
 | `ConsumerWorker.cs` | Per-partition/per-group worker processing messages via channel and IConsumer | Understand message dispatch and processing flow |
 | `ConsumerGroupRegistration.cs` | Immutable descriptor capturing build-time consumer group configuration | Understand consumer group registration model |
-| `InboundKafkaContext.cs` | Inbound pipeline context carrying deserialized Kafka message data for consumer pipeline | Understand Kafka inbound pipeline context |
 | `KafkaConsumerFlowControl.cs` | IConsumerFlowControl implementation for pausing and resuming Kafka consumer partitions | Implement flow control or backpressure handling |
 | `DlqProducer.cs` | Dead letter queue producer for routing failed messages to DLQ topics | Understand DLQ message routing or debug DLQ behavior |
 | `StartupDiagnosticsLogger.cs` | Logs consumer group startup diagnostics and configuration | Debug consumer startup issues or understand consumer configuration |

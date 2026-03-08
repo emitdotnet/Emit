@@ -23,16 +23,13 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var context = new OutboundKafkaContext<TKey, TValue>
+        var context = new OutboundContext<TValue>
         {
             MessageId = Guid.NewGuid().ToString(),
             Timestamp = timeProvider.GetUtcNow(),
             CancellationToken = cancellationToken,
             Services = services,
             Message = message.Value,
-            Key = message.Key,
-            Topic = topic,
-            Headers = message.Headers,
         };
         var keyFeature = new KeyFeature<TKey>(message.Key);
         context.Features.Set<IKeyFeature<TKey>>(keyFeature);

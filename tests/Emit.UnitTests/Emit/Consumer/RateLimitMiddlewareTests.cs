@@ -1,29 +1,24 @@
 namespace Emit.UnitTests.Consumer;
 
 using System.Threading.RateLimiting;
+using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
-using global::Emit.Kafka.Consumer;
 using global::Emit.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 public sealed class RateLimitMiddlewareTests
 {
-    private static InboundKafkaContext<string, string> CreateContext(CancellationToken cancellationToken = default)
+    private static InboundContext<string> CreateContext(CancellationToken cancellationToken = default)
     {
-        return new InboundKafkaContext<string, string>
+        return new InboundContext<string>
         {
             MessageId = "test",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = cancellationToken,
             Message = "hello",
-            Key = "key",
-            Topic = "test-topic",
-            Partition = 0,
-            Offset = 0,
-            Headers = [],
             Services = new ServiceCollection().BuildServiceProvider(),
         };
     }
