@@ -23,7 +23,7 @@ public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<T
 
     /// <inheritdoc />
     public IInboundConfigurable<TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class, IMiddleware<InboundContext<TValue>>
+        where TMiddleware : class, IMiddleware<ConsumeContext<TValue>>
     {
         Pipeline.Use(typeof(TMiddleware), lifetime);
         return this;

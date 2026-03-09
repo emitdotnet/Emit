@@ -12,6 +12,7 @@ using Emit.Kafka.Observability;
 using Emit.Metrics;
 using Emit.Observability;
 using Emit.Pipeline;
+using Emit.Pipeline.Modules;
 using Emit.Routing;
 using Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
@@ -265,8 +266,12 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var useOutbox = producerBuilder?.OutboxEnabled == true;
         var producerPipeline = producerBuilder?.Pipeline;
 
+        // Build transport URIs for the producer
+        var capturedDestinationAddress = BuildDestinationAddress(topicName);
+        var capturedHostAddress = BuildHostAddress();
+
         // Thread-safe lazy pipeline building (built once on first resolution)
-        MessageDelegate<OutboundContext<TValue>>? builtPipeline = null;
+        IMiddlewarePipeline<SendContext<TValue>>? builtPipeline = null;
         var buildLock = new object();
 
         services.AddScoped<IEventProducer<TKey, TValue>>(sp =>
@@ -289,16 +294,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
 
                         // Pipeline layering: global → kafka → per-producer → terminal
                         builtPipeline = producerPipeline is not null
-                            ? producerPipeline.Build<OutboundContext<TValue>, TValue>(
+                            ? producerPipeline.Build<SendContext<TValue>, TValue>(
                                 sp, terminal, capturedGlobalOutbound, kafkaOutbound)
-                            : kafkaOutbound.Build<OutboundContext<TValue>, TValue>(
+                            : kafkaOutbound.Build<SendContext<TValue>, TValue>(
                                 sp, terminal, capturedGlobalOutbound);
                     }
                 }
             }
 
             return new KafkaPipelineProducer<TKey, TValue>(
-                builtPipeline, topicName, sp, sp.GetRequiredService<TimeProvider>());
+                builtPipeline, capturedDestinationAddress, capturedHostAddress,
+                sp, sp.GetRequiredService<TimeProvider>());
         });
     }
 
@@ -324,7 +330,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         return (keyBytes, valueBytes);
     }
 
-    private static MessageDelegate<OutboundContext<TValue>> CreateOutboxTerminal<TKey, TValue>(
+    private static IMiddlewarePipeline<SendContext<TValue>> CreateOutboxTerminal<TKey, TValue>(
         string topicName,
         ConfluentKafka.ISerializer<TKey>? keySerializer,
         ConfluentKafka.ISerializer<TValue>? valueSerializer,
@@ -333,21 +339,18 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     {
         return OutboxTerminalBuilder.Build<TValue>(async (context, ct) =>
         {
-            var messageKey = context.Features.Get<IKeyFeature<TKey>>()!.Key;
-            var messageHeaders = context.Features.Get<IHeadersFeature>()?.Headers ?? [];
+            var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
 
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
-                messageKey, context.Message, topicName, messageHeaders, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+                messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
+            // Convert all context.Headers (user + trace) to byte headers for the Kafka payload
             var headers = new List<KeyValuePair<string, byte[]>>();
-
-            if (messageHeaders is { Count: > 0 })
+            if (context.Headers is { Count: > 0 })
             {
-                foreach (var (key, value) in messageHeaders)
+                foreach (var (key, value) in context.Headers)
                     headers.Add(new(key, System.Text.Encoding.UTF8.GetBytes(value)));
             }
-
-            TraceContextHeaderInjector.InjectByteHeaders(context.Features.Get<IActivityFeature>(), headers);
 
             var payload = new Serialization.KafkaPayload
             {
@@ -375,21 +378,32 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         });
     }
 
-    private static MessageDelegate<OutboundContext<TValue>> CreateDirectTerminal<TKey, TValue>(
+    private static IMiddlewarePipeline<SendContext<TValue>> CreateDirectTerminal<TKey, TValue>(
         string topicName,
         ConfluentKafka.ISerializer<TKey>? keySerializer,
         ConfluentKafka.ISerializer<TValue>? valueSerializer,
         ConfluentKafka.IAsyncSerializer<TKey>? keyAsyncSerializer,
         ConfluentKafka.IAsyncSerializer<TValue>? valueAsyncSerializer)
     {
-        return async context =>
+        return new DirectTerminalPipeline<TKey, TValue>(
+            topicName, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer);
+    }
+
+    private sealed class DirectTerminalPipeline<TKey, TValue>(
+        string topicName,
+        ConfluentKafka.ISerializer<TKey>? keySerializer,
+        ConfluentKafka.ISerializer<TValue>? valueSerializer,
+        ConfluentKafka.IAsyncSerializer<TKey>? keyAsyncSerializer,
+        ConfluentKafka.IAsyncSerializer<TValue>? valueAsyncSerializer)
+        : IMiddlewarePipeline<SendContext<TValue>>
+    {
+        public async Task InvokeAsync(SendContext<TValue> context)
         {
-            var messageKey = context.Features.Get<IKeyFeature<TKey>>()!.Key;
+            var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
             var confluentProducer = context.Services.GetRequiredService<ConfluentKafka.IProducer<byte[], byte[]>>();
-            var messageHeaders = context.Features.Get<IHeadersFeature>()?.Headers ?? [];
 
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
-                messageKey, context.Message, topicName, messageHeaders, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+                messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
             var kafkaMessage = new ConfluentKafka.Message<byte[], byte[]>
             {
@@ -397,24 +411,16 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                 Value = valueBytes!,
             };
 
-            // Prepare headers
+            // Convert all context.Headers (user + trace) to Kafka headers
             kafkaMessage.Headers = [];
-
-            // Add user-provided headers
-            if (messageHeaders is { Count: > 0 })
+            if (context.Headers is { Count: > 0 })
             {
-                foreach (var (key, value) in messageHeaders)
+                foreach (var (key, value) in context.Headers)
                     kafkaMessage.Headers.Add(key, System.Text.Encoding.UTF8.GetBytes(value));
             }
 
-            // Inject trace context
-            var traceHeaders = new List<KeyValuePair<string, byte[]>>();
-            TraceContextHeaderInjector.InjectByteHeaders(context.Features.Get<IActivityFeature>(), traceHeaders);
-            foreach (var (key, value) in traceHeaders)
-                kafkaMessage.Headers.Add(key, value);
-
             await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
-        };
+        }
     }
 
     private void RegisterConsumerGroup<TKey, TValue>(
@@ -456,7 +462,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var invokerEntries = groupBuilder.ConsumerTypes
             .Select(t => (
                 ConsumerType: t,
-                Invoker: (IHandlerInvoker<InboundContext<TValue>>)new HandlerInvoker<TValue>(t),
+                Invoker: (IHandlerInvoker<ConsumeContext<TValue>>)new HandlerInvoker<TValue>(t),
                 Pipeline: consumerPipelines.GetValueOrDefault(t)))
             .ToList();
 
@@ -470,16 +476,22 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var commitInterval = groupBuilder.CommitInterval;
         var workerStopTimeout = groupBuilder.WorkerStopTimeout;
 
+        // Build transport URI for the consumer group
+        var capturedDestinationAddress = BuildDestinationAddress(topicName);
+
         // Build error policies at registration time
         var groupErrorPolicy = BuildErrorPolicy(groupBuilder.GroupErrorPolicyAction);
         var deserializationErrorAction = BuildDeserializationErrorAction(groupBuilder.DeserializationErrorAction);
-        var groupValidation = groupBuilder.GroupValidation;
+        var validationModule = groupBuilder.Validation;
         var resolveDeadLetterDestination = DeadLetterConfig?.TopicNamingConvention;
 
-        // Build DeadLetterTopicMap from error policies and validation actions
+        // Extract retry config from error policy (retry is now a separate middleware concern)
+        var retryConfig = ExtractRetryConfig(groupErrorPolicy);
+
+        // Build DeadLetterTopicMap from error policies
         var deadLetterTopicMap = BuildDeadLetterTopicMap(
             topicName, deserializationErrorAction, groupErrorPolicy,
-            groupValidation, resolveDeadLetterDestination);
+            resolveDeadLetterDestination);
 
         // Build rate limiter at registration time (singleton, shared across all workers)
         if (groupBuilder.RateLimitAction is not null)
@@ -534,6 +546,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             {
                 TopicName = topicName,
                 GroupId = groupId,
+                DestinationAddress = capturedDestinationAddress,
                 KeyDeserializer = topicBuilder.KeyDeserializer,
                 ValueDeserializer = topicBuilder.ValueDeserializer,
                 KeyAsyncDeserializer = topicBuilder.KeyAsyncDeserializer ?? keyDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
@@ -542,12 +555,18 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                 // Singleton middleware is shared (same DI singleton); factory middleware creates fresh instances per build.
                 BuildConsumerPipelines = () =>
                 {
+                    // Build error evaluator that strips RetryAction (retry handled by RetryMiddleware)
+                    Func<Exception, ErrorAction>? errorEvaluator = groupErrorPolicy is not null
+                        ? ex => StripRetryAction(groupErrorPolicy.Evaluate(ex))
+                        : null;
+
                     var composer = new ConsumerPipelineComposer<TValue>
                     {
                         Services = sp,
                         LoggerFactory = loggerFactory,
-                        GroupValidation = groupValidation,
-                        GroupErrorPolicy = groupErrorPolicy,
+                        Validation = validationModule,
+                        RetryConfig = retryConfig,
+                        ErrorPolicy = errorEvaluator,
                         ResolveDeadLetterDestination = resolveDeadLetterDestination is not null ? topic => resolveDeadLetterDestination(topic) : null,
                         ConsumeObservers = consumeObservers,
                         GroupPipeline = groupPipeline,
@@ -561,7 +580,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     foreach (var entry in invokerEntries)
                     {
                         entries.Add(composer.Compose(
-                            entry.Invoker.InvokeAsync, entry.Pipeline,
+                            entry.Invoker, entry.Pipeline,
                             entry.ConsumerType.Name, ConsumerKind.Direct, entry.ConsumerType));
                     }
 
@@ -569,14 +588,19 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     {
                         foreach (var routerReg in routers)
                         {
+                            // Strip retry from unmatched route action (router only checks for DiscardAction)
+                            var unmatchedAction = groupErrorPolicy is not null
+                                ? StripRetryAction(groupErrorPolicy.Evaluate(new UnmatchedRouteException(null)))
+                                : null;
+
                             var routerInvoker = routerReg.BuildInvoker(
                                 type => new HandlerInvoker<TValue>(type),
                                 sp,
                                 loggerFactory,
-                                groupErrorPolicy?.Evaluate(new UnmatchedRouteException(null)));
+                                unmatchedAction);
 
                             entries.Add(composer.Compose(
-                                routerInvoker.InvokeAsync, null,
+                                routerInvoker, null,
                                 routerReg.Identifier, ConsumerKind.Router, null));
                         }
                     }
@@ -623,6 +647,54 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             ClientConfigAction(kafkaClientConfig);
             kafkaClientConfig.ApplyTo(config);
         }
+    }
+
+    /// <summary>
+    /// Resolves the bootstrap servers string from the client config action.
+    /// Falls back to <c>localhost:9092</c> if not configured.
+    /// </summary>
+    private string ResolveBootstrapServers()
+    {
+        if (ClientConfigAction is null)
+        {
+            return "localhost:9092";
+        }
+
+        var config = new KafkaClientConfig();
+        ClientConfigAction(config);
+        return config.BootstrapServers ?? "localhost:9092";
+    }
+
+    /// <summary>
+    /// Builds a destination <see cref="Uri"/> for a Kafka topic using the configured broker address.
+    /// </summary>
+    private Uri BuildDestinationAddress(string topicName)
+    {
+        var (host, port) = ParseBrokerAddress(ResolveBootstrapServers());
+        return EmitEndpointAddress.ForEntity("kafka", host, port, "kafka", topicName);
+    }
+
+    /// <summary>
+    /// Builds a host-only <see cref="Uri"/> for the configured Kafka broker (used as SourceAddress).
+    /// </summary>
+    private Uri BuildHostAddress()
+    {
+        var (host, port) = ParseBrokerAddress(ResolveBootstrapServers());
+        return EmitEndpointAddress.ForHost("kafka", host, port, "kafka");
+    }
+
+    private static (string Host, int? Port) ParseBrokerAddress(string bootstrapServers)
+    {
+        // Take first broker from CSV list
+        var firstBroker = bootstrapServers.Split(',')[0].Trim();
+        var colonIndex = firstBroker.LastIndexOf(':');
+
+        if (colonIndex > 0 && int.TryParse(firstBroker[(colonIndex + 1)..], out var port))
+        {
+            return (firstBroker[..colonIndex], port);
+        }
+
+        return (firstBroker, null);
     }
 
     private void EnsureSchemaRegistryConfigured<TKey, TValue>(
@@ -684,7 +756,6 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         string topicName,
         ErrorAction? deserializationErrorAction,
         ErrorPolicy? groupErrorPolicy,
-        ConsumerValidation? groupValidation,
         Func<string, string>? resolveConvention)
     {
         var entries = new List<DeadLetterEntry>();
@@ -692,16 +763,10 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         // Deserialization error action (group-level)
         CollectFromAction(deserializationErrorAction, null, topicName, resolveConvention, entries);
 
-        // Group error policy
+        // Group error policy (validation failures are now handled by the same error policy)
         if (groupErrorPolicy is not null)
         {
             CollectFromPolicy(groupErrorPolicy, null, topicName, resolveConvention, entries);
-        }
-
-        // Group validation action
-        if (groupValidation is not null)
-        {
-            CollectFromAction(groupValidation.Action, null, topicName, resolveConvention, entries);
         }
 
         return entries.Count > 0 ? new DeadLetterTopicMap(entries) : DeadLetterTopicMap.Empty;
@@ -753,6 +818,28 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                 break;
         }
     }
+
+    /// <summary>
+    /// Extracts retry configuration from the default action of an error policy.
+    /// Returns <c>null</c> if the default action is not a <see cref="ErrorAction.RetryAction"/>.
+    /// </summary>
+    private static RetryConfig? ExtractRetryConfig(ErrorPolicy? policy)
+    {
+        if (policy?.DefaultAction is ErrorAction.RetryAction retry)
+        {
+            return new RetryConfig(retry.MaxAttempts, retry.Backoff);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strips <see cref="ErrorAction.RetryAction"/> wrapping from an error action,
+    /// returning the exhaustion action. Retry is handled by <c>RetryMiddleware</c>;
+    /// the error policy should only return dead-letter or discard.
+    /// </summary>
+    private static ErrorAction StripRetryAction(ErrorAction action) =>
+        action is ErrorAction.RetryAction retry ? retry.ExhaustionAction : action;
 
     private sealed class SchemaRegistryMarker;
 }

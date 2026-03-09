@@ -1,57 +1,41 @@
 namespace Emit.UnitTests.Consumer;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
-using global::Emit.DependencyInjection;
 using global::Emit.Metrics;
-using global::Emit.Pipeline;
+using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
 
 public sealed class ValidationMiddlewareTests
 {
-    private readonly Mock<IDeadLetterSink> mockDeadLetterSink = new();
-    private readonly ILogger logger = NullLogger.Instance;
+    private readonly ILogger<ValidationMiddleware<string>> logger =
+        NullLogger<ValidationMiddleware<string>>.Instance;
 
     // ── Helpers ──
 
-    private static InboundContext<string> CreateContext(IServiceProvider? services = null)
+    private static ConsumeContext<string> CreateContext(IServiceProvider? services = null)
     {
-        var context = new InboundContext<string>
+        var svc = services ?? new ServiceCollection().BuildServiceProvider();
+        return new ConsumeContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
-            Services = services ?? new ServiceCollection().BuildServiceProvider(),
+            Services = svc,
             Message = "test-message",
+            TransportContext = TestTransportContext.Create(svc),
         };
-        var properties = new Dictionary<string, string>
-        {
-            ["topic"] = "orders",
-            ["partition"] = "0",
-            ["offset"] = "42",
-        };
-        context.Features.Set<IMessageSourceFeature>(new MessageSourceFeature(properties));
-        context.Features.Set<IRawBytesFeature>(new RawBytesFeature([1, 2, 3], [4, 5, 6]));
-        context.Features.Set<IHeadersFeature>(new HeadersFeature([new("correlation-id", "abc")]));
-        return context;
     }
 
-    private ValidationMiddleware<string> CreateMiddleware(
-        ConsumerValidation validation,
-        IDeadLetterSink? deadLetterSink = null,
-        Func<string, string?>? resolveDeadLetterTopic = null)
+    private ValidationMiddleware<string> CreateMiddleware(ValidationModule<string> validation)
     {
         return new ValidationMiddleware<string>(
             validation,
-            deadLetterSink,
-            resolveDeadLetterTopic,
             new EmitMetrics(null, new EmitMetricsEnrichment()),
             logger);
     }
@@ -62,147 +46,85 @@ public sealed class ValidationMiddlewareTests
     public async Task GivenValidMessage_WhenInvoked_ThenCallsNextMiddleware()
     {
         // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Success)),
-            ErrorAction.Discard());
-        var middleware = CreateMiddleware(validation);
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success));
+        var middleware = CreateMiddleware(module);
         var nextCalled = false;
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), _ => { nextCalled = true; return Task.CompletedTask; });
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
 
         // Assert
         Assert.True(nextCalled);
     }
 
     [Fact]
-    public async Task GivenInvalidMessageWithDeadLetterAction_WhenInvoked_ThenCallsDeadLetterSinkWithCorrectHeaders()
+    public async Task GivenInvalidMessage_WhenInvoked_ThenThrowsMessageValidationException()
     {
         // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Fail("field is required"))),
-            ErrorAction.DeadLetter("orders-dlt"));
-        var middleware = CreateMiddleware(validation, mockDeadLetterSink.Object);
-        var nextCalled = false;
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")));
+        var middleware = CreateMiddleware(module);
 
-        // Act
-        await middleware.InvokeAsync(CreateContext(), _ => { nextCalled = true; return Task.CompletedTask; });
-
-        // Assert — handler should NOT be called
-        Assert.False(nextCalled);
-
-        // Assert — dead letter sink should be called
-        mockDeadLetterSink.Verify(
-            s => s.ProduceAsync(
-                It.IsAny<byte[]?>(),
-                It.IsAny<byte[]?>(),
-                It.Is<IReadOnlyList<KeyValuePair<string, string>>>(h =>
-                    h.Any(kv => kv.Key == "x-emit-exception-type" && kv.Value == "Emit.MessageValidationException") &&
-                    h.Any(kv => kv.Key == "x-emit-exception-message" && kv.Value == "field is required") &&
-                    h.Any(kv => kv.Key == "x-emit-retry-count" && kv.Value == "0")),
-                "orders-dlt",
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<MessageValidationException>(
+            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
+        Assert.Contains("field is required", ex.Errors);
     }
 
     [Fact]
-    public async Task GivenInvalidMessageWithDiscardAction_WhenInvoked_ThenDoesNotCallNextAndDoesNotDeadLetter()
+    public async Task GivenInvalidMessage_WhenInvoked_ThenDoesNotCallNext()
     {
         // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Fail("invalid format"))),
-            ErrorAction.Discard());
-        var middleware = CreateMiddleware(validation, mockDeadLetterSink.Object);
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")));
+        var middleware = CreateMiddleware(module);
         var nextCalled = false;
 
-        // Act
-        await middleware.InvokeAsync(CreateContext(), _ => { nextCalled = true; return Task.CompletedTask; });
+        // Act — catch expected exception
+        try
+        {
+            await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        }
+        catch (MessageValidationException)
+        {
+            // expected
+        }
 
         // Assert
         Assert.False(nextCalled);
-        mockDeadLetterSink.Verify(
-            s => s.ProduceAsync(
-                It.IsAny<byte[]?>(),
-                It.IsAny<byte[]?>(),
-                It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
     }
 
     [Fact]
     public async Task GivenValidatorThrowsException_WhenInvoked_ThenExceptionPropagates()
     {
         // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                throw new TimeoutException("database unavailable")),
-            ErrorAction.Discard());
-        var middleware = CreateMiddleware(validation);
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) =>
+            throw new TimeoutException("database unavailable"));
+        var middleware = CreateMiddleware(module);
 
         // Act & Assert
         await Assert.ThrowsAsync<TimeoutException>(
-            () => middleware.InvokeAsync(CreateContext(), _ => Task.CompletedTask));
+            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
     }
 
     [Fact]
-    public async Task GivenMultipleValidationErrors_WhenDeadLettered_ThenErrorsConcatenatedInHeader()
+    public async Task GivenMultipleValidationErrors_WhenInvoked_ThenExceptionContainsAllErrors()
     {
         // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"]))),
-            ErrorAction.DeadLetter("orders-dlt"));
-        var middleware = CreateMiddleware(validation, mockDeadLetterSink.Object);
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(
+            MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])));
+        var middleware = CreateMiddleware(module);
 
-        // Act
-        await middleware.InvokeAsync(CreateContext(), _ => Task.CompletedTask);
-
-        // Assert
-        mockDeadLetterSink.Verify(
-            s => s.ProduceAsync(
-                It.IsAny<byte[]?>(),
-                It.IsAny<byte[]?>(),
-                It.Is<IReadOnlyList<KeyValuePair<string, string>>>(h =>
-                    h.Any(kv => kv.Key == "x-emit-exception-message"
-                        && kv.Value == "name is required; age must be positive; email is invalid")),
-                "orders-dlt",
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task GivenDeadLetterAction_WhenProduced_ThenRetryCountIsZero()
-    {
-        // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Fail("invalid"))),
-            ErrorAction.DeadLetter("orders-dlt"));
-        var middleware = CreateMiddleware(validation, mockDeadLetterSink.Object);
-
-        // Act
-        await middleware.InvokeAsync(CreateContext(), _ => Task.CompletedTask);
-
-        // Assert
-        mockDeadLetterSink.Verify(
-            s => s.ProduceAsync(
-                It.IsAny<byte[]?>(),
-                It.IsAny<byte[]?>(),
-                It.Is<IReadOnlyList<KeyValuePair<string, string>>>(h =>
-                    h.Any(kv => kv.Key == "x-emit-retry-count" && kv.Value == "0")),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<MessageValidationException>(
+            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
+        Assert.Equal(3, ex.Errors.Count);
+        Assert.Contains("name is required", ex.Errors);
+        Assert.Contains("age must be positive", ex.Errors);
+        Assert.Contains("email is invalid", ex.Errors);
     }
 
     [Fact]
@@ -210,19 +132,17 @@ public sealed class ValidationMiddlewareTests
     {
         // Arrange
         var delegateCalled = false;
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((msg, _) =>
-            {
-                delegateCalled = true;
-                Assert.Equal("test-message", msg);
-                return Task.FromResult(MessageValidationResult.Success);
-            }),
-            ErrorAction.Discard());
-        var middleware = CreateMiddleware(validation);
+        var module = new ValidationModule<string>();
+        module.Configure((msg, _) =>
+        {
+            delegateCalled = true;
+            Assert.Equal("test-message", msg);
+            return Task.FromResult(MessageValidationResult.Success);
+        });
+        var middleware = CreateMiddleware(module);
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), _ => Task.CompletedTask);
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert
         Assert.True(delegateCalled);
@@ -236,55 +156,20 @@ public sealed class ValidationMiddlewareTests
         services.AddScoped<StubValidator>();
         var sp = services.BuildServiceProvider();
 
-        var validation = new ConsumerValidation(
-            typeof(StubValidator),
-            null,
-            ErrorAction.Discard());
-        var middleware = CreateMiddleware(validation);
+        var module = new ValidationModule<string>();
+        module.Configure<StubValidator>();
+        var middleware = CreateMiddleware(module);
         var context = CreateContext(sp);
 
         // Act
-        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert — validator was resolved and invoked (StubValidator always returns Success)
         var validator = sp.GetRequiredService<StubValidator>();
         Assert.True(validator.WasCalled);
     }
 
-    [Fact]
-    public async Task GivenDeadLetterWithConvention_WhenNoExplicitTopic_ThenUsesConvention()
-    {
-        // Arrange
-        var validation = new ConsumerValidation(
-            null,
-            (Func<string, CancellationToken, Task<MessageValidationResult>>)((_, _) =>
-                Task.FromResult(MessageValidationResult.Fail("invalid"))),
-            ErrorAction.DeadLetter());
-        var middleware = CreateMiddleware(
-            validation,
-            mockDeadLetterSink.Object,
-            resolveDeadLetterTopic: topic => $"{topic}.dlq");
-
-        // Act
-        await middleware.InvokeAsync(CreateContext(), _ => Task.CompletedTask);
-
-        // Assert — should use the convention-resolved topic
-        mockDeadLetterSink.Verify(
-            s => s.ProduceAsync(
-                It.IsAny<byte[]?>(),
-                It.IsAny<byte[]?>(),
-                It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-                "orders.dlq",
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
     // ── Test infrastructure ──
-
-    private sealed class MessageSourceFeature(IReadOnlyDictionary<string, string> properties) : IMessageSourceFeature
-    {
-        public IReadOnlyDictionary<string, string> Properties { get; } = properties;
-    }
 
     internal sealed class StubValidator : IMessageValidator<string>
     {

@@ -71,7 +71,7 @@ This gets you from zero to a working producer/consumer pair in about five minute
    public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
        : IConsumer<PizzaOrdered>
    {
-       public Task ConsumeAsync(InboundContext<PizzaOrdered> context, CancellationToken cancellationToken)
+       public Task ConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken cancellationToken)
        {
            var pizza = context.Message;
            logger.LogInformation("New order {PizzaId} for {CustomerId}: {Toppings}",

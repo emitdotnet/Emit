@@ -74,7 +74,7 @@ public sealed class MessageRouterBuilder<TMessage, TRouteKey>
     /// <param name="selector">The route selector function.</param>
     /// <returns>An immutable registration descriptor.</returns>
     /// <exception cref="InvalidOperationException">No routes were registered.</exception>
-    public RouterRegistration<TMessage> Build(Func<InboundContext<TMessage>, TRouteKey?> selector)
+    public RouterRegistration<TMessage> Build(Func<ConsumeContext<TMessage>, TRouteKey?> selector)
     {
         ArgumentNullException.ThrowIfNull(selector);
 

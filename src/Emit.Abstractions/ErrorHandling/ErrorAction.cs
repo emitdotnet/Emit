@@ -76,6 +76,31 @@ public abstract class ErrorAction
     {
         /// <summary>The explicit dead letter topic name, or <c>null</c> to use the default.</summary>
         public string? TopicName => topicName;
+
+        /// <summary>
+        /// Resolves the dead-letter destination topic, applying explicit topic override before
+        /// falling back to a convention-based resolver.
+        /// </summary>
+        /// <param name="sourceTopic">The source topic the message originated from, used when applying a convention.</param>
+        /// <param name="resolveConvention">A convention function mapping a source topic to a dead-letter topic.</param>
+        /// <returns>
+        /// The explicit topic name if set; otherwise the result of <paramref name="resolveConvention"/> applied
+        /// to <paramref name="sourceTopic"/>; otherwise <c>null</c> if neither is available.
+        /// </returns>
+        public string? Resolve(string? sourceTopic, Func<string, string?>? resolveConvention)
+        {
+            if (!string.IsNullOrWhiteSpace(TopicName))
+            {
+                return TopicName;
+            }
+
+            if (sourceTopic is not null && resolveConvention is not null)
+            {
+                return resolveConvention(sourceTopic);
+            }
+
+            return null;
+        }
     }
 
     /// <summary>

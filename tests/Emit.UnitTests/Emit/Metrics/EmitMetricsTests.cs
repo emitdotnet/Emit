@@ -19,13 +19,14 @@ public sealed class EmitMetricsTests
     }
 
     [Fact]
-    public void GivenProduceDuration_WhenRecording_ThenMeasurementHasCorrectInstrumentNameAndTags()
+    public void GivenProduceCompleted_WhenRecording_ThenRecordsDurationAndCounterWithCorrectTags()
     {
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new EmitMetrics(null, enrichment);
         var listener = new MeterListener();
-        var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
+        var capturedDoubles = new List<(string Name, double Value, KeyValuePair<string, object?>[] Tags)>();
+        var capturedLongs = new List<(string Name, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         listener.InstrumentPublished = (instrument, listener) =>
         {
@@ -34,52 +35,26 @@ public sealed class EmitMetricsTests
         };
 
         listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-            captured.Add((instrument.Name, value, tags.ToArray())));
-
-        listener.Start();
-
-        // Act
-        metrics.RecordProduceDuration(1.5, "kafka", "success");
-
-        // Assert
-        Assert.Single(captured);
-        Assert.Equal("emit.pipeline.produce.duration", captured[0].Name);
-        Assert.Equal(1.5, captured[0].Value);
-        Assert.Contains(captured[0].Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
-        Assert.Contains(captured[0].Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
-
-        listener.Dispose();
-    }
-
-    [Fact]
-    public void GivenProduceCompleted_WhenRecording_ThenMeasurementHasCorrectInstrumentNameAndTags()
-    {
-        // Arrange
-        var enrichment = new EmitMetricsEnrichment();
-        var metrics = new EmitMetrics(null, enrichment);
-        var listener = new MeterListener();
-        var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
-
-        listener.InstrumentPublished = (instrument, listener) =>
-        {
-            if (instrument.Meter.Name == MeterNames.Emit)
-                listener.EnableMeasurementEvents(instrument);
-        };
-
+            capturedDoubles.Add((instrument.Name, value, tags.ToArray())));
         listener.SetMeasurementEventCallback<long>((instrument, value, tags, state) =>
-            captured.Add((instrument.Name, value, tags.ToArray())));
+            capturedLongs.Add((instrument.Name, value, tags.ToArray())));
 
         listener.Start();
 
         // Act
-        metrics.RecordProduceCompleted("kafka", "error");
+        metrics.RecordProduceCompleted(1.5, "kafka", "success");
 
-        // Assert
-        Assert.Single(captured);
-        Assert.Equal("emit.pipeline.produce.completed", captured[0].Name);
-        Assert.Equal(1L, captured[0].Value);
-        Assert.Contains(captured[0].Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
-        Assert.Contains(captured[0].Tags, t => t.Key == "result" && t.Value?.ToString() == "error");
+        // Assert — duration histogram
+        Assert.Single(capturedDoubles);
+        Assert.Equal("emit.pipeline.produce.duration", capturedDoubles[0].Name);
+        Assert.Equal(1.5, capturedDoubles[0].Value);
+        Assert.Contains(capturedDoubles[0].Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(capturedDoubles[0].Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+
+        // Assert — completion counter
+        Assert.Single(capturedLongs);
+        Assert.Equal("emit.pipeline.produce.completed", capturedLongs[0].Name);
+        Assert.Equal(1L, capturedLongs[0].Value);
 
         listener.Dispose();
     }
@@ -110,7 +85,7 @@ public sealed class EmitMetricsTests
         listener.Start();
 
         // Act
-        metrics.RecordProduceDuration(0.5, "kafka", "success");
+        metrics.RecordProduceCompleted(0.5, "kafka", "success");
 
         // Assert
         Assert.Single(captured);
@@ -123,13 +98,14 @@ public sealed class EmitMetricsTests
     }
 
     [Fact]
-    public void GivenConsumeDuration_WhenRecording_ThenMeasurementHasCorrectInstrumentNameAndTags()
+    public void GivenConsumeCompleted_WhenRecording_ThenRecordsDurationAndCounterWithCorrectTags()
     {
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new EmitMetrics(null, enrichment);
         var listener = new MeterListener();
-        var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
+        var capturedDoubles = new List<(string Name, double Value, KeyValuePair<string, object?>[] Tags)>();
+        var capturedLongs = new List<(string Name, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         listener.InstrumentPublished = (instrument, listener) =>
         {
@@ -138,19 +114,26 @@ public sealed class EmitMetricsTests
         };
 
         listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-            captured.Add((instrument.Name, value, tags.ToArray())));
+            capturedDoubles.Add((instrument.Name, value, tags.ToArray())));
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, state) =>
+            capturedLongs.Add((instrument.Name, value, tags.ToArray())));
 
         listener.Start();
 
         // Act
-        metrics.RecordConsumeDuration(2.3, "kafka", "success", "TestConsumer");
+        metrics.RecordConsumeCompleted(2.3, "kafka", "success", "TestConsumer");
 
-        // Assert
-        Assert.Single(captured);
-        Assert.Equal("emit.pipeline.consume.duration", captured[0].Name);
-        Assert.Equal(2.3, captured[0].Value);
-        Assert.Contains(captured[0].Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
-        Assert.Contains(captured[0].Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+        // Assert — duration histogram
+        Assert.Single(capturedDoubles);
+        Assert.Equal("emit.pipeline.consume.duration", capturedDoubles[0].Name);
+        Assert.Equal(2.3, capturedDoubles[0].Value);
+        Assert.Contains(capturedDoubles[0].Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(capturedDoubles[0].Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+
+        // Assert — completion counter
+        Assert.Single(capturedLongs);
+        Assert.Equal("emit.pipeline.consume.completed", capturedLongs[0].Name);
+        Assert.Equal(1L, capturedLongs[0].Value);
 
         listener.Dispose();
     }

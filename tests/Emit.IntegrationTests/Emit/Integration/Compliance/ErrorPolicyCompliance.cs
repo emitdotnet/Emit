@@ -237,7 +237,7 @@ public abstract class ErrorPolicyCompliance
     public sealed class PredicateThrowingConsumer(PredicateControl control) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException($"Simulated error: {control.MessageSuffix}");
     }
 
@@ -267,7 +267,7 @@ public abstract class ErrorPolicyCompliance
     public sealed class TypedExceptionConsumer(ThrowControl throwControl) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             return throwControl.ExceptionToThrow switch
             {
@@ -286,7 +286,7 @@ public abstract class ErrorPolicyCompliance
     public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

@@ -44,13 +44,13 @@ public static class InboundFilterExtensions
     /// <typeparam name="TMessage">The message type, inferred from the builder.</typeparam>
     /// <param name="builder">The inbound builder to register the filter on.</param>
     /// <param name="predicate">
-    /// A predicate that receives the inbound context. Return <c>true</c> to continue
+    /// A predicate that receives the consume context. Return <c>true</c> to continue
     /// the pipeline, <c>false</c> to skip.
     /// </param>
     /// <returns>The builder for method chaining.</returns>
     public static IInboundConfigurable<TMessage> Filter<TMessage>(
         this IInboundConfigurable<TMessage> builder,
-        Func<InboundContext<TMessage>, bool> predicate)
+        Func<ConsumeContext<TMessage>, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(predicate);
@@ -68,13 +68,13 @@ public static class InboundFilterExtensions
     /// <typeparam name="TMessage">The message type, inferred from the builder.</typeparam>
     /// <param name="builder">The inbound builder to register the filter on.</param>
     /// <param name="predicate">
-    /// An asynchronous predicate that receives the inbound context and a cancellation token.
+    /// An asynchronous predicate that receives the consume context and a cancellation token.
     /// Return <c>true</c> to continue the pipeline, <c>false</c> to skip.
     /// </param>
     /// <returns>The builder for method chaining.</returns>
     public static IInboundConfigurable<TMessage> Filter<TMessage>(
         this IInboundConfigurable<TMessage> builder,
-        Func<InboundContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
+        Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(predicate);

@@ -1,11 +1,29 @@
 namespace Emit.Abstractions;
+
 /// <summary>
-/// The non-generic envelope that flows through the middleware pipeline.
-/// Each pattern (Kafka, Mediator, Bus) provides an internal subclass via
-/// <see cref="MessageContext{T}"/> that carries strongly-typed message data.
+/// Base context for all pipeline operations. Provides cancellation, service resolution,
+/// a typed payload bag, and message identity. Each pattern (Kafka, Mediator, Bus) provides
+/// a subclass via <see cref="MessageContext{T}"/> that carries strongly-typed message data.
 /// </summary>
 public abstract class MessageContext
 {
+    private Dictionary<Type, object>? payloads;
+
+    /// <summary>
+    /// Cancellation token for this processing operation.
+    /// </summary>
+    public required CancellationToken CancellationToken { get; init; }
+
+    /// <summary>
+    /// Scoped service provider for this processing operation.
+    /// </summary>
+    public required IServiceProvider Services { get; init; }
+
+    /// <summary>
+    /// Feature collection for optional, pattern-specific capabilities.
+    /// </summary>
+    public IFeatureCollection Features { get; } = new FeatureCollection();
+
     /// <summary>
     /// Unique identifier for this message processing operation.
     /// </summary>
@@ -17,20 +35,44 @@ public abstract class MessageContext
     public required DateTimeOffset Timestamp { get; init; }
 
     /// <summary>
-    /// Cancellation token for this processing operation.
+    /// The address where this message is being sent to or was received from.
+    /// Built as a transport URI (e.g. <c>kafka://broker:9092/kafka/my-topic</c>).
     /// </summary>
-    public required CancellationToken CancellationToken { get; init; }
+    public Uri? DestinationAddress { get; set; }
 
     /// <summary>
-    /// Scoped service provider for this message processing operation.
-    /// Available for middleware that needs to resolve scoped services.
+    /// The address of the sender. On produce, set to the broker host address.
+    /// On consume, extracted from headers if the producer injected it.
     /// </summary>
-    public required IServiceProvider Services { get; init; }
+    public Uri? SourceAddress { get; set; }
 
     /// <summary>
-    /// Feature collection for optional, pattern-specific capabilities.
+    /// Retrieves an optional payload of type <typeparamref name="T"/> from the context.
     /// </summary>
-    public IFeatureCollection Features { get; } = new FeatureCollection();
+    /// <typeparam name="T">The payload type.</typeparam>
+    /// <returns>The payload instance, or <c>null</c> if not set.</returns>
+    public T? TryGetPayload<T>() where T : class
+    {
+        if (payloads is not null && payloads.TryGetValue(typeof(T), out var value))
+        {
+            return (T)value;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Sets a payload of type <typeparamref name="T"/> on the context. Overwrites any existing
+    /// payload of the same type.
+    /// </summary>
+    /// <typeparam name="T">The payload type.</typeparam>
+    /// <param name="payload">The payload instance.</param>
+    public void SetPayload<T>(T payload) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        payloads ??= [];
+        payloads[typeof(T)] = payload;
+    }
 }
 
 /// <summary>

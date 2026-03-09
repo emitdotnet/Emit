@@ -12,16 +12,16 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 internal sealed class ConsumeObserverMiddleware<TMessage>(
     IEnumerable<IConsumeObserver> observers,
-    ILogger<ConsumeObserverMiddleware<TMessage>> logger) : IMiddleware<InboundContext<TMessage>>
+    ILogger<ConsumeObserverMiddleware<TMessage>> logger) : IMiddleware<ConsumeContext<TMessage>>
 {
     private readonly IConsumeObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
         if (this.observers is [])
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -33,13 +33,13 @@ internal sealed class ConsumeObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IConsumeObserver.OnConsumingAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IConsumeObserver)}.{nameof(IConsumeObserver.OnConsumingAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -51,7 +51,7 @@ internal sealed class ConsumeObserverMiddleware<TMessage>(
                 }
                 catch (Exception observerEx)
                 {
-                    logger.LogWarning(observerEx, "IConsumeObserver.OnConsumeErrorAsync failed for {ObserverType}", observer.GetType().Name);
+                    logger.LogWarning(observerEx, $"{nameof(IConsumeObserver)}.{nameof(IConsumeObserver.OnConsumeErrorAsync)} failed for {{ObserverType}}", observer.GetType().Name);
                 }
             }
 
@@ -66,7 +66,7 @@ internal sealed class ConsumeObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IConsumeObserver.OnConsumedAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IConsumeObserver)}.{nameof(IConsumeObserver.OnConsumedAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
     }

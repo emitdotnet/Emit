@@ -100,7 +100,7 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
             await producer.ProduceAsync(new EventMessage<string, string>("k3", "after-dlq-failure"));
 
             // Assert — the final message is delivered; the pipeline survived the DLQ produce failure.
-            InboundContext<string> ctx;
+            ConsumeContext<string> ctx;
             do
             {
                 ctx = await successSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
@@ -130,7 +130,7 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
     /// </summary>
     private sealed class ToggleableSuccessConsumer(MessageSink<string> sink, FailToggle failToggle) : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (failToggle.ShouldFail)
             {

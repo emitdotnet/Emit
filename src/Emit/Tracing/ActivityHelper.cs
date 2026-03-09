@@ -1,6 +1,8 @@
 namespace Emit.Tracing;
 
 using System.Diagnostics;
+using System.Net;
+using Emit.Abstractions;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -38,65 +40,72 @@ internal static class ActivityHelper
     }
 
     /// <summary>
-    /// Restores baggage from message headers to the specified Activity.
+    /// Restores baggage from a W3C baggage header value to the specified Activity.
+    /// Parses the comma-separated <c>key=value</c> format per the W3C Baggage specification.
     /// </summary>
     /// <param name="activity">The Activity to restore baggage to.</param>
-    /// <param name="headers">The message headers containing baggage.</param>
-    public static void RestoreBaggage(Activity activity, IEnumerable<KeyValuePair<string, string>> headers)
+    /// <param name="baggageHeaderValue">The W3C baggage header value.</param>
+    public static void RestoreBaggage(Activity activity, string baggageHeaderValue)
     {
-        foreach (var header in headers.Where(h => h.Key.StartsWith("baggage-", StringComparison.Ordinal)))
+        foreach (var member in baggageHeaderValue.Split(','))
         {
-            var key = header.Key[8..]; // Remove "baggage-" prefix
-            activity.AddBaggage(key, header.Value);
+            var trimmed = member.Trim();
+            if (trimmed.Length == 0)
+                continue;
+
+            var equalsIndex = trimmed.IndexOf('=');
+            if (equalsIndex <= 0)
+                continue;
+
+            // Strip any properties (;property=value) — take only key=value
+            var valueEnd = trimmed.IndexOf(';', equalsIndex);
+            var key = WebUtility.UrlDecode(trimmed[..equalsIndex].Trim());
+            var value = WebUtility.UrlDecode(
+                valueEnd > 0
+                    ? trimmed[(equalsIndex + 1)..valueEnd].Trim()
+                    : trimmed[(equalsIndex + 1)..].Trim());
+
+            activity.AddBaggage(key, value);
         }
     }
 
     /// <summary>
-    /// Validates and truncates baggage to the specified maximum size.
+    /// Builds a W3C baggage header value from Activity baggage items, validating
+    /// total size does not exceed the configured limit.
     /// </summary>
-    /// <param name="baggage">The baggage items to validate.</param>
+    /// <param name="baggage">The baggage items to serialize.</param>
     /// <param name="maxSizeBytes">The maximum total size in bytes.</param>
     /// <param name="logger">The logger for warnings.</param>
-    /// <returns>The validated and potentially truncated baggage items.</returns>
-    public static IEnumerable<KeyValuePair<string, string>> ValidateAndTruncateBaggage(
+    /// <returns>The W3C baggage header value, or <c>null</c> if no baggage.</returns>
+    public static string? BuildBaggageHeader(
         IEnumerable<KeyValuePair<string, string>> baggage,
         int maxSizeBytes,
         ILogger logger)
     {
-        var baggageList = baggage.ToList();
-        if (baggageList.Count == 0)
+        var members = new List<string>();
+        var totalSize = 0;
+
+        foreach (var (key, value) in baggage)
         {
-            return baggageList;
-        }
+            var encodedKey = WebUtility.UrlEncode(key);
+            var encodedValue = WebUtility.UrlEncode(value);
+            var member = $"{encodedKey}={encodedValue}";
 
-        var totalSize = baggageList.Sum(b => b.Key.Length + b.Value.Length);
+            // +2 for ", " separator (except first)
+            var additionalSize = member.Length + (members.Count > 0 ? 2 : 0);
 
-        if (totalSize <= maxSizeBytes)
-        {
-            return baggageList;
-        }
-
-        // Truncate baggage to max size
-        logger.LogWarning(
-            "Baggage size {Size} bytes exceeds limit {Limit} bytes. Truncating to fit.",
-            totalSize, maxSizeBytes);
-
-        var kept = new List<KeyValuePair<string, string>>();
-        var currentSize = 0;
-        foreach (var item in baggageList)
-        {
-            var itemSize = item.Key.Length + item.Value.Length;
-            if (currentSize + itemSize <= maxSizeBytes)
+            if (totalSize + additionalSize > maxSizeBytes)
             {
-                kept.Add(item);
-                currentSize += itemSize;
+                logger.LogWarning(
+                    "Baggage size exceeds limit {Limit} bytes. Dropping remaining items.",
+                    maxSizeBytes);
+                break;
             }
-            else
-            {
-                break; // Drop remaining items
-            }
+
+            members.Add(member);
+            totalSize += additionalSize;
         }
 
-        return kept;
+        return members.Count > 0 ? string.Join(", ", members) : null;
     }
 }

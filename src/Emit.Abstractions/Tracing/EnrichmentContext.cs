@@ -5,7 +5,7 @@ namespace Emit.Abstractions.Tracing;
 public sealed class EnrichmentContext
 {
     /// <summary>
-    /// Gets the message context (outbound or inbound).
+    /// Gets the pipeline context (consume or send).
     /// </summary>
     public required MessageContext MessageContext { get; init; }
 

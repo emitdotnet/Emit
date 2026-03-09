@@ -3,7 +3,6 @@ namespace Emit.Kafka.Tests;
 using System.Text;
 using Confluent.Kafka.Admin;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
@@ -109,12 +108,12 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
             Assert.Equal("deserialization-error-payload", ctx.Message);
 
             // Assert — diagnostic headers identify the deserialization error.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
-            var sourceTopic_ = headers.Headers
+            var sourceTopic_ = headers
                 .FirstOrDefault(h => h.Key == "x-emit-source-topic").Value;
 
             Assert.NotNull(exceptionType);
@@ -145,7 +144,7 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
     /// </summary>
     private sealed class NullConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 }

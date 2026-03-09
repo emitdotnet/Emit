@@ -62,20 +62,22 @@ When you call `IEventProducer.ProduceAsync()`, the message passes through the ou
 
 Middleware receives a typed context. The type tells you which direction you're in:
 
-- **`InboundContext<TValue>`**: carries the inbound message, its metadata, and access to pipeline features
-- **`OutboundContext<TValue>`**: carries the outbound message and producer configuration
+- **`ConsumeContext<TValue>`** (Kafka consumers): carries the inbound message, transport metadata, and Kafka-specific context
+- **`MediatorContext<TValue>`** (mediator handlers): carries the request for in-process dispatch
+- **`SendContext<TValue>`** (producers): carries the outbound message and mutable headers
 
-Both extend `MessageContext`, which holds a **feature bag** (`IFeatureCollection`), a type-safe dictionary of named capabilities attached to the current message. This is how middleware communicates across layers without knowing about each other.
+All three extend `MessageContext<TValue>`, which extends `MessageContext`. `MessageContext` provides common properties (`MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `Services`), a **feature collection** (`IFeatureCollection`) for optional capabilities, and a **payload bag** (`SetPayload` / `TryGetPayload`) for transport-specific data.
 
 ```csharp
-// Reading a feature in middleware
-if (context.Features.TryGetValue<IRetryAttemptFeature>(out var retry))
-{
-    logger.LogDebug("Attempt {Attempt}", retry.Attempt);
-}
+// Transport-agnostic: use DestinationAddress directly
+var topic = EmitEndpointAddress.GetEntityName(context.DestinationAddress);
+
+// Kafka-specific: cast the TransportContext
+if (context.TransportContext is KafkaTransportContext<string> kafka)
+    logger.LogDebug("Key: {Key}, Partition: {P}", kafka.Key, kafka.Partition);
 ```
 
-The built-in features cover things like message headers, the raw key/value bytes, the active activity, dead-letter sink access, consumer flow control, and more. See [Feature Collection](../advanced/feature-collection/) for the full list.
+See [Feature Collection & Payload Bag](../advanced/feature-collection/) for the full list of context properties and built-in payloads.
 
 ## Middleware lifetimes
 

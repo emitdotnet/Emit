@@ -1,7 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -136,12 +135,12 @@ public abstract class RetryCompliance
             Assert.Equal("always-failing", ctx.Message);
 
             // Assert — diagnostic headers carry retry count and exception details.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
-            var retryCount = headers.Headers
+            var retryCount = headers
                 .FirstOrDefault(h => h.Key == "x-emit-retry-count").Value;
 
             Assert.NotNull(exceptionType);
@@ -234,7 +233,7 @@ public abstract class RetryCompliance
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (counter.Increment() <= FailuresBeforeSuccess)
             {
@@ -253,7 +252,7 @@ public abstract class RetryCompliance
     public sealed class AlwaysFailingConsumer : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated persistent failure for retry exhaustion test.");
     }
 
@@ -263,7 +262,7 @@ public abstract class RetryCompliance
     public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

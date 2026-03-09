@@ -35,7 +35,7 @@ public sealed class ProduceMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestOutboundContext<string>
+        var context = new TestSendContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
@@ -44,17 +44,17 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
 
         var nextInvoked = false;
-        Task Next(OutboundContext<string> ctx)
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
         {
             nextInvoked = true;
             return Task.CompletedTask;
-        }
+        });
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.True(nextInvoked);
@@ -97,7 +97,7 @@ public sealed class ProduceMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestOutboundContext<string>
+        var context = new TestSendContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
@@ -106,13 +106,13 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
 
         var expectedException = new InvalidOperationException("Test failure");
-        Task Next(OutboundContext<string> ctx) => throw expectedException;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => throw expectedException);
 
         // Act & Assert
-        var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, Next));
+        var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
         Assert.Same(expectedException, actualException);
 
         Assert.Equal(2, captured.Count);
@@ -159,7 +159,7 @@ public sealed class ProduceMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestOutboundContext<string>
+        var context = new TestSendContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
@@ -168,12 +168,12 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
 
-        Task Next(OutboundContext<string> ctx) => Task.CompletedTask;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.Equal(2, captured.Count);
@@ -213,7 +213,7 @@ public sealed class ProduceMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestOutboundContext<string>
+        var context = new TestSendContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
@@ -222,10 +222,10 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        Task Next(OutboundContext<string> ctx) => Task.CompletedTask;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.Equal(2, captured.Count);
@@ -238,12 +238,7 @@ public sealed class ProduceMetricsMiddlewareTests
         listener.Dispose();
     }
 
-    private sealed class TestOutboundContext<T> : OutboundContext<T>;
-
-    private sealed class TestProviderIdentifierFeature : IProviderIdentifierFeature
-    {
-        public required string ProviderId { get; init; }
-    }
+    private sealed class TestSendContext<T> : SendContext<T>;
 
     private sealed class TestServiceProvider : IServiceProvider
     {

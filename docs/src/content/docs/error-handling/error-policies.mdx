@@ -49,11 +49,11 @@ Backoff strategies:
 | Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt with ±20% jitter; capped at `maxDelay` (default 5 min) |
 | None | `Backoff.None` | No delay between retries |
 
-The current attempt number is available in middleware via `IRetryAttemptFeature`:
+The current attempt number is available directly on `ConsumeContext<T>`:
 
 ```csharp
-var retry = context.Features.Get<IRetryAttemptFeature>();
-// retry.Attempt: 0 = initial attempt, 1 = first retry, ...
+var attempt = context.RetryAttempt;
+// 0 = initial attempt, 1 = first retry, ...
 ```
 
 ### Dead-letter

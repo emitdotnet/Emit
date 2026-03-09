@@ -83,7 +83,7 @@ public abstract class PerConsumerMiddlewareCompliance
     public sealed class ConsumerWithMiddleware(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 
@@ -93,7 +93,7 @@ public abstract class PerConsumerMiddlewareCompliance
     public sealed class ConsumerWithoutMiddleware(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 
@@ -101,13 +101,13 @@ public abstract class PerConsumerMiddlewareCompliance
     /// Per-consumer middleware that increments the shared <see cref="GlobalPipelineCompliance.InvocationCounter"/>.
     /// </summary>
     public sealed class PerConsumerCounterMiddleware(GlobalPipelineCompliance.InvocationCounter counter)
-        : IMiddleware<InboundContext<string>>
+        : IMiddleware<ConsumeContext<string>>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
         {
             counter.Increment();
-            await next(context);
+            await next.InvokeAsync(context);
         }
     }
 }

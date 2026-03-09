@@ -47,7 +47,7 @@ public sealed class MiddlewareDescriptorTests
     public void GivenForFactory_WhenValid_ThenFactorySetAndTypeNull()
     {
         // Arrange
-        Func<IServiceProvider, IMiddleware<InboundContext<string>>> factory = _ => new TestMiddleware();
+        Func<IServiceProvider, IMiddleware<ConsumeContext<string>>> factory = _ => new TestMiddleware();
 
         // Act
         var descriptor = MiddlewareDescriptor.ForFactory(factory);
@@ -62,7 +62,7 @@ public sealed class MiddlewareDescriptorTests
     public void GivenForFactory_WhenScopedLifetime_ThenLifetimeIsScoped()
     {
         // Arrange
-        Func<IServiceProvider, IMiddleware<InboundContext<string>>> factory = _ => new TestMiddleware();
+        Func<IServiceProvider, IMiddleware<ConsumeContext<string>>> factory = _ => new TestMiddleware();
 
         // Act
         var descriptor = MiddlewareDescriptor.ForFactory(factory, MiddlewareLifetime.Scoped);
@@ -76,11 +76,11 @@ public sealed class MiddlewareDescriptorTests
     {
         // Act & Assert
         Assert.Throws<ArgumentNullException>(
-            () => MiddlewareDescriptor.ForFactory((Func<IServiceProvider, IMiddleware<InboundContext<string>>>)null!));
+            () => MiddlewareDescriptor.ForFactory((Func<IServiceProvider, IMiddleware<ConsumeContext<string>>>)null!));
     }
 
-    private sealed class TestMiddleware : IMiddleware<InboundContext<string>>
+    private sealed class TestMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next) => next(context);
+        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) => next.InvokeAsync(context);
     }
 }

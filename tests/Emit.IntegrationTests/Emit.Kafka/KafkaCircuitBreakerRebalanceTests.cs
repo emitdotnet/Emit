@@ -103,7 +103,7 @@ public class KafkaCircuitBreakerRebalanceTests(KafkaContainerFixture fixture)
             // This confirms the consumer resumed after the configured short pause, not an arbitrarily long one.
             var deadline = TimeSpan.FromSeconds(pauseDuration.TotalSeconds + 10);
 
-            InboundContext<string> ctx;
+            ConsumeContext<string> ctx;
             do
             {
                 ctx = await sink.WaitForMessageAsync(deadline);
@@ -223,7 +223,7 @@ public class KafkaCircuitBreakerRebalanceTests(KafkaContainerFixture fixture)
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (toggle.ShouldThrow)
             {

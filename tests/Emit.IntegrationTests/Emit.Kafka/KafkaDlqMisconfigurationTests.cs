@@ -124,7 +124,7 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
     /// </summary>
     private sealed class PassThroughConsumer(MessageSink<string> sink) : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

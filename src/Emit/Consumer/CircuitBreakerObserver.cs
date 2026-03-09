@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Notifies the circuit breaker of message processing outcomes. Called by
-/// <see cref="ErrorHandlingMiddleware{TMessage}"/> after each message is fully handled.
+/// <see cref="ConsumeErrorMiddleware{TMessage}"/> after each message is fully handled.
 /// </summary>
 public interface ICircuitBreakerNotifier
 {

@@ -24,7 +24,7 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-The `selector` receives the full `InboundContext<TValue>` and returns the route key. The key is matched against the routes you registered. The matching consumer is instantiated from the DI container and invoked.
+The `selector` receives the full `ConsumeContext<TValue>` and returns the route key. The key is matched against the routes you registered. The matching consumer is instantiated from the DI container and invoked.
 
 ## Route key types
 
@@ -68,16 +68,13 @@ If the selector returns `null`, the message is silently skipped.
 
 ## Accessing the matched route in middleware
 
-After routing, the matched route key is available via `IConsumerIdentityFeature`:
+After routing, the matched route key is tagged on the current `Activity` (when tracing is enabled). You can read it from the activity in middleware:
 
 ```csharp
-var identity = context.Features.Get<IConsumerIdentityFeature>();
-// identity.RouteKey:     the matched key ("thin", "deep-dish", etc.)
-// identity.Kind:         ConsumerKind.Router
-// identity.ConsumerType: the resolved handler type
+var routeKey = Activity.Current?.GetTagItem("emit.route.key")?.ToString();
 ```
 
-This is useful in shared middleware to branch behavior based on which route was selected.
+The consumer identity (consumer type name and kind) is baked into the tracing middleware at build time and does not need to be read manually.
 
 ## Router vs. multiple consumer groups
 

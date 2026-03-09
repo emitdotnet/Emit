@@ -59,7 +59,9 @@ When forwarding to the DLQ, Emit appends the following headers:
 | `x-emit-timestamp` | ISO 8601 timestamp when the DLQ forward occurred |
 | `emit.dlq.original_traceparent` | W3C traceparent from the original message (for trace linking) |
 | `emit.dlq.original_topic` | Source topic name |
-| `x-emit-source-{key}` | Each entry from `IMessageSourceFeature.Properties` |
+| `x-emit-source-topic` | Kafka source topic name |
+| `x-emit-source-partition` | Kafka source partition |
+| `x-emit-source-offset` | Kafka source offset |
 
 ## Replaying DLQ messages
 

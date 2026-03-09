@@ -11,7 +11,7 @@ public sealed class KafkaTopicBuilderTests
 {
     private sealed class TestConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     [Fact]

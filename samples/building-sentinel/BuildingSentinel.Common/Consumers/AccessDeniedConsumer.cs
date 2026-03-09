@@ -16,7 +16,7 @@ public sealed class AccessDeniedConsumer(
     private const int AlarmThreshold = 3;
 
     public async Task ConsumeAsync(
-        InboundContext<BuildingEvent> context,
+        ConsumeContext<BuildingEvent> context,
         CancellationToken cancellationToken)
     {
         var evt = context.Message;

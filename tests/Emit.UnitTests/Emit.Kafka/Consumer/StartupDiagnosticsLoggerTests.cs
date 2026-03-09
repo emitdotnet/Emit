@@ -14,12 +14,12 @@ public sealed class StartupDiagnosticsLoggerTests
 
     private sealed class TestConsumerA : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestConsumerB : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class CapturingLogger : ILogger
@@ -48,6 +48,7 @@ public sealed class StartupDiagnosticsLoggerTests
         {
             TopicName = topicName,
             GroupId = "group-1",
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             BuildConsumerPipelines = () => [],
             WorkerCount = 3,
             WorkerDistribution = WorkerDistribution.ByKeyHash,

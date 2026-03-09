@@ -116,7 +116,7 @@ mediator.AddHandler<PlacePizzaOrderHandler, PlacePizzaOrder>(handler =>
 });
 ```
 
-The context flowing through all middleware layers is `InboundContext<TRequest>`. The terminal adapter extracts `context.Message` and calls `HandleAsync`.
+The context flowing through all middleware layers is `MediatorContext<TRequest>`. The terminal adapter extracts `context.Message` and calls `HandleAsync`.
 
 ## Observers
 
@@ -125,19 +125,19 @@ The context flowing through all middleware layers is `InboundContext<TRequest>`.
 ```csharp
 public class AuditObserver : IMediatorObserver
 {
-    public Task OnHandlingAsync<T>(InboundContext<T> context)
+    public Task OnHandlingAsync<T>(MediatorContext<T> context)
     {
         // called before the handler
         return Task.CompletedTask;
     }
 
-    public Task OnHandledAsync<T>(InboundContext<T> context)
+    public Task OnHandledAsync<T>(MediatorContext<T> context)
     {
         // called after successful completion
         return Task.CompletedTask;
     }
 
-    public Task OnHandleErrorAsync<T>(InboundContext<T> context, Exception exception)
+    public Task OnHandleErrorAsync<T>(MediatorContext<T> context, Exception exception)
     {
         // called on exception
         return Task.CompletedTask;

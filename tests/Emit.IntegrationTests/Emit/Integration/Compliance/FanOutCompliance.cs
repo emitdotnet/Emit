@@ -77,7 +77,7 @@ public abstract class FanOutCompliance
     public sealed class ConsumerA(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 
@@ -87,7 +87,7 @@ public abstract class FanOutCompliance
     public sealed class ConsumerB(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

@@ -116,7 +116,7 @@ public sealed class PipelineConfigurableExtensionsTests
     {
         // Arrange
         IInboundConfigurable<string> builder = new TestTypedInboundBuilder();
-        Func<IServiceProvider, IMiddleware<InboundContext<string>>> factory = _ => new TestMiddlewareA();
+        Func<IServiceProvider, IMiddleware<ConsumeContext<string>>> factory = _ => new TestMiddlewareA();
 
         // Act
         builder.Use(factory);
@@ -202,7 +202,7 @@ public sealed class PipelineConfigurableExtensionsTests
         public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
 
         public IInboundConfigurable<string> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-            where TMiddleware : class, IMiddleware<InboundContext<string>>
+            where TMiddleware : class, IMiddleware<ConsumeContext<string>>
         {
             InboundPipeline.Use(typeof(TMiddleware), lifetime);
             return this;
@@ -216,15 +216,15 @@ public sealed class PipelineConfigurableExtensionsTests
         }
     }
 
-    private sealed class TestMiddlewareA : IMiddleware<InboundContext<string>>
+    private sealed class TestMiddlewareA : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next) =>
-            next(context);
+        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) =>
+            next.InvokeAsync(context);
     }
 
-    private sealed class TestMiddlewareB : IMiddleware<InboundContext<string>>
+    private sealed class TestMiddlewareB : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next) =>
-            next(context);
+        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) =>
+            next.InvokeAsync(context);
     }
 }

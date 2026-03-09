@@ -11,11 +11,11 @@ public sealed class MessagePipelineTests
     {
         // Arrange
         var invoked = false;
-        MessageDelegate<TestInboundContext> terminal = _ => { invoked = true; return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { invoked = true; return Task.CompletedTask; });
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, []);
-        await pipeline(CreateContext());
+        await pipeline.InvokeAsync(CreateContext());
 
         // Assert
         Assert.True(invoked);
@@ -27,11 +27,11 @@ public sealed class MessagePipelineTests
         // Arrange
         var order = new List<string>();
         var middleware = new TrackingMiddleware("m1", order);
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, [middleware]);
-        await pipeline(CreateContext());
+        await pipeline.InvokeAsync(CreateContext());
 
         // Assert
         Assert.Equal(["m1:before", "terminal", "m1:after"], order);
@@ -45,11 +45,11 @@ public sealed class MessagePipelineTests
         var m1 = new TrackingMiddleware("m1", order);
         var m2 = new TrackingMiddleware("m2", order);
         var m3 = new TrackingMiddleware("m3", order);
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, [m1, m2, m3]);
-        await pipeline(CreateContext());
+        await pipeline.InvokeAsync(CreateContext());
 
         // Assert
         Assert.Equal(["m1:before", "m2:before", "m3:before", "terminal", "m3:after", "m2:after", "m1:after"], order);
@@ -61,11 +61,11 @@ public sealed class MessagePipelineTests
         // Arrange
         var terminalInvoked = false;
         var shortCircuit = new ShortCircuitMiddleware();
-        MessageDelegate<TestInboundContext> terminal = _ => { terminalInvoked = true; return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { terminalInvoked = true; return Task.CompletedTask; });
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, [shortCircuit]);
-        await pipeline(CreateContext());
+        await pipeline.InvokeAsync(CreateContext());
 
         // Assert
         Assert.False(terminalInvoked);
@@ -76,13 +76,13 @@ public sealed class MessagePipelineTests
     {
         // Arrange
         var throwing = new ThrowingMiddleware();
-        MessageDelegate<TestInboundContext> terminal = _ => Task.CompletedTask;
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, [throwing]);
 
         // Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline(CreateContext()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline.InvokeAsync(CreateContext()));
     }
 
     [Fact]
@@ -91,13 +91,13 @@ public sealed class MessagePipelineTests
         // Arrange
         var order = new List<string>();
         var middleware = new TrackingMiddleware("m1", order);
-        MessageDelegate<TestInboundContext> terminal = _ => throw new InvalidOperationException("terminal failed");
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => throw new InvalidOperationException("terminal failed"));
 
         // Act
         var pipeline = MessagePipeline.Build(terminal, [middleware]);
 
         // Assert
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline(CreateContext()));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline.InvokeAsync(CreateContext()));
         Assert.Equal("terminal failed", ex.Message);
         Assert.Equal(["m1:before"], order);
     }
@@ -111,7 +111,7 @@ public sealed class MessagePipelineTests
     [Fact]
     public void GivenNullMiddlewareList_WhenBuild_ThenThrowsArgumentNullException()
     {
-        MessageDelegate<TestInboundContext> terminal = _ => Task.CompletedTask;
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
         Assert.Throws<ArgumentNullException>(() => MessagePipeline.Build(terminal, null!));
     }
 
@@ -122,28 +122,29 @@ public sealed class MessagePipelineTests
         CancellationToken = CancellationToken.None,
         Services = null!,
         Message = "test",
+        TransportContext = TestTransportContext.Create(),
     };
 
-    private sealed class TestInboundContext : InboundContext<string>;
+    private sealed class TestInboundContext : ConsumeContext<string>;
 
     private sealed class TrackingMiddleware(string name, List<string> order) : IMiddleware<TestInboundContext>
     {
-        public async Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             order.Add($"{name}:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             order.Add($"{name}:after");
         }
     }
 
     private sealed class ShortCircuitMiddleware : IMiddleware<TestInboundContext>
     {
-        public Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next) => Task.CompletedTask;
+        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next) => Task.CompletedTask;
     }
 
     private sealed class ThrowingMiddleware : IMiddleware<TestInboundContext>
     {
-        public Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
             => throw new InvalidOperationException("middleware failed");
     }
 }

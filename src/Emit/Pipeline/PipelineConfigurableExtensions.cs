@@ -55,7 +55,7 @@ public static class PipelineConfigurableExtensions
     /// <summary>
     /// Registers a typed factory-based middleware in an inbound builder's pipeline.
     /// The <typeparamref name="TMessage"/> is inferred from the builder, ensuring the factory
-    /// produces middleware compatible with the builder's inbound context type.
+    /// produces middleware compatible with the builder's consume context type.
     /// </summary>
     /// <typeparam name="TMessage">The message type, inferred from the builder.</typeparam>
     /// <param name="builder">The inbound builder exposing a pipeline.</param>
@@ -64,7 +64,7 @@ public static class PipelineConfigurableExtensions
     /// <returns>The builder for method chaining.</returns>
     public static IInboundConfigurable<TMessage> Use<TMessage>(
         this IInboundConfigurable<TMessage> builder,
-        Func<IServiceProvider, IMiddleware<InboundContext<TMessage>>> factory,
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TMessage>>> factory,
         MiddlewareLifetime lifetime = default)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -84,7 +84,7 @@ public static class PipelineConfigurableExtensions
     /// <returns>The builder for method chaining.</returns>
     public static IOutboundConfigurable<TMessage> Use<TMessage>(
         this IOutboundConfigurable<TMessage> builder,
-        Func<IServiceProvider, IMiddleware<OutboundContext<TMessage>>> factory,
+        Func<IServiceProvider, IMiddleware<SendContext<TMessage>>> factory,
         MiddlewareLifetime lifetime = default)
     {
         ArgumentNullException.ThrowIfNull(builder);

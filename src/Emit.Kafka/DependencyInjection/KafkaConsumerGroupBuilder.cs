@@ -5,6 +5,7 @@ using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
 using Emit.Pipeline;
+using Emit.Pipeline.Modules;
 using Emit.RateLimiting;
 using Emit.Routing;
 using ConfluentKafka = Confluent.Kafka;
@@ -15,7 +16,7 @@ using ConfluentKafka = Confluent.Kafka;
 /// </summary>
 /// <typeparam name="TKey">The message key type.</typeparam>
 /// <typeparam name="TValue">The message value type.</typeparam>
-public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConfigurable<TValue>
+public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IInboundPipelineConfigurable
 {
     private readonly List<Type> consumerTypes = [];
     private readonly HashSet<Type> registeredConsumerTypes = [];
@@ -112,6 +113,9 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
     // ── Worker pool configuration ──
 
+    // NOTE: IConsumerGroupConfigurable<TValue> and IInboundConfigurable<TValue> were removed.
+    // Concrete builder types ARE the API surface — no interface forwarding needed.
+
     /// <summary>Number of processing tasks in the worker pool.</summary>
     public int WorkerCount { get; set; } = 1;
 
@@ -138,8 +142,8 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>Group-level error policy configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorPolicyBuilder>? GroupErrorPolicyAction { get; private set; }
 
-    /// <summary>Group-level validation configuration, or <c>null</c> if not configured.</summary>
-    internal ConsumerValidation? GroupValidation { get; private set; }
+    /// <summary>Group-level validation module, or <c>null</c> if not configured.</summary>
+    internal ValidationModule<TValue>? Validation { get; private set; }
 
     /// <summary>Deserialization error action configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorActionBuilder>? DeserializationErrorAction { get; private set; }
@@ -162,41 +166,26 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     {
     }
 
-    // ── Explicit interface implementations ──
-
-    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Use<TMiddleware>(MiddlewareLifetime lifetime)
-        => Use<TMiddleware>(lifetime);
-
-    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Filter<TFilter>()
-        => Filter<TFilter>();
-
-    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.OnError(Action<ErrorPolicyBuilder> configure)
-        => OnError(configure);
-
-    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate<TValidator>(Action<ErrorActionBuilder> configureAction)
-        => Validate<TValidator>(configureAction);
-
-    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate(
-        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator,
-        Action<ErrorActionBuilder> configureAction)
-        => Validate(validator, configureAction);
-
-    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate(
-        Func<TValue, MessageValidationResult> validator,
-        Action<ErrorActionBuilder> configureAction)
-        => Validate(validator, configureAction);
-
     // ── Public fluent methods (return concrete type for maximum chaining) ──
 
-    /// <inheritdoc cref="IInboundConfigurable{TMessage}.Use{TMiddleware}"/>
+    /// <summary>
+    /// Registers a middleware type on this consumer group's inbound pipeline.
+    /// </summary>
+    /// <typeparam name="TMiddleware">The middleware type.</typeparam>
+    /// <param name="lifetime">Controls when the middleware instance is created.</param>
+    /// <returns>This builder for continued chaining.</returns>
     public KafkaConsumerGroupBuilder<TKey, TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class, IMiddleware<InboundContext<TValue>>
+        where TMiddleware : class, IMiddleware<ConsumeContext<TValue>>
     {
         Pipeline.Use(typeof(TMiddleware), lifetime);
         return this;
     }
 
-    /// <inheritdoc cref="IInboundConfigurable{TMessage}.Filter{TFilter}"/>
+    /// <summary>
+    /// Registers a consumer filter on this consumer group's inbound pipeline.
+    /// </summary>
+    /// <typeparam name="TFilter">The filter type.</typeparam>
+    /// <returns>This builder for continued chaining.</returns>
     public KafkaConsumerGroupBuilder<TKey, TValue> Filter<TFilter>()
         where TFilter : class, IConsumerFilter<TValue>
     {
@@ -204,7 +193,14 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         return this;
     }
 
-    /// <inheritdoc cref="IConsumerGroupConfigurable{TMessage}.OnError"/>
+    /// <summary>
+    /// Configures error handling for all consumers in this group. When an exception
+    /// occurs during message processing, the configured policy determines whether to
+    /// dead-letter or discard the message.
+    /// </summary>
+    /// <param name="configure">Configures the error policy.</param>
+    /// <returns>This builder for continued chaining.</returns>
+    /// <exception cref="InvalidOperationException">OnError has already been called.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> OnError(Action<ErrorPolicyBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
@@ -219,47 +215,57 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         return this;
     }
 
-    /// <inheritdoc cref="IConsumerGroupConfigurable{TMessage}.Validate{TValidator}"/>
-    public KafkaConsumerGroupBuilder<TKey, TValue> Validate<TValidator>(Action<ErrorActionBuilder> configureAction)
+    /// <summary>
+    /// Registers a class-based message validator that is resolved from the service provider
+    /// for each message. Validation failures throw <see cref="MessageValidationException"/>
+    /// and are handled by the error policy configured via <see cref="OnError"/>.
+    /// </summary>
+    /// <typeparam name="TValidator">The validator type.</typeparam>
+    /// <returns>This builder for continued chaining.</returns>
+    /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
+    public KafkaConsumerGroupBuilder<TKey, TValue> Validate<TValidator>()
         where TValidator : class, IMessageValidator<TValue>
     {
-        ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-
-        var builder = new ErrorActionBuilder();
-        configureAction(builder);
-        var action = builder.Build();
-
-        GroupValidation = new ConsumerValidation(typeof(TValidator), null, action);
+        var module = new ValidationModule<TValue>();
+        module.Configure<TValidator>();
+        Validation = module;
         return this;
     }
 
-    /// <inheritdoc cref="IConsumerGroupConfigurable{TMessage}.Validate(Func{TMessage, CancellationToken, Task{MessageValidationResult}}, Action{ErrorActionBuilder})"/>
+    /// <summary>
+    /// Registers an inline async delegate validator. Validation failures throw
+    /// <see cref="MessageValidationException"/> and are handled by the error policy.
+    /// </summary>
+    /// <param name="validator">The async validation delegate.</param>
+    /// <returns>This builder for continued chaining.</returns>
+    /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> Validate(
-        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator,
-        Action<ErrorActionBuilder> configureAction)
+        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator)
     {
         ArgumentNullException.ThrowIfNull(validator);
-        ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-
-        var builder = new ErrorActionBuilder();
-        configureAction(builder);
-        var action = builder.Build();
-
-        GroupValidation = new ConsumerValidation(null, validator, action);
+        var module = new ValidationModule<TValue>();
+        module.Configure(validator);
+        Validation = module;
         return this;
     }
 
-    /// <inheritdoc cref="IConsumerGroupConfigurable{TMessage}.Validate(Func{TMessage, MessageValidationResult}, Action{ErrorActionBuilder})"/>
+    /// <summary>
+    /// Registers an inline synchronous delegate validator. Validation failures throw
+    /// <see cref="MessageValidationException"/> and are handled by the error policy.
+    /// </summary>
+    /// <param name="validator">The synchronous validation delegate.</param>
+    /// <returns>This builder for continued chaining.</returns>
+    /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> Validate(
-        Func<TValue, MessageValidationResult> validator,
-        Action<ErrorActionBuilder> configureAction)
+        Func<TValue, MessageValidationResult> validator)
     {
         ArgumentNullException.ThrowIfNull(validator);
-        return Validate(
-            (msg, _) => Task.FromResult(validator(msg)),
-            configureAction);
+        var module = new ValidationModule<TValue>();
+        module.Configure(validator);
+        Validation = module;
+        return this;
     }
 
     /// <summary>
@@ -386,7 +392,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// Must not exceed 128 characters.
     /// </param>
     /// <param name="selector">
-    /// Extracts the route key from the inbound context. Return <c>null</c> to indicate no match.
+    /// Extracts the route key from the consume context. Return <c>null</c> to indicate no match.
     /// </param>
     /// <param name="configure">Configures the routes for this router.</param>
     /// <returns>This builder for continued chaining.</returns>
@@ -394,7 +400,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <exception cref="InvalidOperationException">A router with the same identifier has already been registered.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> AddRouter<TRouteKey>(
         string identifier,
-        Func<InboundContext<TValue>, TRouteKey?> selector,
+        Func<ConsumeContext<TValue>, TRouteKey?> selector,
         Action<MessageRouterBuilder<TValue, TRouteKey>> configure)
         where TRouteKey : notnull
     {
@@ -438,7 +444,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
     private void EnsureValidateNotAlreadyCalled()
     {
-        if (GroupValidation is not null)
+        if (Validation is not null)
         {
             throw new InvalidOperationException(
                 $"{nameof(Validate)} has already been called on this consumer group builder.");

@@ -11,7 +11,7 @@ using Emit.Abstractions;
 public sealed class SinkConsumer<T>(MessageSink<T> sink) : IConsumer<T>
 {
     /// <inheritdoc />
-    public Task ConsumeAsync(InboundContext<T> context, CancellationToken cancellationToken)
+    public Task ConsumeAsync(ConsumeContext<T> context, CancellationToken cancellationToken)
     {
         return sink.WriteAsync(context, cancellationToken);
     }

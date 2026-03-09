@@ -11,15 +11,17 @@ using Xunit;
 
 public sealed class RateLimitMiddlewareTests
 {
-    private static InboundContext<string> CreateContext(CancellationToken cancellationToken = default)
+    private static ConsumeContext<string> CreateContext(CancellationToken cancellationToken = default)
     {
-        return new InboundContext<string>
+        var services = new ServiceCollection().BuildServiceProvider();
+        return new ConsumeContext<string>
         {
             MessageId = "test",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = cancellationToken,
             Message = "hello",
-            Services = new ServiceCollection().BuildServiceProvider(),
+            Services = services,
+            TransportContext = TestTransportContext.Create(services),
         };
     }
 
@@ -42,11 +44,11 @@ public sealed class RateLimitMiddlewareTests
         var nextCalled = false;
 
         // Act
-        await middleware.InvokeAsync(context, _ =>
+        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        }));
 
         // Assert
         Assert.True(nextCalled);
@@ -78,6 +80,6 @@ public sealed class RateLimitMiddlewareTests
 
         // Act & Assert — TaskCanceledException inherits OperationCanceledException
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            middleware.InvokeAsync(context, _ => Task.CompletedTask));
+            middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
     }
 }

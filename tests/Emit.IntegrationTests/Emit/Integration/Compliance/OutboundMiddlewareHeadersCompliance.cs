@@ -87,19 +87,19 @@ public abstract class OutboundMiddlewareHeadersCompliance
             var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
             Assert.Equal("payload", ctx.Message);
 
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
             // Header added by middleware is present.
-            var injected = headers.Headers.FirstOrDefault(h => h.Key == "x-injected").Value;
+            var injected = headers.FirstOrDefault(h => h.Key == "x-injected").Value;
             Assert.Equal("injected-value", injected);
 
             // Header modified by middleware has the new value.
-            var modified = headers.Headers.FirstOrDefault(h => h.Key == "x-original").Value;
+            var modified = headers.FirstOrDefault(h => h.Key == "x-original").Value;
             Assert.Equal("after", modified);
 
             // Header removed by middleware is absent.
-            var removed = headers.Headers.FirstOrDefault(h => h.Key == "x-ephemeral").Value;
+            var removed = headers.FirstOrDefault(h => h.Key == "x-ephemeral").Value;
             Assert.Null(removed);
         }
         finally
@@ -113,17 +113,14 @@ public abstract class OutboundMiddlewareHeadersCompliance
     /// Outbound middleware that adds, modifies, and removes headers to exercise
     /// the full range of header manipulation in the outbound pipeline.
     /// </summary>
-    public sealed class HeaderManipulationMiddleware : IMiddleware<OutboundContext<string>>
+    public sealed class HeaderManipulationMiddleware : IMiddleware<SendContext<string>>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(OutboundContext<string> context, MessageDelegate<OutboundContext<string>> next)
+        public async Task InvokeAsync(SendContext<string> context, IMiddlewarePipeline<SendContext<string>> next)
         {
-            var existing = context.Features.Get<IHeadersFeature>()?.Headers
-                ?? [];
-
             var modified = new List<KeyValuePair<string, string>>();
 
-            foreach (var header in existing)
+            foreach (var header in context.Headers)
             {
                 // Remove: skip x-ephemeral entirely.
                 if (header.Key == "x-ephemeral")
@@ -142,9 +139,10 @@ public abstract class OutboundMiddlewareHeadersCompliance
             // Add: inject a new header.
             modified.Add(new("x-injected", "injected-value"));
 
-            context.Features.Set<IHeadersFeature>(new HeadersFeature(modified));
+            context.Headers.Clear();
+            context.Headers.AddRange(modified);
 
-            await next(context);
+            await next.InvokeAsync(context);
         }
     }
 }

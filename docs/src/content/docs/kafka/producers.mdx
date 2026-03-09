@@ -81,22 +81,23 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 });
 ```
 
-The middleware receives `OutboundContext<PizzaOrdered>` and calls `next` to continue the pipeline. This is the Leaf level of the [pipeline model](../concepts/pipeline-model/).
+The middleware receives `SendContext<PizzaOrdered>` and calls `next.InvokeAsync(context)` to continue the pipeline. This is the Leaf level of the [pipeline model](../concepts/pipeline-model/).
 
 ## Accessing the message key in middleware
 
-The Kafka key is available via `IKeyFeature<TKey>` on the outbound context:
+The Kafka key is available via the `KafkaTransportContext<TKey>` payload on the send context:
 
 ```csharp
-public class LoggingMiddleware<T> : IMiddleware<OutboundContext<T>>
+public class LoggingMiddleware<T>(ILogger<LoggingMiddleware<T>> logger)
+    : IMiddleware<SendContext<T>>
 {
-    public Task InvokeAsync(OutboundContext<T> context, MessageDelegate<OutboundContext<T>> next)
+    public Task InvokeAsync(SendContext<T> context, IMiddlewarePipeline<SendContext<T>> next)
     {
-        if (context.Features.Get<IKeyFeature<string>>() is { } keyFeature)
+        if (context.TryGetPayload<KafkaTransportContext<string>>() is { } kafka)
         {
-            logger.LogDebug("Producing with key {Key}", keyFeature.Key);
+            logger.LogDebug("Producing with key {Key}", kafka.Key);
         }
-        return next(context);
+        return next.InvokeAsync(context);
     }
 }
 ```
@@ -108,8 +109,8 @@ public class LoggingMiddleware<T> : IMiddleware<OutboundContext<T>>
 ```csharp
 public class ProduceAuditObserver : IProduceObserver
 {
-    public Task OnProducedAsync<T>(OutboundContext<T> context) { ... }
-    public Task OnProduceErrorAsync<T>(OutboundContext<T> context, Exception exception) { ... }
+    public Task OnProducedAsync<T>(SendContext<T> context) { ... }
+    public Task OnProduceErrorAsync<T>(SendContext<T> context, Exception exception) { ... }
 }
 ```
 

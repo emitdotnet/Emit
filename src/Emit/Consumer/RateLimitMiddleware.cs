@@ -14,18 +14,17 @@ using Emit.Metrics;
 /// <typeparam name="TMessage">The message type.</typeparam>
 public sealed class RateLimitMiddleware<TMessage>(
     RateLimiter rateLimiter,
-    EmitMetrics emitMetrics) : IMiddleware<InboundContext<TMessage>>
+    EmitMetrics emitMetrics) : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
         var start = Stopwatch.GetTimestamp();
         using var lease = await rateLimiter.AcquireAsync(1, context.CancellationToken).ConfigureAwait(false);
         var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
 
-        emitMetrics.RecordRateLimitAcquired();
         emitMetrics.RecordRateLimitWaitDuration(elapsed);
 
-        await next(context).ConfigureAwait(false);
+        await next.InvokeAsync(context).ConfigureAwait(false);
     }
 }

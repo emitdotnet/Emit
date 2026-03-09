@@ -14,19 +14,19 @@ Receives notifications for every inbound message, across all transport consumers
 ```csharp
 public class AuditConsumeObserver(IAuditLog audit) : IConsumeObserver
 {
-    public Task OnConsumingAsync<T>(InboundContext<T> context)
+    public Task OnConsumingAsync<T>(ConsumeContext<T> context)
     {
         audit.Record($"Consuming {typeof(T).Name} at {context.Timestamp}");
         return Task.CompletedTask;
     }
 
-    public Task OnConsumedAsync<T>(InboundContext<T> context)
+    public Task OnConsumedAsync<T>(ConsumeContext<T> context)
     {
         audit.Record($"Consumed {typeof(T).Name}: success");
         return Task.CompletedTask;
     }
 
-    public Task OnConsumeErrorAsync<T>(InboundContext<T> context, Exception exception)
+    public Task OnConsumeErrorAsync<T>(ConsumeContext<T> context, Exception exception)
     {
         audit.Record($"Consume error: {exception.Message}");
         return Task.CompletedTask;
@@ -50,8 +50,9 @@ Fires for every produce call through the outbound pipeline.
 
 | Method | When it fires |
 |---|---|
-| `OnProducedAsync<T>(OutboundContext<T>)` | Produce succeeded |
-| `OnProduceErrorAsync<T>(OutboundContext<T>, Exception)` | Pipeline threw before or during the outbox write |
+| `OnProducingAsync<T>(SendContext<T>)` | Before the outbound pipeline executes |
+| `OnProducedAsync<T>(SendContext<T>)` | Produce succeeded |
+| `OnProduceErrorAsync<T>(SendContext<T>, Exception)` | Pipeline threw before or during the outbox write |
 
 Register globally:
 
@@ -84,9 +85,9 @@ Fires for mediator request/response operations.
 
 | Method | When it fires |
 |---|---|
-| `OnHandlingAsync<T>(InboundContext<T>)` | Before the handler is invoked |
-| `OnHandledAsync<T>(InboundContext<T>)` | After the handler completes successfully |
-| `OnHandleErrorAsync<T>(InboundContext<T>, Exception)` | If the handler throws |
+| `OnHandlingAsync<T>(MediatorContext<T>)` | Before the handler is invoked |
+| `OnHandledAsync<T>(MediatorContext<T>)` | After the handler completes successfully |
+| `OnHandleErrorAsync<T>(MediatorContext<T>, Exception)` | If the handler throws |
 
 Register on the mediator builder, not on `EmitBuilder`:
 

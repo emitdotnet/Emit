@@ -24,7 +24,6 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `ConsumerKind.cs` | Enum distinguishing Direct consumer handlers from content-based Router dispatchers | Understand consumer identity kind values used in tracing, metrics, and error handling |
 | `ErrorActionBuilder.cs` | Base builder for configuring a terminal error action (DeadLetter, Discard) on a message | Understand how error actions are constructed inside error policy clauses |
 | `MessageContext.cs` | Abstract envelope flowing through pipelines with MessageId, Timestamp, CancellationToken, Services, and Features | Understand pipeline context model |
-| `InboundContext.cs` | Base context for inbound (consumer/handler) pipelines carrying typed message data | Implement inbound middleware or understand consumer pipeline |
 | `OutboundContext.cs` | Base context for outbound (producer) pipelines carrying typed message data | Implement outbound middleware or understand producer pipeline |
 | `IFeatureCollection.cs` | Type-safe feature bag interface used by pipeline contexts for optional, extensible metadata | Add new pipeline features or access existing ones in middleware |
 | `FeatureCollection.cs` | Dictionary-backed IFeatureCollection implementation used by message contexts | Understand how features are stored and retrieved on pipeline contexts |

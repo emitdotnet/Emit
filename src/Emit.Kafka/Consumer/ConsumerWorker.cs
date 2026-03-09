@@ -29,6 +29,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private readonly OffsetManager offsetManager;
     private readonly IServiceScopeFactory scopeFactory;
     private readonly string groupId;
+    private readonly Uri destinationAddress;
     private readonly KafkaConsumerObserverInvoker observerInvoker;
     private readonly KafkaMetrics kafkaMetrics;
     private readonly EmitMetrics emitMetrics;
@@ -60,6 +61,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         OffsetManager offsetManager,
         IServiceScopeFactory scopeFactory,
         string groupId,
+        Uri destinationAddress,
         KafkaConsumerObserverInvoker observerInvoker,
         KafkaMetrics kafkaMetrics,
         EmitMetrics emitMetrics,
@@ -72,6 +74,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         this.offsetManager = offsetManager;
         this.scopeFactory = scopeFactory;
         this.groupId = groupId;
+        this.destinationAddress = destinationAddress;
         this.observerInvoker = observerInvoker;
         this.kafkaMetrics = kafkaMetrics;
         this.emitMetrics = emitMetrics;
@@ -212,13 +215,13 @@ internal sealed class ConsumerWorker<TKey, TValue>
             }
         }
 
-        headers.Add(new("x-emit-exception-type", exception.GetType().FullName ?? exception.GetType().Name));
-        headers.Add(new("x-emit-exception-message", exception.Message));
-        headers.Add(new("x-emit-consumer-group", groupId));
-        headers.Add(new("x-emit-source-topic", raw.Topic));
-        headers.Add(new("x-emit-source-partition", raw.Partition.Value.ToString()));
-        headers.Add(new("x-emit-source-offset", raw.Offset.Value.ToString()));
-        headers.Add(new("x-emit-timestamp", DateTimeOffset.UtcNow.ToString("o")));
+        headers.Add(new(DeadLetterHeaders.ExceptionType, exception.GetType().FullName ?? exception.GetType().Name));
+        headers.Add(new(DeadLetterHeaders.ExceptionMessage, exception.Message));
+        headers.Add(new(DeadLetterHeaders.ConsumerGroup, groupId));
+        headers.Add(new(KafkaDeadLetterHeaders.SourceTopic, raw.Topic));
+        headers.Add(new(KafkaDeadLetterHeaders.SourcePartition, raw.Partition.Value.ToString()));
+        headers.Add(new(KafkaDeadLetterHeaders.SourceOffset, raw.Offset.Value.ToString()));
+        headers.Add(new(DeadLetterHeaders.Timestamp, DateTimeOffset.UtcNow.ToString("o")));
 
         try
         {
@@ -330,25 +333,44 @@ internal sealed class ConsumerWorker<TKey, TValue>
         foreach (var entry in consumerPipelines)
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var context = new InboundContext<TValue>
+
+            // Extract source address from headers if the producer injected it
+            var sourceHeader = deserialized.Headers
+                .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
+            Uri? sourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null;
+
+            var transportContext = new KafkaTransportContext<TKey>
             {
                 MessageId = Guid.NewGuid().ToString(),
                 Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
                 CancellationToken = cancellationToken,
                 Services = scope.ServiceProvider,
-                Message = deserialized.Value,
+                RawKey = raw.Message.Key,
+                RawValue = raw.Message.Value,
+                Headers = deserialized.Headers,
+                ProviderId = "kafka",
+                Topic = deserialized.Topic,
+                Partition = deserialized.Partition,
+                Offset = deserialized.Offset,
+                GroupId = groupId,
+                Key = deserialized.Key,
+                DestinationAddress = destinationAddress,
+                SourceAddress = sourceAddress,
             };
-            var keyFeature = new KeyFeature<TKey>(deserialized.Key);
-            context.Features.Set<IKeyFeature<TKey>>(keyFeature);
-            context.Features.Set<IKeyTypeFeature>(keyFeature);
-            var kafkaFeature = new KafkaFeature(deserialized.Topic, deserialized.Partition, deserialized.Offset);
-            context.Features.Set<IMessageSourceFeature>(kafkaFeature);
-            context.Features.Set<IKafkaFeature>(kafkaFeature);
-            context.Features.Set<IHeadersFeature>(new HeadersFeature(deserialized.Headers));
-            context.Features.Set<IRawBytesFeature>(new RawBytesFeature(raw.Message.Key, raw.Message.Value));
-            context.Features.Set<IConsumerIdentityFeature>(
-                new ConsumerIdentityFeature(entry.Identifier, entry.Kind, entry.ConsumerType));
-            await entry.Pipeline(context).ConfigureAwait(false);
+
+            var context = new ConsumeContext<TValue>
+            {
+                MessageId = transportContext.MessageId,
+                Timestamp = transportContext.Timestamp,
+                CancellationToken = cancellationToken,
+                Services = scope.ServiceProvider,
+                Message = deserialized.Value,
+                TransportContext = transportContext,
+                DestinationAddress = destinationAddress,
+                SourceAddress = sourceAddress,
+            };
+
+            await entry.Pipeline.InvokeAsync(context).ConfigureAwait(false);
         }
     }
 }

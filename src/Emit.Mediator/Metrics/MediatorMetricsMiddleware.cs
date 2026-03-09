@@ -1,7 +1,6 @@
 namespace Emit.Mediator.Metrics;
 
 using System.Diagnostics;
-using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 
 /// <summary>
@@ -10,29 +9,27 @@ using Emit.Abstractions.Pipeline;
 /// </summary>
 /// <typeparam name="TMessage">The request type.</typeparam>
 internal sealed class MediatorMetricsMiddleware<TMessage>(
-    MediatorMetrics metrics) : IMiddleware<InboundContext<TMessage>>
+    MediatorMetrics metrics) : IMiddleware<MediatorContext<TMessage>>
 {
     private static readonly string RequestTypeName = typeof(TMessage).Name;
 
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(MediatorContext<TMessage> context, IMiddlewarePipeline<MediatorContext<TMessage>> next)
     {
         metrics.RecordSendActiveIncrement();
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordSendDuration(elapsed, RequestTypeName, "success");
-            metrics.RecordSendCompleted(RequestTypeName, "success");
+            metrics.RecordSendCompleted(elapsed, RequestTypeName, "success");
         }
         catch
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordSendDuration(elapsed, RequestTypeName, "error");
-            metrics.RecordSendCompleted(RequestTypeName, "error");
+            metrics.RecordSendCompleted(elapsed, RequestTypeName, "error");
             throw;
         }
         finally

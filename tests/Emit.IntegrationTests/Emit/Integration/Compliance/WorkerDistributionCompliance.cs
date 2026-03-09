@@ -94,7 +94,7 @@ public abstract class WorkerDistributionCompliance
     public sealed class OrderTrackingConsumer(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

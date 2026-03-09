@@ -436,7 +436,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
 
     private sealed class TestConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
         }

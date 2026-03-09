@@ -251,7 +251,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             var workerLogger = loggerFactory.CreateLogger(
                 $"{typeof(ConsumerGroupWorker<TKey, TValue>).FullName}.Worker[{i}]");
             var worker = new ConsumerWorker<TKey, TValue>(
-                workerId, registration, offsetManager, scopeFactory, registration.GroupId, observerInvoker, kafkaMetrics, emitMetrics, deadLetterSink, workerLogger);
+                workerId, registration, offsetManager, scopeFactory,
+                registration.GroupId, registration.DestinationAddress,
+                observerInvoker, kafkaMetrics, emitMetrics, deadLetterSink, workerLogger);
             poolWorkers[i] = worker;
             poolTasks[i] = worker.RunAsync(cancellationToken);
         }

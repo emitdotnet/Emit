@@ -22,6 +22,9 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// <summary>The consumer group ID.</summary>
     public required string GroupId { get; init; }
 
+    /// <summary>Pre-built destination address URI for the topic.</summary>
+    public required Uri DestinationAddress { get; init; }
+
     // ── Deserializers ──
 
     /// <summary>Synchronous key deserializer.</summary>

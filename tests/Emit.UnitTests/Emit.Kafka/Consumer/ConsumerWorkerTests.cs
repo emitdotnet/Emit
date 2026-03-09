@@ -1,6 +1,7 @@
 namespace Emit.Kafka.Tests.Consumer;
 
 using System.Threading.Channels;
+using Emit.UnitTests;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
@@ -161,7 +162,8 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Equal("test-key", consumer.CapturedContext.Features.Get<IKeyFeature<string>>()!.Key);
+        var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(consumer.CapturedContext.TransportContext);
+        Assert.Equal("test-key", kafkaContext.Key);
         Assert.Equal("test-value", consumer.CapturedContext.Message);
     }
 
@@ -322,7 +324,7 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Equal(2, consumer.CapturedContext.Features.Get<IHeadersFeature>()!.Headers.Count);
+        Assert.Equal(2, consumer.CapturedContext.Headers.Count);
     }
 
     [Fact]
@@ -343,7 +345,7 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Empty(consumer.CapturedContext.Features.Get<IHeadersFeature>()!.Headers);
+        Assert.Empty(consumer.CapturedContext.Headers);
     }
 
     [Fact]
@@ -374,11 +376,12 @@ public sealed class ConsumerWorkerTests
         // Arrange
         var keyBytes = System.Text.Encoding.UTF8.GetBytes("raw-key");
         var valueBytes = System.Text.Encoding.UTF8.GetBytes("raw-value");
-        IRawBytesFeature? capturedFeature = null;
+        TransportContext? capturedTransport = null;
         var registration = new ConsumerGroupRegistration<string, string>
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () =>
@@ -388,11 +391,11 @@ public sealed class ConsumerWorkerTests
                     Identifier = "TestConsumer",
                     Kind = ConsumerKind.Direct,
                     ConsumerType = typeof(TestConsumer),
-                    Pipeline = ctx =>
+                    Pipeline = new TestPipeline<ConsumeContext<string>>(ctx =>
                     {
-                        capturedFeature = ctx.Features.Get<IRawBytesFeature>();
+                        capturedTransport = ctx.TransportContext;
                         return Task.CompletedTask;
-                    }
+                    })
                 }
             ],
             WorkerCount = 1,
@@ -415,9 +418,9 @@ public sealed class ConsumerWorkerTests
         await worker.RunAsync(cts.Token);
 
         // Assert
-        Assert.NotNull(capturedFeature);
-        Assert.Equal(keyBytes, capturedFeature.RawKey);
-        Assert.Equal(valueBytes, capturedFeature.RawValue);
+        Assert.NotNull(capturedTransport);
+        Assert.Equal(keyBytes, capturedTransport.RawKey);
+        Assert.Equal(valueBytes, capturedTransport.RawValue);
     }
 
     [Fact]
@@ -432,7 +435,7 @@ public sealed class ConsumerWorkerTests
         var mockScopeFactory = new Mock<IServiceScopeFactory>();
         mockScopeFactory.Setup(f => f.CreateScope())
             .Returns(() => CreateScope(typeof(ThrowOnNthCallConsumer), consumer));
-        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
+        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", new Uri("kafka://broker:9092/kafka/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
         var key = System.Text.Encoding.UTF8.GetBytes("same-key");
 
         // Simulate ConsumerGroupWorker enqueuing offsets before dispatching
@@ -705,9 +708,10 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             KeyDeserializer = failingKeyDeserializer,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "CapturingConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(CapturingConsumer), Pipeline = new HandlerInvoker<string>(typeof(CapturingConsumer)).InvokeAsync }],
+            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "CapturingConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(CapturingConsumer), Pipeline = new HandlerInvoker<string>(typeof(CapturingConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = 32,
@@ -743,9 +747,10 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             KeyDeserializer = new AlwaysThrowingDeserializer(),
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)).InvokeAsync }],
+            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = 32,
@@ -768,9 +773,10 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => types.Select(t => new ConsumerPipelineEntry<string> { Identifier = t.Name, Kind = ConsumerKind.Direct, ConsumerType = t, Pipeline = new HandlerInvoker<string>(t).InvokeAsync }).ToArray(),
+            BuildConsumerPipelines = () => types.Select(t => new ConsumerPipelineEntry<string> { Identifier = t.Name, Kind = ConsumerKind.Direct, ConsumerType = t, Pipeline = new HandlerInvoker<string>(t) }).ToArray(),
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = bufferSize,
@@ -812,7 +818,7 @@ public sealed class ConsumerWorkerTests
         var committer = CreateCommitter();
         offsetManager ??= new OffsetManager(committer);
         scopeFactory ??= Mock.Of<IServiceScopeFactory>();
-        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
+        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/kafka/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
     }
 
     private static ConfluentKafka.ConsumeResult<byte[], byte[]> CreateConsumeResult(
@@ -857,9 +863,9 @@ public sealed class ConsumerWorkerTests
 
     private sealed class CapturingConsumer : IConsumer<string>
     {
-        public InboundContext<string>? CapturedContext { get; private set; }
+        public ConsumeContext<string>? CapturedContext { get; private set; }
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             CapturedContext = context;
             return Task.CompletedTask;
@@ -868,12 +874,12 @@ public sealed class ConsumerWorkerTests
 
     private sealed class TestConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class ThrowingConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Test failure");
     }
 
@@ -888,7 +894,7 @@ public sealed class ConsumerWorkerTests
             this.name = name;
         }
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             callOrder.Add(name);
             return Task.CompletedTask;
@@ -899,7 +905,7 @@ public sealed class ConsumerWorkerTests
     {
         private int callCount;
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (Interlocked.Increment(ref callCount) == throwOnCall)
             {
@@ -914,7 +920,7 @@ public sealed class ConsumerWorkerTests
     {
         public TaskCompletionSource Started { get; } = new();
 
-        public async Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             Started.SetResult();
             await Task.Delay(Timeout.Infinite, cancellationToken);

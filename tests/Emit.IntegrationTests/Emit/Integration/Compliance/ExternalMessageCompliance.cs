@@ -5,9 +5,9 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
-using Emit.Abstractions.Pipeline;
 using Emit.Abstractions.Tracing;
 using Emit.DependencyInjection;
+using Emit.Kafka.Consumer;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -89,7 +89,8 @@ public abstract class ExternalMessageCompliance
 
             // Assert — message received correctly
             var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("external-key", context.Features.Get<IKeyFeature<string>>()!.Key);
+            var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(context.TransportContext);
+            Assert.Equal("external-key", kafkaContext.Key);
             Assert.Equal("external-value", context.Message);
         }
         finally

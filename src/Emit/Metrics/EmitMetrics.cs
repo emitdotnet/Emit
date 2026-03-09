@@ -69,9 +69,6 @@ public sealed class EmitMetrics
             "emit.consumer.circuit_breaker.state", ObserveCircuitBreakerState, description: "Current circuit breaker state (0=closed, 1=open, 2=half_open).");
 
         // Rate limiting
-        RateLimitAcquired = meter.CreateCounter<long>(
-            "emit.consumer.rate_limit.acquired", "{permit}", "Count of successfully acquired rate limit permits.");
-
         RateLimitWaitDuration = meter.CreateHistogram<double>(
             "emit.consumer.rate_limit.wait_duration", "s", "Time spent waiting for rate limit permits.");
 
@@ -112,8 +109,6 @@ public sealed class EmitMetrics
     internal Histogram<double> CircuitBreakerOpenDuration { get; }
 
     // Rate limiting
-    internal Counter<long> RateLimitAcquired { get; }
-
     internal Histogram<double> RateLimitWaitDuration { get; }
 
     // Dead letter queue
@@ -123,27 +118,17 @@ public sealed class EmitMetrics
 
     // ── Pipeline recording methods ──
 
-    internal void RecordProduceDuration(double seconds, string provider, string result)
+    internal void RecordProduceCompleted(double durationSeconds, string provider, string result)
     {
         var tags = enrichment.CreateTags([new("provider", provider), new("result", result)]);
-        ProduceDuration.Record(seconds, tags);
-    }
-
-    internal void RecordProduceCompleted(string provider, string result)
-    {
-        var tags = enrichment.CreateTags([new("provider", provider), new("result", result)]);
+        ProduceDuration.Record(durationSeconds, tags);
         ProduceCompleted.Add(1, tags);
     }
 
-    internal void RecordConsumeDuration(double seconds, string provider, string result, string consumer)
+    internal void RecordConsumeCompleted(double durationSeconds, string provider, string result, string consumer)
     {
         var tags = enrichment.CreateTags([new("provider", provider), new("result", result), new("consumer", consumer)]);
-        ConsumeDuration.Record(seconds, tags);
-    }
-
-    internal void RecordConsumeCompleted(string provider, string result, string consumer)
-    {
-        var tags = enrichment.CreateTags([new("provider", provider), new("result", result), new("consumer", consumer)]);
+        ConsumeDuration.Record(durationSeconds, tags);
         ConsumeCompleted.Add(1, tags);
     }
 
@@ -207,12 +192,6 @@ public sealed class EmitMetrics
     }
 
     // ── Rate limiting recording methods ──
-
-    internal void RecordRateLimitAcquired()
-    {
-        var tags = enrichment.CreateTags();
-        RateLimitAcquired.Add(1, tags);
-    }
 
     internal void RecordRateLimitWaitDuration(double seconds)
     {

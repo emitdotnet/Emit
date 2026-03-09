@@ -140,13 +140,13 @@ public abstract class GlobalPipelineCompliance
     /// delegates to the next middleware in the pipeline.
     /// </summary>
     public sealed class InboundCounterMiddleware(InvocationCounter counter)
-        : IMiddleware<InboundContext<string>>
+        : IMiddleware<ConsumeContext<string>>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
         {
             counter.Increment();
-            await next(context);
+            await next.InvokeAsync(context);
         }
     }
 
@@ -155,13 +155,13 @@ public abstract class GlobalPipelineCompliance
     /// delegates to the next middleware in the pipeline.
     /// </summary>
     public sealed class OutboundCounterMiddleware(InvocationCounter counter)
-        : IMiddleware<OutboundContext<string>>
+        : IMiddleware<SendContext<string>>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(OutboundContext<string> context, MessageDelegate<OutboundContext<string>> next)
+        public async Task InvokeAsync(SendContext<string> context, IMiddlewarePipeline<SendContext<string>> next)
         {
             counter.Increment();
-            await next(context);
+            await next.InvokeAsync(context);
         }
     }
 }

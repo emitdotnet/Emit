@@ -57,11 +57,11 @@ public sealed class MessagePipelineBuilder : IMessagePipelineBuilder
     }
 
     /// <inheritdoc />
-    public MessageDelegate<TContext> Build<TContext, TMessage>(
+    public IMiddlewarePipeline<TContext> Build<TContext, TMessage>(
         IServiceProvider services,
-        MessageDelegate<TContext> terminal,
+        IMiddlewarePipeline<TContext> terminal,
         params IMessagePipelineBuilder[] parentLayers)
-        where TContext : MessageContext<TMessage>
+        where TContext : MessageContext
     {
         // Flatten: parents first (global → pattern), then this builder's (per-group)
         var allDescriptors = new List<MiddlewareDescriptor>();
@@ -69,7 +69,7 @@ public sealed class MessagePipelineBuilder : IMessagePipelineBuilder
             allDescriptors.AddRange(parent.Descriptors);
         allDescriptors.AddRange(Descriptors);
 
-        // Compose the delegate chain in reverse order (last descriptor = closest to terminal)
+        // Compose the pipeline chain in reverse order (last descriptor = closest to terminal)
         var next = terminal;
         var targetInterface = typeof(IMiddleware<TContext>);
 
@@ -103,14 +103,23 @@ public sealed class MessagePipelineBuilder : IMessagePipelineBuilder
             if (descriptor.Lifetime == MiddlewareLifetime.Singleton)
             {
                 var instance = resolve(services);
-                next = context => instance.InvokeAsync(context, capturedNext);
+                next = new MiddlewarePipeline<TContext>(instance, capturedNext);
             }
             else
             {
-                next = context => resolve(context.Services).InvokeAsync(context, capturedNext);
+                next = new ScopedMiddlewarePipeline<TContext>(resolve, capturedNext);
             }
         }
 
         return next;
+    }
+
+    private sealed class ScopedMiddlewarePipeline<TContext>(
+        Func<IServiceProvider, IMiddleware<TContext>> resolve,
+        IMiddlewarePipeline<TContext> next) : IMiddlewarePipeline<TContext>
+        where TContext : MessageContext
+    {
+        public Task InvokeAsync(TContext context) =>
+            resolve(context.Services).InvokeAsync(context, next);
     }
 }

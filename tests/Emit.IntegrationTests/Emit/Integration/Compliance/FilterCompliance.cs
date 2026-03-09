@@ -114,7 +114,7 @@ public abstract class FilterCompliance
     public sealed class PrefixFilter : IConsumerFilter<string>
     {
         /// <inheritdoc />
-        public ValueTask<bool> ShouldConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public ValueTask<bool> ShouldConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => ValueTask.FromResult(!context.Message.StartsWith("skip:", StringComparison.Ordinal));
     }
 }

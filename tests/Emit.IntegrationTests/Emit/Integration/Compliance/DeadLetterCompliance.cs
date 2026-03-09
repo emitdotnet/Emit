@@ -1,7 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,12 +73,12 @@ public abstract class DeadLetterCompliance
             Assert.Equal("failing-message", ctx.Message);
 
             // Assert — diagnostic headers are present and contain the exception details.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
-            var exceptionMessage = headers.Headers
+            var exceptionMessage = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-message").Value;
 
             Assert.NotNull(exceptionType);
@@ -150,10 +149,9 @@ public abstract class DeadLetterCompliance
             Assert.Equal("dlq-key-test-payload", ctx.Message);
 
             // Assert — the DLQ message key bytes match the UTF-8 encoding of the source key.
-            var rawBytes = ctx.Features.Get<IRawBytesFeature>();
-            Assert.NotNull(rawBytes);
-            Assert.NotNull(rawBytes.RawKey);
-            var dlqKey = System.Text.Encoding.UTF8.GetString(rawBytes.RawKey);
+            var rawKey = ctx.TransportContext.RawKey;
+            Assert.NotNull(rawKey);
+            var dlqKey = System.Text.Encoding.UTF8.GetString(rawKey);
             Assert.Equal(sourceKey, dlqKey);
         }
         finally
@@ -212,10 +210,10 @@ public abstract class DeadLetterCompliance
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
             Assert.Equal("header-test-payload", ctx.Message);
 
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var headerDict = headers.Headers.ToDictionary(h => h.Key, h => h.Value);
+            var headerDict = headers.ToDictionary(h => h.Key, h => h.Value);
 
             // Exception type and message must be present and non-null.
             Assert.True(headerDict.TryGetValue("x-emit-exception-type", out var exType),
@@ -272,7 +270,7 @@ public abstract class DeadLetterCompliance
     public sealed class AlwaysFailingConsumer : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated consumer failure for dead letter test.");
     }
 
@@ -284,7 +282,7 @@ public abstract class DeadLetterCompliance
     public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

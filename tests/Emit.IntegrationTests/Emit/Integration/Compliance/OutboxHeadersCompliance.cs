@@ -1,7 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -94,10 +93,10 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
             Assert.Equal("header-test-payload", ctx.Message);
 
             // Assert — the custom header is present in the consumer pipeline context.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var receivedCorrelationId = headers.Headers
+            var receivedCorrelationId = headers
                 .FirstOrDefault(h => h.Key == CorrelationIdHeaderKey).Value;
 
             Assert.NotNull(receivedCorrelationId);

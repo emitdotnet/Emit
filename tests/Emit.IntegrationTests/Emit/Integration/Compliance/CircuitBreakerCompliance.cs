@@ -86,7 +86,7 @@ public abstract class CircuitBreakerCompliance
             // and lets a probe message through. If the probe succeeds, the circuit closes.
             // Previously failed messages may be redelivered first (if offsets weren't committed),
             // so drain until we find "target".
-            InboundContext<string> context;
+            ConsumeContext<string> context;
             do
             {
                 context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
@@ -164,7 +164,7 @@ public abstract class CircuitBreakerCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k-final", "recovered"));
 
             // Assert — after recovery, messages flow through.
-            InboundContext<string> ctx;
+            ConsumeContext<string> ctx;
             do
             {
                 ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
@@ -295,7 +295,7 @@ public abstract class CircuitBreakerCompliance
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (toggle.ShouldThrow)
             {

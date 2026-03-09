@@ -20,11 +20,11 @@ public class ConsumeObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -41,12 +41,12 @@ public class ConsumeObserverMiddlewareTests
         var mockObserver = new Mock<IConsumeObserver>();
 
         mockObserver
-            .Setup(o => o.OnConsumingAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnConsumingAsync(It.IsAny<ConsumeContext<string>>()))
             .Callback(() => callSequence.Add("OnConsuming"))
             .Returns(Task.CompletedTask);
 
         mockObserver
-            .Setup(o => o.OnConsumedAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnConsumedAsync(It.IsAny<ConsumeContext<string>>()))
             .Callback(() => callSequence.Add("OnConsumed"))
             .Returns(Task.CompletedTask);
 
@@ -55,11 +55,11 @@ public class ConsumeObserverMiddlewareTests
             NullLogger<ConsumeObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -80,7 +80,7 @@ public class ConsumeObserverMiddlewareTests
             NullLogger<ConsumeObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<InboundContext<string>> next = _ => throw expectedException;
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => throw expectedException);
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -88,10 +88,10 @@ public class ConsumeObserverMiddlewareTests
 
         Assert.Same(expectedException, actualException);
         mockObserver.Verify(
-            o => o.OnConsumeErrorAsync(It.IsAny<InboundContext<string>>(), expectedException),
+            o => o.OnConsumeErrorAsync(It.IsAny<ConsumeContext<string>>(), expectedException),
             Times.Once);
         mockObserver.Verify(
-            o => o.OnConsumedAsync(It.IsAny<InboundContext<string>>()),
+            o => o.OnConsumedAsync(It.IsAny<ConsumeContext<string>>()),
             Times.Never);
     }
 
@@ -101,7 +101,7 @@ public class ConsumeObserverMiddlewareTests
         // Arrange
         var mockObserver = new Mock<IConsumeObserver>();
         mockObserver
-            .Setup(o => o.OnConsumingAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnConsumingAsync(It.IsAny<ConsumeContext<string>>()))
             .ThrowsAsync(new InvalidOperationException("Observer failed"));
 
         var middleware = new ConsumeObserverMiddleware<string>(
@@ -110,11 +110,11 @@ public class ConsumeObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -123,17 +123,19 @@ public class ConsumeObserverMiddlewareTests
         Assert.True(nextCalled);
     }
 
-    private static TestInboundContext<string> CreateContext()
+    private static TestConsumeContext<string> CreateContext()
     {
-        return new TestInboundContext<string>
+        var services = Mock.Of<IServiceProvider>();
+        return new TestConsumeContext<string>
         {
             MessageId = Guid.NewGuid().ToString(),
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
-            Services = Mock.Of<IServiceProvider>(),
-            Message = "test-message"
+            Services = services,
+            Message = "test-message",
+            TransportContext = TestTransportContext.Create(services),
         };
     }
 
-    private sealed class TestInboundContext<T> : InboundContext<T>;
+    private sealed class TestConsumeContext<T> : ConsumeContext<T>;
 }

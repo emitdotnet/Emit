@@ -19,6 +19,7 @@ public sealed class ConsumerGroupRegistrationTests
         {
             TopicName = topicName,
             GroupId = groupId,
+            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
             BuildConsumerPipelines = () => [],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,

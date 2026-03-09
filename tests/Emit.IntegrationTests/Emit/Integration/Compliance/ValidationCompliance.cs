@@ -1,7 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -226,10 +225,10 @@ public abstract class ValidationCompliance
             Assert.Equal("validator-throws-payload", ctx.Message);
 
             // Assert — diagnostic headers come from the error handling middleware (not validation middleware).
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
             Assert.NotNull(exceptionType);
             Assert.Contains(nameof(InvalidOperationException), exceptionType);
@@ -247,7 +246,7 @@ public abstract class ValidationCompliance
     public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

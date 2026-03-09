@@ -2,21 +2,22 @@ namespace Emit.Kafka.Tests;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
-using global::Emit.Kafka;
 using global::Emit.Kafka.Consumer;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 public sealed class KafkaPipelineProducerTests
 {
+    private static readonly Uri TestDestination = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
+    private static readonly Uri TestHost = EmitEndpointAddress.ForHost("kafka", "broker", 9092, "kafka");
     private readonly FakeTimeProvider timeProvider = new(DateTimeOffset.UtcNow);
 
     [Fact]
     public async Task GivenNullMessage_WhenProduceAsync_ThenThrowsArgumentNullException()
     {
         // Arrange
-        MessageDelegate<OutboundContext<string>> pipeline = _ => Task.CompletedTask;
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(() => producer.ProduceAsync(null!));
@@ -27,12 +28,12 @@ public sealed class KafkaPipelineProducerTests
     {
         // Arrange
         var pipelineInvoked = false;
-        MessageDelegate<OutboundContext<string>> pipeline = _ =>
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(_ =>
         {
             pipelineInvoked = true;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("key", "value");
 
         // Act
@@ -46,13 +47,13 @@ public sealed class KafkaPipelineProducerTests
     public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasCorrectMessageValue()
     {
         // Arrange
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("key", "test-value");
 
         // Act
@@ -64,16 +65,17 @@ public sealed class KafkaPipelineProducerTests
     }
 
     [Fact]
-    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKeyAndTopicViaFeatures()
+    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKeyAndDestinationAddress()
     {
         // Arrange
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "orders", null!, timeProvider);
+        });
+        var destination = (Uri)EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "orders");
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, destination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("order-key", "order-value");
 
         // Act
@@ -81,25 +83,24 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var keyFeature = capturedContext.Features.Get<IKeyFeature<string>>();
-        Assert.NotNull(keyFeature);
-        Assert.Equal("order-key", keyFeature.Key);
-        var kafkaFeature = capturedContext.Features.Get<IKafkaFeature>();
-        Assert.NotNull(kafkaFeature);
-        Assert.Equal("orders", kafkaFeature.Topic);
+        var messageKey = capturedContext.TryGetPayload<KafkaTransportContext<string>>();
+        Assert.NotNull(messageKey);
+        Assert.Equal("order-key", messageKey.Key);
+        Assert.Equal(destination, capturedContext.DestinationAddress);
+        Assert.Equal("orders", EmitEndpointAddress.GetEntityName(capturedContext.DestinationAddress));
     }
 
     [Fact]
-    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKeyFeature()
+    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKey()
     {
         // Arrange
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("my-key", "value");
 
         // Act
@@ -107,22 +108,22 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var keyFeature = capturedContext.Features.Get<IKeyFeature<string>>();
-        Assert.NotNull(keyFeature);
-        Assert.Equal("my-key", keyFeature.Key);
+        var messageKey = capturedContext.TryGetPayload<KafkaTransportContext<string>>();
+        Assert.NotNull(messageKey);
+        Assert.Equal("my-key", messageKey.Key);
     }
 
     [Fact]
-    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKafkaFeature()
+    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasSourceAndDestinationAddress()
     {
         // Arrange
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("key", "value");
 
         // Act
@@ -130,22 +131,22 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var kafkaFeature = capturedContext.Features.Get<IKafkaFeature>();
-        Assert.NotNull(kafkaFeature);
-        Assert.Equal("test-topic", kafkaFeature.Topic);
+        Assert.Equal(TestDestination, capturedContext.DestinationAddress);
+        Assert.Equal(TestHost, capturedContext.SourceAddress);
+        Assert.Equal("kafka", EmitEndpointAddress.GetScheme(capturedContext.DestinationAddress));
     }
 
     [Fact]
-    public async Task GivenMessageWithHeaders_WhenProduceAsync_ThenContextHasHeadersFeature()
+    public async Task GivenMessageWithHeaders_WhenProduceAsync_ThenContextHasHeaders()
     {
         // Arrange
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, timeProvider);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>(
             "key",
             "value",
@@ -159,9 +160,9 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var headersFeature = capturedContext.Features.Get<IHeadersFeature>();
-        Assert.NotNull(headersFeature);
-        Assert.Equal(2, headersFeature.Headers.Count);
+        Assert.Equal(2, capturedContext.Headers.Count);
+        Assert.Contains(capturedContext.Headers, h => h.Key == "correlation-id" && h.Value == "test-correlation");
+        Assert.Contains(capturedContext.Headers, h => h.Key == "source" && h.Value == "test-source");
     }
 
     [Fact]
@@ -170,13 +171,13 @@ public sealed class KafkaPipelineProducerTests
         // Arrange
         var fixedTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
         var tp = new FakeTimeProvider(fixedTime);
-        OutboundContext<string>? capturedContext = null;
-        MessageDelegate<OutboundContext<string>> pipeline = ctx =>
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
         {
             capturedContext = ctx;
             return Task.CompletedTask;
-        };
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, "test-topic", null!, tp);
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, tp);
         var message = new EventMessage<string, string>("key", "value");
 
         // Act

@@ -28,7 +28,7 @@ public interface IConsumeObserver
     /// <typeparam name="T">The message type being consumed.</typeparam>
     /// <param name="context">The inbound pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnConsumingAsync<T>(InboundContext<T> context) => Task.CompletedTask;
+    Task OnConsumingAsync<T>(ConsumeContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called after the inbound pipeline completes successfully.
@@ -36,7 +36,7 @@ public interface IConsumeObserver
     /// <typeparam name="T">The message type that was consumed.</typeparam>
     /// <param name="context">The inbound pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnConsumedAsync<T>(InboundContext<T> context) => Task.CompletedTask;
+    Task OnConsumedAsync<T>(ConsumeContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called when the inbound pipeline throws an exception.
@@ -45,5 +45,5 @@ public interface IConsumeObserver
     /// <param name="context">The inbound pipeline context.</param>
     /// <param name="exception">The exception thrown by the pipeline.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnConsumeErrorAsync<T>(InboundContext<T> context, Exception exception) => Task.CompletedTask;
+    Task OnConsumeErrorAsync<T>(ConsumeContext<T> context, Exception exception) => Task.CompletedTask;
 }

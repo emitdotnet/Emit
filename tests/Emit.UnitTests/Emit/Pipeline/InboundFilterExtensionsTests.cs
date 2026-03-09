@@ -35,7 +35,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.True(nextCalled.Value);
@@ -52,13 +52,13 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.False(nextCalled.Value);
     }
 
-    // ── Filter(Func<InboundContext<T>, bool>) — sync predicate ──
+    // ── Filter(Func<ConsumeContext<T>, bool>) — sync predicate ──
 
     [Fact]
     public void GivenSyncPredicate_WhenFilter_ThenAddsDescriptor()
@@ -84,7 +84,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.True(nextCalled.Value);
@@ -101,13 +101,13 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.False(nextCalled.Value);
     }
 
-    // ── Filter(Func<InboundContext<T>, CancellationToken, ValueTask<bool>>) — async predicate ──
+    // ── Filter(Func<ConsumeContext<T>, CancellationToken, ValueTask<bool>>) — async predicate ──
 
     [Fact]
     public void GivenAsyncPredicate_WhenFilter_ThenAddsDescriptor()
@@ -133,7 +133,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.True(nextCalled.Value);
@@ -150,7 +150,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.False(nextCalled.Value);
@@ -170,7 +170,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.True(nextCalled.Value);
@@ -188,7 +188,7 @@ public sealed class InboundFilterExtensionsTests
 
         // Act
         var pipeline = BuildPipeline(builder, context, nextCalled);
-        await pipeline(context);
+        await pipeline.InvokeAsync(context);
 
         // Assert
         Assert.False(nextCalled.Value);
@@ -196,33 +196,34 @@ public sealed class InboundFilterExtensionsTests
 
     // ── Helpers ──
 
-    private static (TestInboundContext<string> Context, StrongBox<bool> NextCalled) BuildAndGetContext(
+    private static (TestConsumeContext<string> Context, StrongBox<bool> NextCalled) BuildAndGetContext(
         TestInboundBuilder builder)
     {
         var services = new ServiceCollection().BuildServiceProvider();
-        var context = new TestInboundContext<string>
+        var context = new TestConsumeContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
             Services = services,
-            Message = "test-message"
+            Message = "test-message",
+            TransportContext = TestTransportContext.Create(services),
         };
         return (context, new StrongBox<bool>(false));
     }
 
-    private static MessageDelegate<InboundContext<string>> BuildPipeline(
+    private static IMiddlewarePipeline<ConsumeContext<string>> BuildPipeline(
         TestInboundBuilder builder,
-        TestInboundContext<string> context,
+        TestConsumeContext<string> context,
         StrongBox<bool> nextCalled)
     {
-        MessageDelegate<InboundContext<string>> terminal = _ =>
+        IMiddlewarePipeline<ConsumeContext<string>> terminal = new TestPipeline<ConsumeContext<string>>(_ =>
         {
             nextCalled.Value = true;
             return Task.CompletedTask;
-        };
+        });
 
-        return builder.InboundPipeline.Build<InboundContext<string>, string>(
+        return builder.InboundPipeline.Build<ConsumeContext<string>, string>(
             context.Services, terminal);
     }
 
@@ -233,7 +234,7 @@ public sealed class InboundFilterExtensionsTests
         public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
 
         public IInboundConfigurable<string> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-            where TMiddleware : class, IMiddleware<InboundContext<string>>
+            where TMiddleware : class, IMiddleware<ConsumeContext<string>>
         {
             InboundPipeline.Use(typeof(TMiddleware), lifetime);
             return this;
@@ -247,17 +248,17 @@ public sealed class InboundFilterExtensionsTests
         }
     }
 
-    private sealed class TestInboundContext<T> : InboundContext<T>;
+    private sealed class TestConsumeContext<T> : ConsumeContext<T>;
 
     private sealed class AcceptAllFilter : IConsumerFilter<string>
     {
-        public ValueTask<bool> ShouldConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) =>
+        public ValueTask<bool> ShouldConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) =>
             ValueTask.FromResult(true);
     }
 
     private sealed class RejectAllFilter : IConsumerFilter<string>
     {
-        public ValueTask<bool> ShouldConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) =>
+        public ValueTask<bool> ShouldConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) =>
             ValueTask.FromResult(false);
     }
 

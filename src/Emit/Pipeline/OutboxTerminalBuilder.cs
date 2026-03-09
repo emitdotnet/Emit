@@ -24,11 +24,18 @@ public static class OutboxTerminalBuilder
     /// <see cref="OutboxEntry.TraceState"/>, and <see cref="OutboxEntry.EnqueuedAt"/>
     /// after the delegate returns.
     /// </param>
-    /// <returns>A terminal delegate that enqueues entries to the outbox repository.</returns>
-    public static MessageDelegate<OutboundContext<TValue>> Build<TValue>(
-        Func<OutboundContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
+    /// <returns>A terminal pipeline that enqueues entries to the outbox repository.</returns>
+    public static IMiddlewarePipeline<SendContext<TValue>> Build<TValue>(
+        Func<SendContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
     {
-        return async context =>
+        return new OutboxTerminalPipeline<TValue>(createEntry);
+    }
+
+    private sealed class OutboxTerminalPipeline<TValue>(
+        Func<SendContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
+        : IMiddlewarePipeline<SendContext<TValue>>
+    {
+        public async Task InvokeAsync(SendContext<TValue> context)
         {
             var repository = context.Services.GetRequiredService<IOutboxRepository>();
             var emitContext = context.Services.GetRequiredService<IEmitContext>();
@@ -38,12 +45,15 @@ public static class OutboxTerminalBuilder
                 throw new InvalidOperationException("No transaction context is available.");
             }
 
+            // Read trace context from headers (injected by ProduceTracingMiddleware)
             string? traceParent = null;
             string? traceState = null;
-            if (context.Features.Get<IActivityFeature>() is { } activityFeature)
+            foreach (var header in context.Headers)
             {
-                traceParent = activityFeature.TraceParent;
-                traceState = activityFeature.TraceState;
+                if (header.Key == WellKnownHeaders.TraceParent)
+                    traceParent = header.Value;
+                else if (header.Key == WellKnownHeaders.TraceState)
+                    traceState = header.Value;
             }
 
             var entry = await createEntry(context, context.CancellationToken).ConfigureAwait(false);
@@ -59,6 +69,6 @@ public static class OutboxTerminalBuilder
             {
                 await observerInvoker.OnEnqueuedAsync(entry, context.CancellationToken).ConfigureAwait(false);
             }
-        };
+        }
     }
 }

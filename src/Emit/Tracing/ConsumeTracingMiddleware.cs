@@ -7,37 +7,40 @@ using Emit.Abstractions.Tracing;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Middleware that restores distributed tracing context from message headers for inbound messages.
+/// Middleware that creates an <c>emit.consume</c> child Activity for each consumer entry.
+/// Consumer identity is baked in at build time by <see cref="Pipeline.ConsumerPipelineComposer{TValue}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ConsumeTracingMiddleware<TMessage>(
     IOptions<EmitTracingOptions> options,
-    ActivityEnricherInvoker enricherInvoker) : IMiddleware<InboundContext<TMessage>>
+    ActivityEnricherInvoker enricherInvoker,
+    string consumerIdentifier,
+    Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
 {
     private readonly EmitTracingOptions options = options.Value;
 
     public async Task InvokeAsync(
-        InboundContext<TMessage> context,
-        MessageDelegate<InboundContext<TMessage>> next)
+        ConsumeContext<TMessage> context,
+        IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
         // Check if tracing is enabled
         if (!this.options.Enabled)
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        // Extract traceparent and tracestate from headers
-        var headers = context.Features.Get<IHeadersFeature>()?.Headers;
+        // Extract traceparent and tracestate from headers (direct property on ConsumeContext)
+        var headers = context.Headers;
         ActivityContext parentContext = default;
         string? traceParent = null;
         string? traceState = null;
         bool isDlqReplay = false;
 
-        if (headers is not null)
+        if (headers is { Count: > 0 })
         {
             // Check if this is a DLQ replay (has emit.dlq.original_traceparent)
-            var originalTraceParent = headers.FirstOrDefault(h => h.Key == "emit.dlq.original_traceparent").Value;
+            var originalTraceParent = headers.FirstOrDefault(h => h.Key == DeadLetterHeaders.OriginalTraceParent).Value;
             if (!string.IsNullOrEmpty(originalTraceParent))
             {
                 // This is a DLQ replay — link back to the original failed trace
@@ -47,10 +50,10 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             else
             {
                 // Normal consume — use standard traceparent
-                traceParent = headers.FirstOrDefault(h => h.Key == "traceparent").Value;
+                traceParent = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
             }
 
-            traceState = headers.FirstOrDefault(h => h.Key == "tracestate").Value;
+            traceState = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
 
             if (!string.IsNullOrEmpty(traceParent))
             {
@@ -67,51 +70,50 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
         if (activity is null)
         {
             // ActivitySource not enabled (no listeners)
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        // Add standard tags
-        activity.SetTag("messaging.system", "emit");
-        activity.SetTag("messaging.operation", "receive");
-        activity.SetTag("emit.message.type", typeof(TMessage).Name);
+        // Add standard tags — derive messaging.system from URI scheme
+        activity.SetTag(ActivityTagNames.MessagingSystem,
+            EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "emit");
+        activity.SetTag(ActivityTagNames.MessagingOperation, "receive");
+        activity.SetTag(ActivityTagNames.MessageType, typeof(TMessage).Name);
 
-        // Add topic from source metadata
-        if (context.Features.Get<IMessageSourceFeature>() is { } source &&
-            source.Properties.TryGetValue("topic", out var topicName))
+        // Add consumer identity (baked at build time)
+        activity.SetTag(ActivityTagNames.Consumer, consumerIdentifier);
+        if (consumerType is not null)
         {
-            activity.SetTag("messaging.destination.name", topicName);
+            activity.SetTag(ActivityTagNames.ConsumerType, consumerType.Name);
         }
 
-        // Add key type
-        if (context.Features.Get<IKeyTypeFeature>() is { } keyType)
+        // Add destination name from URI
+        if (EmitEndpointAddress.GetEntityName(context.DestinationAddress) is { } destination)
         {
-            activity.SetTag("emit.key.type", keyType.KeyType.Name);
+            activity.SetTag(ActivityTagNames.MessagingDestinationName, destination);
         }
 
         // Add DLQ replay indicator if applicable
         if (isDlqReplay)
         {
-            activity.SetTag("emit.dlq.replay", true);
+            activity.SetTag(ActivityTagNames.DlqReplay, true);
 
             // Extract original topic from headers if available
-            var originalTopic = headers?.FirstOrDefault(h => h.Key == "emit.dlq.original_topic").Value;
+            var originalTopic = headers.FirstOrDefault(h => h.Key == DeadLetterHeaders.OriginalTopic).Value;
             if (!string.IsNullOrEmpty(originalTopic))
             {
-                activity.SetTag("emit.dlq.original_topic", originalTopic);
+                activity.SetTag(ActivityTagNames.DlqOriginalTopic, originalTopic);
             }
         }
 
-        // Add provider ID if available
-        if (context.Features.Get<IProviderIdentifierFeature>() is { } provider)
+        // Restore baggage from W3C baggage header
+        if (this.options.PropagateBaggage && headers is { Count: > 0 })
         {
-            activity.SetTag("emit.provider.id", provider.ProviderId);
-        }
-
-        // Restore baggage from headers
-        if (this.options.PropagateBaggage && headers is not null)
-        {
-            ActivityHelper.RestoreBaggage(activity, headers);
+            var baggageHeader = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.Baggage).Value;
+            if (!string.IsNullOrEmpty(baggageHeader))
+            {
+                ActivityHelper.RestoreBaggage(activity, baggageHeader);
+            }
         }
 
         // Invoke enrichers
@@ -125,22 +127,6 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             context.Services);
 
         // Continue pipeline
-        await next(context).ConfigureAwait(false);
-
-        // Tag consumer identity (set pre-pipeline by FanOutAsync, may be updated by router)
-        if (context.Features.Get<IConsumerIdentityFeature>() is { } identity)
-        {
-            activity.SetTag("emit.consumer", identity.Identifier);
-
-            if (identity.ConsumerType is not null)
-            {
-                activity.SetTag("emit.consumer.type", identity.ConsumerType.Name);
-            }
-
-            if (identity.RouteKey is not null)
-            {
-                activity.SetTag("emit.route.key", identity.RouteKey.ToString());
-            }
-        }
+        await next.InvokeAsync(context).ConfigureAwait(false);
     }
 }

@@ -59,17 +59,17 @@ public interface IMessagePipelineBuilder
     /// Flattens parent layers and this builder's middleware, closes open generic types with
     /// <typeparamref name="TMessage"/>, validates each closed type implements
     /// <see cref="IMiddleware{TContext}"/> for the target context, and composes the
-    /// <see cref="MessageDelegate{TContext}"/> chain.
+    /// <see cref="IMiddlewarePipeline{TContext}"/> chain.
     /// </summary>
-    /// <typeparam name="TContext">The pipeline context type (e.g., <c>InboundContext&lt;TValue&gt;</c>).</typeparam>
+    /// <typeparam name="TContext">The pipeline context type (e.g., <c>ConsumeContext&lt;TValue&gt;</c>).</typeparam>
     /// <typeparam name="TMessage">The message type to close open generics with.</typeparam>
     /// <param name="services">The service provider for resolving middleware.</param>
-    /// <param name="terminal">The terminal delegate (e.g., handler invoker).</param>
+    /// <param name="terminal">The terminal pipeline (e.g., handler invoker).</param>
     /// <param name="parentLayers">Parent pipeline builders, outermost first.</param>
-    /// <returns>A composed <see cref="MessageDelegate{TContext}"/> chain.</returns>
-    MessageDelegate<TContext> Build<TContext, TMessage>(
+    /// <returns>A composed <see cref="IMiddlewarePipeline{TContext}"/> chain.</returns>
+    IMiddlewarePipeline<TContext> Build<TContext, TMessage>(
         IServiceProvider services,
-        MessageDelegate<TContext> terminal,
+        IMiddlewarePipeline<TContext> terminal,
         params IMessagePipelineBuilder[] parentLayers)
-        where TContext : MessageContext<TMessage>;
+        where TContext : MessageContext;
 }

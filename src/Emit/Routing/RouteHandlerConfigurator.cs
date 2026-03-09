@@ -21,7 +21,7 @@ internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<
 
     /// <inheritdoc />
     public IInboundConfigurable<TMessage> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class, IMiddleware<InboundContext<TMessage>>
+        where TMiddleware : class, IMiddleware<ConsumeContext<TMessage>>
     {
         Pipeline.Use(typeof(TMiddleware), lifetime);
         return this;

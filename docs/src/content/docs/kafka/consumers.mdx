@@ -13,7 +13,7 @@ import Mermaid from '../../../components/Mermaid.astro';
 public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
     : IConsumer<PizzaOrdered>
 {
-    public async Task ConsumeAsync(InboundContext<PizzaOrdered> context, CancellationToken cancellationToken)
+    public async Task ConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken cancellationToken)
     {
         var pizza = context.Message;
         logger.LogInformation("Preparing pizza {PizzaId} for {CustomerId}", pizza.PizzaId, pizza.CustomerId);
@@ -37,21 +37,37 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 
 Consumers are resolved from the DI container per message, so constructor injection works normally.
 
-## InboundContext
+## ConsumeContext
 
-`InboundContext<TValue>` carries the message and metadata:
+`ConsumeContext<TValue>` carries the message and metadata:
 
 | Member | Type | Description |
 |---|---|---|
 | `Message` | `TValue` | The deserialized message value |
 | `MessageId` | `string` | Unique message identifier |
 | `Timestamp` | `DateTimeOffset` | Message timestamp |
+| `DestinationAddress` | `Uri?` | Transport URI (e.g. `kafka://broker:9092/kafka/orders`) |
+| `SourceAddress` | `Uri?` | Sender address, propagated via headers |
+| `Headers` | `IReadOnlyList<...>` | Message headers (delegated from transport context) |
+| `RetryAttempt` | `int` | Current retry count (0 on first attempt) |
 | `CancellationToken` | `CancellationToken` | Cancellation for this message |
 | `Services` | `IServiceProvider` | Scoped provider for this message |
-| `Features` | `IFeatureCollection` | Type-safe feature bag |
+| `TransportContext` | `TransportContext` | Transport-specific metadata |
 | `Transaction` | `ITransactionContext?` | Active transaction, if any |
 
-Kafka-specific data (topic, partition, offset, key, headers) is in the feature collection. See [Feature Collection](../advanced/feature-collection/) for the full list.
+### Accessing Kafka-specific data
+
+The `TransportContext` is a `KafkaTransportContext<TKey>` on the consume side. Cast it to access the deserialized message key and Kafka metadata:
+
+```csharp
+if (context.TransportContext is KafkaTransportContext<string> kafka)
+{
+    logger.LogInformation("Key={Key} Topic={Topic} Partition={Partition} Offset={Offset}",
+        kafka.Key, kafka.Topic, kafka.Partition, kafka.Offset);
+}
+```
+
+See [Feature Collection & Payload Bag](../advanced/feature-collection/) for more on context properties and payload access.
 
 ## Worker pool
 
@@ -245,7 +261,7 @@ group.WorkerStopTimeout = TimeSpan.FromSeconds(30);
 ```csharp
 public class ActiveOrderFilter : IConsumerFilter<PizzaOrdered>
 {
-    public ValueTask<bool> ShouldConsumeAsync(InboundContext<PizzaOrdered> context, CancellationToken ct)
+    public ValueTask<bool> ShouldConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken ct)
         => ValueTask.FromResult(context.Message.Status == OrderStatus.Active);
 }
 ```
