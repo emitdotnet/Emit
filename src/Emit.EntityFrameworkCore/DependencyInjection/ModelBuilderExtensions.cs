@@ -21,19 +21,8 @@ public static class ModelBuilderExtensions
     /// </param>
     /// <returns>The model builder for method chaining.</returns>
     /// <remarks>
-    /// <para>
     /// Call this method in your <see cref="DbContext.OnModelCreating"/> to add the outbox
     /// and lock tables to your database schema.
-    /// </para>
-    /// <para>
-    /// Example:
-    /// <code>
-    /// protected override void OnModelCreating(ModelBuilder modelBuilder)
-    /// {
-    ///     modelBuilder.AddEmitModel(emit =&gt; emit.UseNpgsql());
-    /// }
-    /// </code>
-    /// </para>
     /// </remarks>
     public static ModelBuilder AddEmitModel(this ModelBuilder modelBuilder, Action<EmitModelBuilder>? configure = null)
     {

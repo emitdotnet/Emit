@@ -15,3 +15,5 @@
 | `KafkaSchemaRegistryConfig.cs` | Schema Registry connection configuration (URL, timeouts, retries, caching, auth) with ApplyTo method | Configure Confluent Schema Registry connection |
 | `KafkaTopicBuilder.cs` | Fluent builder for topic-level consumer configuration | Configure per-topic consumer settings |
 | `KafkaTopicBuilderExtensions.cs` | Convenience extension methods providing built-in serializers/deserializers (Utf8, ByteArray, Null, numeric, Ignore) | Use built-in Kafka serializers |
+| `KafkaDeadLetterOptions.cs` | Internal options carrying dead letter topic name and destination address registered by KafkaBuilder.DeadLetter | Understand how DLQ configuration is stored and resolved |
+| `TopicCreationOptions.cs` | Configuration for auto-provisioned topic properties: partition count, replication factor, retention, cleanup policy, compression | Configure topic auto-provisioning via KafkaTopicBuilder |

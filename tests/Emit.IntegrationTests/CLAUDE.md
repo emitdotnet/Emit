@@ -17,3 +17,4 @@ Consolidated integration tests using compliance base classes and Testcontainers.
 | `Emit.MongoDB/` | MongoDB compliance implementations and MongoDb container fixture | Write MongoDB persistence tests or debug MongoDB-specific behavior |
 | `Emit.EntityFrameworkCore/` | PostgreSQL compliance implementations, container fixture, and test DbContext | Write EF Core / PostgreSQL persistence tests |
 | `Emit.Kafka/` | Kafka compliance implementations and Kafka+Schema Registry container fixture | Write Kafka provider tests or debug Kafka-specific behavior |
+| `Emit.Mediator/` | Mediator integration tests: request-response and exception propagation | Write or debug mediator integration tests |

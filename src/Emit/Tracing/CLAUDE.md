@@ -12,4 +12,6 @@
 | `EmitTracingOptionsValidator.cs` | IValidateOptions validator for EmitTracingOptions | Understand tracing configuration validation rules |
 | `ProduceTracingMiddleware.cs` | Middleware creating distributed tracing spans for produced messages | Understand producer tracing or debug trace propagation |
 | `OutboxActivityHelper.cs` | Helpers for creating and managing tracing activities during outbox processing | Understand outbox tracing or debug outbox activity creation |
+| `ActivityTagNames.cs` | Well-known OpenTelemetry and Emit-specific Activity tag name constants | Reference tag names for tracing configuration or instrumentation |
+| `TransportTracingMiddleware.cs` | Transport-level middleware creating an emit.receive parent Activity and extracting traceparent from headers | Understand transport-level trace propagation or debug parent span creation |
 | `TraceContextHeaderInjector.cs` | Injects W3C trace context (traceparent, tracestate, baggage) into message headers | Understand trace context propagation into message headers |

@@ -1,87 +1,165 @@
 ---
 title: Pipeline Model
-description: How middleware composes across the three levels of the Emit pipeline.
+description: How middleware composes across the Emit pipeline, from raw Kafka message to consumer handler.
 ---
 
 import Mermaid from '../../../components/Mermaid.astro';
 
-Every message in Emit, whether inbound from Kafka or outbound from a producer call, passes through a layered middleware pipeline before reaching its handler or its destination. Understanding this model is what separates "I configured something and it seems to work" from actually knowing what your code is doing.
-
-## Three levels, two directions
-
-The pipeline has three levels, each narrowing the scope of which messages are affected:
-
-| Level | Scope | Configured on |
-|---|---|---|
-| **Global** | Every message, every provider | `EmitBuilder` |
-| **Provider** | Messages for a specific provider (Kafka, Mediator) | `KafkaBuilder`, `MediatorBuilder` |
-| **Leaf** | A specific consumer group, producer, or handler | `KafkaConsumerGroupBuilder`, `KafkaProducerBuilder`, `MediatorHandlerBuilder` |
-
-Middleware registered at a higher level runs *outside* middleware registered at a lower level, just like ASP.NET middleware wraps your endpoint.
+Every message in Emit passes through a layered middleware pipeline before reaching its handler or destination. The inbound path is richer than it looks: a raw Kafka message goes through deserialization and fan-out before individual consumer pipelines even start.
 
 ## Inbound pipeline (consuming)
 
-When a Kafka message arrives, it passes through the full stack before reaching your `IConsumer<T>`:
+The inbound path has two distinct phases: **transport processing** (deserialization and fan-out) followed by **per-consumer pipeline execution**.
+
+### Transport phase
+
+When a message arrives from Kafka, the `ConsumerWorker` handles deserialization and fan-out *before* any middleware runs:
 
 <Mermaid code={`flowchart TB
-    K[["Kafka"]]
-    subgraph G["Global"]
-        G1["Tracing · Metrics · Observers"]
+    K[["Kafka broker"]]
+    W["ConsumerWorker"]
+    D["Deserialize key + value"]
+    FO{"Fan-out"}
+    C1["Consumer A pipeline"]
+    C2["Consumer B pipeline"]
+    C3["Router pipeline"]
+    K --> W --> D --> FO
+    FO --> C1
+    FO --> C2
+    FO --> C3`} />
+
+1. **Poll**: The consumer group worker reads raw bytes from Kafka and distributes them to worker channels
+2. **Deserialize**: Key and value are deserialized using the registered `IDeserializer<T>` / `IAsyncDeserializer<T>`. Deserialization errors are handled separately (dead-letter or discard) — they never enter the consumer pipeline
+3. **Fan-out**: For each consumer or router registered on this consumer group, a fresh DI scope is created along with its own `KafkaTransportContext<TKey>` and `ConsumeContext<TValue>`. Each entry runs its pipeline independently
+
+Deserialization errors are handled via `OnDeserializationError` on the consumer group. Since the message hasn't been deserialized yet, these errors bypass the consumer pipeline entirely.
+
+### Consumer pipeline
+
+Each consumer entry in the fan-out gets its own fully-composed pipeline. The pipeline is built innermost-to-outermost, but executes outermost-to-innermost:
+
+<Mermaid code={`flowchart TB
+    subgraph E["Error handling"]
+        E1["Error policy · Circuit breaker"]
     end
-    subgraph P["Kafka provider"]
-        P1["Provider middleware"]
+    subgraph O["Observers"]
+        O1["Consume observers"]
     end
-    subgraph CG["Consumer group"]
-        CG1["Error policy · Validation · Circuit breaker · Rate limit"]
-        H["IConsumer&lt;T&gt;"]
+    subgraph T["Tracing + Metrics"]
+        T1["Tracing · Metrics"]
     end
-    K --> G1 --> P1 --> CG1 --> H`} />
+    subgraph U["User middleware"]
+        U1["Global → Provider → Group"]
+    end
+    subgraph V["Validation + Retry"]
+        V1["Validation · Retry"]
+    end
+    subgraph H["Handler"]
+        H1["Per-consumer middleware"]
+        H2["IConsumer&lt;T&gt;"]
+    end
+    E1 --> O1 --> T1 --> U1 --> V1 --> H1 --> H2`} />
+
+The exact layer order (outermost to innermost):
+
+| Layer | What it does | Always present? |
+|---|---|---|
+| **Error handling** | Catches exceptions, evaluates error policy (dead-letter, discard), notifies circuit breaker | Yes |
+| **Observers** | Invokes registered `IConsumeObserver` callbacks | Yes |
+| **Tracing** | Creates `emit.consume` Activity with consumer identity | Yes |
+| **Metrics** | Records duration, success/failure counters | Yes |
+| **User middleware** | Global → Provider → Group middleware, in registration order | Only if registered |
+| **Validation** | Runs `IMessageValidator<T>` before the handler; failures skip retry | Only if configured |
+| **Retry** | Re-executes handler + per-entry middleware on failure with backoff | Only if configured |
+| **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
+| **Handler** | `IConsumer<T>.ConsumeAsync()` | Yes |
+
+Error handling is the outermost layer so it catches exceptions from every other layer. Validation runs outside retry so validation failures are never retried. Tracing and metrics are baked with the consumer's identity at build time.
+
+### Fan-out and routing
+
+When a consumer group has multiple consumers or routers, each one gets its own pipeline execution per message. They share the same deserialized message but each gets:
+
+- A fresh `IServiceScope`
+- Its own `KafkaTransportContext<TKey>` and `ConsumeContext<TValue>` instances
+- Independent pipeline execution (one failing doesn't affect others)
+
+**Content-based routing** adds a second level of dispatch. A `MessageRouterInvoker` sits at the terminal position of the consumer pipeline. It evaluates the route selector, then invokes the matched route's sub-pipeline:
+
+<Mermaid code={`flowchart TB
+    P["Consumer pipeline layers"]
+    R["Router terminal"]
+    S{"Route selector"}
+    R1["Route A middleware → Handler A"]
+    R2["Route B middleware → Handler B"]
+    R3["Unmatched → error policy"]
+    P --> R --> S
+    S -->|"thin"| R1
+    S -->|"deep-dish"| R2
+    S -->|"???"| R3`} />
+
+Each route can have its own per-route middleware. Unmatched messages either discard inline (if configured via `WhenRouteUnmatched`) or throw `UnmatchedRouteException` for the error policy to handle.
 
 ## Outbound pipeline (producing)
 
-When you call `IEventProducer.ProduceAsync()`, the message passes through the outbound stack before reaching its terminal. The terminal is either the outbox (when the producer called `UseOutbox()`) or the Kafka broker directly:
+The outbound path is simpler — no fan-out, no deserialization. When you call `IEventProducer.ProduceAsync()`, a `SendContext<TValue>` flows through a single pipeline:
 
 <Mermaid code={`flowchart TB
     A["IEventProducer.ProduceAsync()"]
-    subgraph G["Global"]
-        G1["Tracing · Metrics · Observers"]
+    subgraph O["Observers"]
+        O1["Produce observers"]
     end
-    subgraph P["Kafka provider"]
-        P1["Provider middleware"]
+    subgraph T["Tracing + Metrics"]
+        T1["Tracing · Metrics"]
     end
-    subgraph PR["Per-producer"]
-        PM1["Custom middleware"]
+    subgraph U["User middleware"]
+        U1["Global → Provider → Per-producer"]
     end
-    O[("Outbox\n(UseOutbox)")]
-    K[["Kafka broker\n(direct)"]]
-    A --> G1 --> P1 --> PM1
-    PM1 -->|"UseOutbox()"| O
-    PM1 -->|"direct"| K`} />
+    subgraph TM["Terminal"]
+        OB[("Outbox")]
+        KB[["Kafka broker"]]
+    end
+    A --> O1 --> T1 --> U1
+    U1 -->|"UseOutbox()"| OB
+    U1 -->|"direct"| KB`} />
+
+The terminal is selected at registration time: `UseOutbox()` enqueues to the database outbox inside the current transaction; direct mode serializes and produces to Kafka immediately.
 
 ## Context objects
 
-Middleware receives a typed context. The type tells you which direction you're in:
+Middleware receives a typed context that determines which pipeline direction it belongs to:
 
-- **`ConsumeContext<TValue>`** (Kafka consumers): carries the inbound message, transport metadata, and Kafka-specific context
-- **`MediatorContext<TValue>`** (mediator handlers): carries the request for in-process dispatch
-- **`SendContext<TValue>`** (producers): carries the outbound message and mutable headers
+- **`ConsumeContext<T>`** — inbound consumer pipeline. Carries the deserialized message and a reference to its parent `TransportContext`
+- **`SendContext<T>`** — outbound producer pipeline. Carries the message and mutable headers
 
-All three extend `MessageContext<TValue>`, which extends `MessageContext`. `MessageContext` provides common properties (`MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `Services`), a **feature collection** (`IFeatureCollection`) for optional capabilities, and a **payload bag** (`SetPayload` / `TryGetPayload`) for transport-specific data.
+Both extend `MessageContext<T>` → `MessageContext`, which provides common properties: `MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `Services`, a feature collection, and a payload bag.
+
+### TransportContext
+
+`ConsumeContext<T>` holds a reference to its parent `TransportContext`, which carries pre-deserialization data: raw bytes, headers, and the provider ID. For Kafka, this is `KafkaTransportContext<TKey>` with topic, partition, offset, group ID, and the deserialized key:
 
 ```csharp
-// Transport-agnostic: use DestinationAddress directly
-var topic = EmitEndpointAddress.GetEntityName(context.DestinationAddress);
-
-// Kafka-specific: cast the TransportContext
 if (context.TransportContext is KafkaTransportContext<string> kafka)
     logger.LogDebug("Key: {Key}, Partition: {P}", kafka.Key, kafka.Partition);
 ```
 
-See [Feature Collection & Payload Bag](../advanced/feature-collection/) for the full list of context properties and built-in payloads.
+For outbound messages, `KafkaTransportContext<TKey>` is stored as a payload on the `SendContext` (via `SetPayload`) so the terminal can extract the key for serialization.
+
+See [Feature Collection & Payload Bag](../../advanced/feature-collection/) for the full list of context properties and built-in payloads.
+
+## Middleware levels
+
+User middleware is composed across three levels, each narrowing scope:
+
+| Level | Scope | Configured on |
+|---|---|---|
+| **Global** | Every message, every provider | `EmitBuilder` |
+| **Provider** | All messages for one provider | `KafkaBuilder` |
+| **Leaf** | One consumer group, producer, or handler | Group/producer/handler builder |
+
+Middleware registered at a higher level runs *outside* middleware at a lower level, just like ASP.NET middleware wraps your endpoint. Within each level, middleware executes in registration order.
 
 ## Middleware lifetimes
-
-When you register middleware, you specify its lifetime:
 
 ```csharp
 group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // one shared instance (default)
@@ -92,6 +170,6 @@ group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per mes
 
 ## What's registered automatically
 
-Emit always registers tracing, metrics, and observer middleware at the global level; you don't add them manually. The order is fixed: tracing wraps metrics, which wraps observers, which wraps everything else. Your custom middleware runs inside all of that.
+Emit always registers error handling, tracing, metrics, and observer middleware. You don't add them manually. The order is fixed: error handling (outermost) → observers → tracing → metrics → your middleware → validation → retry → handler (innermost). Your custom middleware runs inside the built-in layers.
 
-For more on writing middleware, see [Custom Middleware](../advanced/custom-middleware/).
+For more on writing middleware, see [Custom Middleware](../../advanced/custom-middleware/).

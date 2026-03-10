@@ -6,6 +6,7 @@ EF Core persistence provider: outbox repository with PostgreSQL support and auto
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
+| `README.md` | EF Core provider documentation: schema, migrations, configuration, troubleshooting | Understand EF Core provider usage or configure the entity model |
 | `EfCoreOutboxRepository.cs` | IOutboxRepository implementation with Npgsql raw SQL and transaction integration | Implement EF Core queries or troubleshoot persistence |
 | `EfCoreDistributedLockProvider.cs` | IDistributedLockProvider implementation using PostgreSQL INSERT ON CONFLICT via EF Core DbConnection | Implement or debug distributed lock behavior |
 | `EfCoreDaemonAssignmentPersistence.cs` | IDaemonAssignmentPersistence implementation for PostgreSQL | Understand or debug daemon assignment persistence |

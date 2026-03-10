@@ -6,7 +6,7 @@ Each sample is a self-contained project that demonstrates real-world usage of Em
 
 | Sample | What it demonstrates |
 |---|---|
-| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka router consumer, multiple consumer groups, OpenTelemetry metrics and tracing |
+| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka router consumer, multiple consumer groups, auto-provisioning, dead-letter topic, health checks, OpenTelemetry metrics and tracing |
 | [distributed-locks](distributed-locks/) | Distributed locking with contention, lock TTL, dual persistence (MongoDB/PostgreSQL), OpenTelemetry lock metrics |
 
 ---
@@ -23,11 +23,20 @@ The command handler writes the raw device event to the database and enqueues the
 **Mediator**
 Each API endpoint dispatches a command through `IMediator`. The handler validates, persists, and enqueues — nothing else.
 
+**Auto-provisioning**
+`kafka.AutoProvision()` creates all required Kafka topics at startup. No manual topic creation or admin scripts needed.
+
+**Dead-letter topic**
+`kafka.DeadLetter("building.events.dlt")` configures a dead-letter topic. Messages that fail after retries are automatically routed there with diagnostic headers.
+
 **Kafka router consumer — `building.classifier`**
 Consumes `building.events` and routes on the `eventType` field. Only `access.denied` events are handled — they are aggregated per badge and an alarm flag is raised when the denial count crosses a threshold. All other event types are ignored. This is the canonical demonstration of the router: one consumer group, one topic, selective handling by event type.
 
 **Kafka simple consumer — `building.watchdog`**
 Consumes every event regardless of type and upserts a heartbeat record per device (`last_seen_at`, `event_count`). Exposes a `/api/devices/status` endpoint that surfaces devices that have gone silent. The sharpest contrast with the router consumer — it never looks at `eventType`.
+
+**Health checks**
+`/health` endpoint reports Kafka broker connectivity and database health (MongoDB or PostgreSQL depending on the startup project).
 
 **OpenTelemetry**
 Metrics exported via Prometheus and visualised in Grafana. Distributed traces collected by Tempo and explored in Grafana.

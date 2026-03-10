@@ -123,7 +123,7 @@ If you want the message to be treated as failed (triggering error policy), throw
 
 Middleware executes in the order it is registered, outermost to innermost. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your global middleware.
 
-<Mermaid chart={`
+<Mermaid code={`
 flowchart LR
     A[Built-in\nTracing/Metrics] --> B[Global\nmiddleware]
     B --> C[Provider\nmiddleware]

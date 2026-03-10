@@ -67,7 +67,7 @@ if (context.TransportContext is KafkaTransportContext<string> kafka)
 }
 ```
 
-See [Feature Collection & Payload Bag](../advanced/feature-collection/) for more on context properties and payload access.
+See [Feature Collection & Payload Bag](../../advanced/feature-collection/) for more on context properties and payload access.
 
 ## Worker pool
 
@@ -244,7 +244,7 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-For error handling, validation, circuit breakers, and rate limiting at the group level, see [Error Policies](../error-handling/error-policies/) and [Resilience](../error-handling/resilience/).
+For error handling, validation, circuit breakers, and rate limiting at the group level, see [Error Policies](../../error-handling/error-policies/) and [Resilience](../../error-handling/resilience/).
 
 ## Graceful shutdown
 
@@ -316,4 +316,4 @@ For transport-agnostic consume lifecycle hooks, use `IConsumeObserver` at the gl
 emit.AddConsumeObserver<MyConsumeObserver>();
 ```
 
-See [Observers](../observability/observers/) for details on both.
+See [Observers](../../observability/observers/) for details on both.

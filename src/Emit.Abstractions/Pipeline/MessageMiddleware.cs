@@ -4,11 +4,7 @@ namespace Emit.Abstractions.Pipeline;
 /// Optional base class for cross-cutting middleware that runs on both consume and outbound pipelines.
 /// Implements <see cref="IMiddleware{TContext}"/> for both <see cref="ConsumeContext{T}"/> and
 /// <see cref="SendContext{T}"/>, dispatching to a single <see cref="InvokeAsync{TContext}"/> method.
-/// Register on both pipelines explicitly:
-/// <code>
-/// emit.InboundPipeline.Use(typeof(LoggingMiddleware&lt;&gt;));
-/// emit.OutboundPipeline.Use(typeof(LoggingMiddleware&lt;&gt;));
-/// </code>
+/// Register on both pipelines via <see cref="IMessagePipelineBuilder"/>.
 /// </summary>
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class MessageMiddleware<T> : IMiddleware<ConsumeContext<T>>, IMiddleware<SendContext<T>>

@@ -87,14 +87,38 @@ group.CircuitBreaker(cb =>
 ## DLQ options
 
 ```csharp
-kafka.DeadLetter(dlq =>
+kafka.DeadLetter("orders.dlt");
+
+// With provisioning options:
+kafka.DeadLetter("orders.dlt", dlq =>
 {
-    // Default: appends ".dlt" to the source topic name (e.g. "orders" → "orders.dlt")
-    dlq.TopicNamingConvention = sourceTopic => $"{sourceTopic}.dlt";
-})
+    dlq.Provisioning(options =>
+    {
+        options.Retention = TimeSpan.FromDays(30);
+    });
+});
 ```
 
-`TopicNamingConvention` is a `Func<string, string>` — override it for org-wide naming conventions.
+The DLQ topic name is required. The topic is registered as a regular `byte[]` topic and participates in topic verification and auto-provisioning.
+
+## Auto-provisioning options
+
+Call `kafka.AutoProvision()` to enable automatic topic creation at startup. Per-topic creation options are configured via `topic.Provisioning(...)`:
+
+| Option | Default | Description |
+|---|---|---|
+| `NumPartitions` | broker default | Number of partitions |
+| `ReplicationFactor` | broker default | Number of replicas |
+| `Retention` | 7 days | How long messages are retained (`null` = infinite) |
+| `RetentionBytes` | no limit | Maximum partition size before old segments are discarded |
+| `CleanupPolicy` | `Delete` | `Delete`, `Compact`, or `DeleteAndCompact` |
+| `DeleteRetention` | 1 day | Tombstone retention for compacted topics |
+| `CompressionType` | `Producer` | `Producer`, `Uncompressed`, `Gzip`, `Snappy`, `Lz4`, or `Zstd` |
+| `MinCleanableDirtyRatio` | `0.5` | Minimum dirty-to-total ratio before compaction |
+| `MinCompactionLag` | `0` | Minimum time before compaction |
+| `MaxCompactionLag` | none | Maximum time before compaction |
+
+See [Kafka Setup — Auto-provisioning](../../kafka/setup/#auto-provisioning) for usage examples.
 
 ## Leader election options
 

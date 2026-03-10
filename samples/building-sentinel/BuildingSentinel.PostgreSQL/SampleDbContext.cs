@@ -16,7 +16,6 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbCont
 
         modelBuilder.Entity<BuildingEventEntity>(e =>
         {
-            e.ToTable("building_events");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityByDefaultColumn();
             e.Property(x => x.DeviceId).IsRequired().HasMaxLength(128);
@@ -26,14 +25,12 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbCont
 
         modelBuilder.Entity<AccessDenialAlertEntity>(e =>
         {
-            e.ToTable("access_denial_alerts");
             e.HasKey(x => x.BadgeId);
             e.Property(x => x.BadgeId).IsRequired().HasMaxLength(128);
         });
 
         modelBuilder.Entity<DeviceHeartbeatEntity>(e =>
         {
-            e.ToTable("device_heartbeats");
             e.HasKey(x => x.DeviceId);
             e.Property(x => x.DeviceId).IsRequired().HasMaxLength(128);
         });

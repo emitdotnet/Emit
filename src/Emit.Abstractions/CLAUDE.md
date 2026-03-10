@@ -6,6 +6,7 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
+| `README.md` | Abstractions overview and package description | Understand what this package provides |
 | `Emit.Abstractions.csproj` | Abstractions project file with Transactional dependency | Configure abstraction dependencies |
 | `IOutboxRepository.cs` | Persistence contract for enqueueing, deleting, and fetching outbox entries | Implement a new persistence backend |
 | `IOutboxProvider.cs` | Contract for providers that process outbox entries by delivering to external systems | Implement a new outbox provider |
@@ -24,25 +25,22 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `ConsumerKind.cs` | Enum distinguishing Direct consumer handlers from content-based Router dispatchers | Understand consumer identity kind values used in tracing, metrics, and error handling |
 | `ErrorActionBuilder.cs` | Base builder for configuring a terminal error action (DeadLetter, Discard) on a message | Understand how error actions are constructed inside error policy clauses |
 | `MessageContext.cs` | Abstract envelope flowing through pipelines with MessageId, Timestamp, CancellationToken, Services, and Features | Understand pipeline context model |
-| `OutboundContext.cs` | Base context for outbound (producer) pipelines carrying typed message data | Implement outbound middleware or understand producer pipeline |
+| `ConsumeContext.cs` | Post-deserialization consume context carrying the typed message and parent TransportContext | Understand the consume pipeline context or implement consume middleware |
+| `SendContext.cs` | Outbound context for producing messages with typed message data and mutable headers | Implement outbound middleware or understand producer pipeline |
+| `TransportContext.cs` | Pre-deserialization transport context carrying raw bytes, headers, and provider metadata | Understand transport-level pipeline or implement transport middleware |
 | `IFeatureCollection.cs` | Type-safe feature bag interface used by pipeline contexts for optional, extensible metadata | Add new pipeline features or access existing ones in middleware |
 | `FeatureCollection.cs` | Dictionary-backed IFeatureCollection implementation used by message contexts | Understand how features are stored and retrieved on pipeline contexts |
-| `IActivityFeature.cs` | Feature interface exposing W3C traceparent, tracestate, and baggage for trace propagation | Implement tracing middleware or access distributed trace context |
 | `IConsumerFlowControl.cs` | Interface for pausing and resuming message consumption while maintaining group membership | Implement circuit breakers or backpressure mechanisms |
-| `IConsumerIdentityFeature.cs` | Feature interface exposing consumer identifier, kind, handler type, and matched route key | Access consumer identity in tracing, metrics, or error handling middleware |
 | `IDeadLetterSink.cs` | Interface for producing messages to a dead letter destination by raw bytes and headers | Implement a DLQ producer or understand how failed messages are forwarded |
 | `IInboundConfigurable.cs` | Leaf builder interface for registering typed inbound middleware (Use) and consumer filters (Filter) | Implement a new builder that supports per-consumer pipeline configuration |
-| `IKeyFeature.cs` | Generic feature interface exposing the typed message key set on inbound contexts | Access message keys in middleware for routing, logging, or tracing |
-| `IKeyTypeFeature.cs` | Non-generic feature interface exposing the message key's CLR Type for transport-agnostic middleware | Inspect key type without knowing the generic parameter |
-| `IMessageSourceFeature.cs` | Feature interface exposing transport-agnostic source metadata as key-value pairs | Enrich logs or dead-letter headers with message origin information |
 | `IMessageValidator.cs` | Interface for validating incoming messages; return Fail for deterministic failures, throw for transient errors | Implement message validation or understand the validation contract |
 | `IOutboundConfigurable.cs` | Leaf builder interface for registering typed outbound middleware (Use) on producer pipelines | Implement a new builder that supports per-producer pipeline configuration |
-| `IProviderIdentifierFeature.cs` | Feature interface exposing the provider ID (e.g., "kafka") set before pipeline invocation | Branch middleware behavior based on which provider is executing |
-| `IRawBytesFeature.cs` | Feature interface exposing raw transport key and value bytes for dead-letter forwarding without re-serialization | Implement dead-letter middleware or access raw bytes in middleware |
 | `IResponseFeature.cs` | Feature interface for request-response patterns, allowing middleware to set a typed response | Implement request-response patterns or access response state in middleware |
-| `IRetryAttemptFeature.cs` | Feature interface exposing the current retry attempt number (0 = initial, 1 = first retry) | Access retry count in middleware for conditional logic or metrics |
-| `MessageSourceFeatureExtensions.cs` | FormatSource extension on IMessageSourceFeature producing a compact key=value log string | Understand or customize how message source metadata is formatted in logs |
 | `MessageValidationResult.cs` | Result type for IMessageValidator with static Success singleton and Fail factory methods | Return or inspect validation outcomes in validators and validation middleware |
+| `MessageValidationException.cs` | Exception thrown when a message fails validation; carries the list of validation error messages | Handle or inspect validation failures in error policies or dead-letter headers |
+| `EmitEndpointAddress.cs` | Transport endpoint address as a URI with scheme, host, port, path prefix, and entity name | Understand or construct endpoint addresses for producers and dead-letter sinks |
+| `WellKnownHeaders.cs` | Well-known message header name constants for trace context and address propagation | Reference header names in middleware, producers, or consumers |
+| `DeadLetterHeaders.cs` | Well-known dead-letter header constants and factory methods for failed messages | Implement dead-letter producers or read DLQ diagnostic headers |
 
 ## Subdirectories
 

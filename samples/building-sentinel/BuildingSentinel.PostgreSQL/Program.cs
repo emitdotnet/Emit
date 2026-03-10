@@ -42,10 +42,10 @@ builder.Services.AddOpenTelemetry()
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 
 builder.Services.AddDbContext<SampleDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 builder.Services.AddDbContextFactory<SampleDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 // ── Application repositories ──────────────────────────────────────────────────
 builder.Services.AddScoped<IBuildingEventRepository, EfBuildingEventRepository>();

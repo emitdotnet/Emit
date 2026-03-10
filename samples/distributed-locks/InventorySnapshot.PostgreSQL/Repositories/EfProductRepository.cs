@@ -29,9 +29,10 @@ internal sealed class EfProductRepository(IDbContextFactory<SampleDbContext> fac
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        await db.Database
-            .ExecuteSqlInterpolatedAsync(
-                $"UPDATE products SET stock = GREATEST(0, stock + {delta}) WHERE sku = {sku}",
+        await db.Products
+            .Where(p => p.Sku == sku)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(p => p.Stock, p => Math.Max(0, p.Stock + delta)),
                 cancellationToken)
             .ConfigureAwait(false);
     }

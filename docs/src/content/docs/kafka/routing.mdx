@@ -59,8 +59,10 @@ If the selector returns a key that has no registered route, an `UnmatchedRouteEx
 ```csharp
 group.OnError(err =>
 {
-    err.WhenRouteUnmatched(ErrorAction.Discard());
-    err.Default(ErrorAction.Retry(3, Backoff.Constant(TimeSpan.FromSeconds(1)), ErrorAction.DeadLetter()));
+    err.WhenRouteUnmatched(action => action.Discard());
+    err.Default(action => action
+        .Retry(3, Backoff.Fixed(TimeSpan.FromSeconds(1)))
+        .DeadLetter());
 });
 ```
 

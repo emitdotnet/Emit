@@ -4,12 +4,6 @@ namespace Emit.Abstractions;
 /// Represents a transport endpoint address as a URI.
 /// Format: <c>{scheme}://{host}:{port}/{pathPrefix}/{entityName}</c>.
 /// </summary>
-/// <example>
-/// <code>
-/// var addr = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "orders");
-/// // produces: kafka://broker:9092/kafka/orders
-/// </code>
-/// </example>
 public readonly record struct EmitEndpointAddress
 {
     /// <summary>
