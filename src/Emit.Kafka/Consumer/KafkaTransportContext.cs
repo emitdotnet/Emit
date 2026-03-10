@@ -27,6 +27,15 @@ public class KafkaTransportContext : TransportContext
     /// The consumer group ID that received this message.
     /// </summary>
     public required string GroupId { get; init; }
+
+    /// <inheritdoc />
+    public override IReadOnlyDictionary<string, string> GetSourceProperties() =>
+        new Dictionary<string, string>
+        {
+            ["topic"] = Topic,
+            ["partition"] = Partition.ToString(),
+            ["offset"] = Offset.ToString(),
+        };
 }
 
 /// <summary>

@@ -101,9 +101,10 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             return;
         }
 
-        // Resolve DLQ destination
+        // Resolve DLQ destination — convention takes the source topic name, not the consumer identifier
+        var sourceTopic = EmitEndpointAddress.GetEntityName(context.DestinationAddress);
         var dlqDestination = deadLetter.TopicName
-            ?? resolveDeadLetterDestination?.Invoke(identifier);
+            ?? (sourceTopic is not null ? resolveDeadLetterDestination?.Invoke(sourceTopic) : null);
 
         if (dlqDestination is null)
         {
@@ -119,7 +120,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             context.TransportContext.Headers,
             exception.GetType(),
             exception.Message,
-            sourceProperties: null);
+            context.TransportContext.GetSourceProperties());
 
         // Add retry count
         headers.Add(new(DeadLetterHeaders.RetryCount, context.RetryAttempt.ToString()));

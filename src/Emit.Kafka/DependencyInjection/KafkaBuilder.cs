@@ -687,6 +687,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     {
         // Take first broker from CSV list
         var firstBroker = bootstrapServers.Split(',')[0].Trim();
+
+        // Strip protocol prefix if present (e.g. "PLAINTEXT://host:port")
+        var schemeIndex = firstBroker.IndexOf("://", StringComparison.Ordinal);
+        if (schemeIndex >= 0)
+        {
+            firstBroker = firstBroker[(schemeIndex + 3)..];
+        }
+
+        // Strip trailing slash
+        firstBroker = firstBroker.TrimEnd('/');
+
         var colonIndex = firstBroker.LastIndexOf(':');
 
         if (colonIndex > 0 && int.TryParse(firstBroker[(colonIndex + 1)..], out var port))

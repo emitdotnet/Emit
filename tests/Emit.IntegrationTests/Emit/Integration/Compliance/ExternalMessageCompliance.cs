@@ -107,7 +107,7 @@ public abstract class ExternalMessageCompliance
         Assert.Equal(ActivityKind.Consumer, consumeActivity.Kind);
         Assert.Null(consumeActivity.ParentId);
         Assert.Equal(default, consumeActivity.ParentSpanId);
-        Assert.Equal("emit", consumeActivity.GetTagItem("messaging.system"));
+        Assert.Equal("kafka", consumeActivity.GetTagItem("messaging.system"));
         Assert.Equal("receive", consumeActivity.GetTagItem("messaging.operation"));
 
         // Assert — metrics were recorded

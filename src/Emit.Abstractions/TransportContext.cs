@@ -26,4 +26,10 @@ public abstract class TransportContext : MessageContext
     /// Identifies the transport provider (e.g., "kafka").
     /// </summary>
     public required string ProviderId { get; init; }
+
+    /// <summary>
+    /// Returns transport-specific source properties for dead-letter diagnostic headers.
+    /// Each key-value pair becomes a <c>x-emit-source-{key}</c> header.
+    /// </summary>
+    public virtual IReadOnlyDictionary<string, string>? GetSourceProperties() => null;
 }
