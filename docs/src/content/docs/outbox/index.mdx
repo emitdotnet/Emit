@@ -3,46 +3,21 @@ title: Transactional Outbox
 description: How Emit's outbox delivers messages reliably without the dual-write problem.
 ---
 
-import Mermaid from '../../../components/Mermaid.astro';
-
-The transactional outbox is the core reliability mechanism in Emit. It solves the dual-write problem by ensuring that your business data write and your message enqueue happen in the same database transaction. Either both commit, or neither does. No more "saved to DB but broker publish failed" horror stories.
-
-The outbox requires two opt-ins: first, enable the outbox infrastructure on your persistence provider (`mongo.UseOutbox()` or `ef.UseOutbox()`), then opt each producer in individually with `topic.Producer(p => p.UseOutbox())`. Producers that don't call `UseOutbox()` write directly to the broker, even when the outbox infrastructure is enabled. See [Installation](../getting-started/installation/) for the full setup.
+The transactional outbox solves the dual-write problem by ensuring that your business data and your message enqueue happen in the same database transaction. Either both commit, or neither does.
 
 ## How it works
 
-<Mermaid code={`flowchart TD
-    A["ProduceAsync()"]
-    B["Outbound middleware pipeline"]
-    C[("Database outbox\n(same transaction as business data)")]
-    D[["Background worker\n(leader-elected)"]]
-    E[["Message broker"]]
+1. **Atomic write** — When `ProduceAsync` is called inside a transaction, the outbox entry is written to the database in the same session as your business data. `CommitAsync` persists both atomically.
 
-    A --> B --> C
-    C -->|"polls"| D
-    D -->|"delivers + deletes on success"| E`} />
+2. **Background delivery** — A [daemon](/concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the broker. Your endpoint returns immediately after the commit.
 
-When `ProduceAsync` is called inside a transaction, the outbox entry is written to the database using the same session. When `CommitAsync` fires, both the business row and the outbox entry land atomically.
+3. **Delete on success** — Once delivery succeeds, the entry is deleted. There are no intermediate status fields: entry present means pending, entry absent means delivered.
 
-A background worker then picks up pending entries and delivers them to the broker. On success, the entry is deleted. On failure, it stays and is retried on the next poll cycle. There are no intermediate status fields: entry present means pending, entry absent means done.
+4. **Automatic retry** — If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
 
-## Ordering guarantees
+## Setup
 
-Messages are ordered by **group key**. The default group key for a Kafka topic is `kafka:{topic}` (for example, `kafka:pizzas`). All messages to the same topic are processed strictly in sequence within their group.
-
-The worker processes different groups in parallel, so two topics make progress independently. Within a single group, entries are delivered one at a time in the order they were enqueued.
-
-Concretely: if you produce three pizza orders in a single transaction, they arrive at the consumer in exactly the same order, every time.
-
-## Single-worker guarantee
-
-The outbox worker is coordinated via [leader election](../persistence/distributed-locks/). Exactly one instance in your cluster runs the worker at any time. If the leader dies, another node takes over and picks up where it left off.
-
-This prevents duplicate delivery from concurrent workers processing the same group.
-
-## Configuration
-
-Enable the outbox infrastructure on your persistence provider, then opt individual producers in:
+The outbox requires two opt-ins: enable the outbox on your persistence provider, then opt each producer in individually. Producers that don't call `UseOutbox()` write directly to the broker.
 
 ```csharp
 emit.AddMongoDb(mongo =>
@@ -63,25 +38,39 @@ emit.AddKafka(kafka =>
     kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
     {
         // ... serializers ...
-        topic.Producer(p => p.UseOutbox());  // this producer uses the outbox
+        topic.Producer(p => p.UseOutbox());  // uses the outbox
     });
 
     kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
     {
         // ... serializers ...
-        topic.Producer();  // this producer writes directly to Kafka
+        topic.Producer();  // writes directly to Kafka
     });
 });
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `PollingInterval` | 5 seconds | How long the worker waits after each cycle before polling again |
+| `PollingInterval` | 5 seconds | How long the worker waits between poll cycles |
 | `BatchSize` | 100 | Maximum entries processed per cycle across all groups |
 | `MaxGroupsPerCycle` | 1000 | Maximum distinct groups evaluated per cycle |
 
+See [Installation](/getting-started/installation/) for the full setup.
+
+## Ordering guarantees
+
+Messages are ordered by **group key**. The default group key for a Kafka topic is `kafka:{topic}` (e.g., `kafka:pizzas`). All entries within the same group are delivered strictly in sequence.
+
+The worker processes different groups in parallel, so two topics make progress independently. Within a single group, entries are delivered one at a time in enqueue order.
+
+## Single-worker guarantee
+
+The outbox worker runs as a [daemon](/concepts/leader-election/#daemon-coordination) — exactly one instance in your cluster processes the outbox at any time. If the assigned node goes down, the leader reassigns the daemon to another node within one heartbeat cycle (default: 15 seconds).
+
+This prevents duplicate delivery from concurrent workers processing the same group.
+
 ## Failure behavior
 
-When delivery to the broker fails, the worker logs the error and leaves the entry in place. It will be retried on the next poll. There is no exponential backoff at the outbox level; that is handled at the broker layer (Kafka producer retries, for example).
+When delivery to the broker fails, the worker logs the error and leaves the entry in place. It will be retried on the next poll. There is no exponential backoff at the outbox level — that is handled at the broker layer (e.g., Kafka producer retries).
 
-Think of the outbox as stubborn persistence, not smart retry logic. It keeps trying until it succeeds. If you want to route messages elsewhere after repeated failures, that is a broker-side concern. The outbox guarantees at-least-once delivery; everything else is upstream.
+The outbox is stubborn persistence, not smart retry logic. It keeps trying until it succeeds. If you need to route messages elsewhere after repeated failures, that belongs at the broker layer. The outbox guarantees at-least-once delivery; everything else is upstream.

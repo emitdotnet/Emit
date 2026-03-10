@@ -7,21 +7,21 @@ description: Add Emit to your .NET project.
 
 Emit is split into focused packages so you only take what you need.
 
-| Package | Purpose |
-|---|---|
-| `Emit` | Core library (required) |
-| `Emit.Kafka` | Kafka producers and consumers |
-| `Emit.MongoDB` | MongoDB outbox and distributed lock persistence |
-| `Emit.EntityFrameworkCore` | EF Core outbox and distributed lock persistence (PostgreSQL) |
-| `Emit.Mediator` | In-process request/response mediator |
-| `Emit.OpenTelemetry` | Metrics and distributed tracing integration |
-| `Emit.Kafka.JsonSerializer` | JSON Schema serializer for Kafka topics |
-| `Emit.Kafka.AvroSerializer` | Avro serializer for Kafka topics |
-| `Emit.Kafka.ProtobufSerializer` | Protobuf serializer for Kafka topics |
-| `Emit.Kafka.HealthChecks` | ASP.NET Core health check for Kafka broker connectivity |
-| `Emit.MongoDB.HealthChecks` | ASP.NET Core health check for MongoDB connectivity |
-| `Emit.EntityFrameworkCore.HealthChecks` | ASP.NET Core health check for PostgreSQL connectivity |
-| `Emit.Testing` | Test utilities: `MessageSink<T>`, `SinkConsumer<T>` |
+| Package | NuGet | Purpose |
+|---|---|---|
+| `Emit` | [![NuGet](https://img.shields.io/nuget/v/Emit.svg)](https://www.nuget.org/packages/Emit/) | Core library (required) |
+| `Emit.Kafka` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.svg)](https://www.nuget.org/packages/Emit.Kafka/) | Kafka producers and consumers |
+| `Emit.MongoDB` | [![NuGet](https://img.shields.io/nuget/v/Emit.MongoDB.svg)](https://www.nuget.org/packages/Emit.MongoDB/) | MongoDB outbox and distributed lock persistence |
+| `Emit.EntityFrameworkCore` | [![NuGet](https://img.shields.io/nuget/v/Emit.EntityFrameworkCore.svg)](https://www.nuget.org/packages/Emit.EntityFrameworkCore/) | EF Core outbox and distributed lock persistence (PostgreSQL) |
+| `Emit.Mediator` | [![NuGet](https://img.shields.io/nuget/v/Emit.Mediator.svg)](https://www.nuget.org/packages/Emit.Mediator/) | In-process request/response mediator |
+| `Emit.OpenTelemetry` | [![NuGet](https://img.shields.io/nuget/v/Emit.OpenTelemetry.svg)](https://www.nuget.org/packages/Emit.OpenTelemetry/) | Metrics and distributed tracing integration |
+| `Emit.Kafka.JsonSerializer` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.JsonSerializer.svg)](https://www.nuget.org/packages/Emit.Kafka.JsonSerializer/) | JSON Schema serializer for Kafka topics |
+| `Emit.Kafka.AvroSerializer` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.AvroSerializer.svg)](https://www.nuget.org/packages/Emit.Kafka.AvroSerializer/) | Avro serializer for Kafka topics |
+| `Emit.Kafka.ProtobufSerializer` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.ProtobufSerializer.svg)](https://www.nuget.org/packages/Emit.Kafka.ProtobufSerializer/) | Protobuf serializer for Kafka topics |
+| `Emit.Kafka.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.HealthChecks.svg)](https://www.nuget.org/packages/Emit.Kafka.HealthChecks/) | ASP.NET Core health check for Kafka broker connectivity |
+| `Emit.MongoDB.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.MongoDB.HealthChecks.svg)](https://www.nuget.org/packages/Emit.MongoDB.HealthChecks/) | ASP.NET Core health check for MongoDB connectivity |
+| `Emit.EntityFrameworkCore.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.EntityFrameworkCore.HealthChecks.svg)](https://www.nuget.org/packages/Emit.EntityFrameworkCore.HealthChecks/) | ASP.NET Core health check for PostgreSQL connectivity |
+| `Emit.Testing` | [![NuGet](https://img.shields.io/nuget/v/Emit.Testing.svg)](https://www.nuget.org/packages/Emit.Testing/) | Test utilities: `MessageSink<T>`, `SinkConsumer<T>` |
 
 For a typical Kafka + MongoDB setup:
 

@@ -1,0 +1,70 @@
+---
+title: Leader Election & Daemons
+description: How Emit coordinates background work across multiple application instances.
+---
+
+When you deploy multiple instances of your application, background work like outbox processing must run on exactly one node at a time. Emit handles this automatically through two cooperating systems: **leader election** and **daemon coordination**.
+
+## Leader election
+
+Emit uses a heartbeat-based lease model to elect a single leader across all instances. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap operation. The database itself provides the consistency guarantee — no external consensus service is needed.
+
+| Concept | Description |
+|---|---|
+| **Heartbeat** | Every node sends a periodic heartbeat to the database (default: every 15 seconds) |
+| **Lease** | The leader holds a time-limited lease (default: 60 seconds). If not renewed before expiry, another node can claim it |
+| **Takeover** | If the leader stops heartbeating (crash, network partition, shutdown), another node acquires the lease on its next heartbeat cycle |
+
+Leadership transitions are observable via `ILeaderElectionObserver`:
+
+- `OnLeaderElectedAsync` — This node just became the leader
+- `OnLeaderLostAsync` — This node just lost leadership
+
+### Querying leadership status
+
+Inject `ILeaderElectionService` to check the current node's role:
+
+```csharp
+public class MyService(ILeaderElectionService leaderElection)
+{
+    public void DoWork()
+    {
+        if (leaderElection.IsLeader)
+        {
+            // This node is the leader
+        }
+
+        // Cancels when this node loses leadership
+        var token = leaderElection.LeadershipToken;
+    }
+}
+```
+
+## Daemon coordination
+
+The leader doesn't run all background work itself. Instead, it acts as a **coordinator** that assigns work units called *daemons* to nodes in the cluster. This allows Emit to distribute work evenly and reassign it when nodes join or leave.
+
+A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon.
+
+### How assignment works
+
+1. **Leader reconciles** — On each heartbeat, the leader reviews all daemon assignments. It assigns unassigned daemons to the least-loaded live node and reassigns daemons from dead nodes.
+
+2. **Nodes process assignments** — Every node (leader or not) checks for assignments directed at it. When a node receives an assignment, it acknowledges and starts the daemon. When an assignment is revoked, it gracefully stops the daemon.
+
+3. **Graceful handoff** — When a daemon needs to move (e.g., the assigned node is shutting down), the leader revokes the assignment and waits for the node to drain in-flight work before reassigning elsewhere.
+
+### Assignment lifecycle
+
+| State | Meaning |
+|---|---|
+| **Assigning** | Leader assigned the daemon to a node; waiting for acknowledgement |
+| **Active** | Node acknowledged; daemon is running |
+| **Revoking** | Leader requested shutdown; waiting for the node to stop the daemon |
+| **Deleted** | Node confirmed shutdown; assignment is cleaned up |
+
+If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds) or fails to drain within `DrainTimeout` (default: 30 seconds), the leader force-reassigns the daemon to another node.
+
+## Configuration
+
+See [Configuration Reference — Leader Election](/advanced/configuration/#leader-election-options) and [Daemon Coordination](/advanced/configuration/#daemon-coordination-options) for all tunable options.

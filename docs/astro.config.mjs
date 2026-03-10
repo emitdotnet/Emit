@@ -35,6 +35,7 @@ export default defineConfig({
           label: 'Concepts',
           items: [
             { label: 'Pipeline Model', link: '/concepts/pipeline-model/' },
+            { label: 'Leader Election & Daemons', link: '/concepts/leader-election/' },
           ],
         },
         {
