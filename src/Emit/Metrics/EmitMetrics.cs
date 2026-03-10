@@ -201,18 +201,18 @@ public sealed class EmitMetrics
 
     // ── DLQ recording methods ──
 
-    internal void RecordDlqProduced(string reason, string dlqDestination)
+    internal void RecordDlqProduced(string reason)
     {
-        var tags = enrichment.CreateTags([new("reason", reason), new("dlq_topic", dlqDestination)]);
+        var tags = enrichment.CreateTags([new("reason", reason)]);
         DlqProduced.Add(1, tags);
     }
 
     /// <summary>
     /// Records a DLQ produce error.
     /// </summary>
-    public void RecordDlqProduceErrors(string reason, string dlqDestination)
+    public void RecordDlqProduceErrors(string reason)
     {
-        var tags = enrichment.CreateTags([new("reason", reason), new("dlq_topic", dlqDestination)]);
+        var tags = enrichment.CreateTags([new("reason", reason)]);
         DlqProduceErrors.Add(1, tags);
     }
 

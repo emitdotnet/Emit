@@ -385,14 +385,13 @@ public sealed class EmitMetricsTests
         listener.Start();
 
         // Act
-        metrics.RecordDlqProduced("validation_failure", "my-topic.dlq");
+        metrics.RecordDlqProduced("validation_failure");
 
         // Assert
         Assert.Single(captured);
         Assert.Equal("emit.consumer.dlq.produced", captured[0].Name);
         Assert.Equal(1L, captured[0].Value);
         Assert.Contains(captured[0].Tags, t => t.Key == "reason" && t.Value?.ToString() == "validation_failure");
-        Assert.Contains(captured[0].Tags, t => t.Key == "dlq_topic" && t.Value?.ToString() == "my-topic.dlq");
 
         listener.Dispose();
     }
@@ -418,14 +417,13 @@ public sealed class EmitMetricsTests
         listener.Start();
 
         // Act
-        metrics.RecordDlqProduceErrors("timeout", "my-topic.dlq");
+        metrics.RecordDlqProduceErrors("timeout");
 
         // Assert
         Assert.Single(captured);
         Assert.Equal("emit.consumer.dlq.produce_errors", captured[0].Name);
         Assert.Equal(1L, captured[0].Value);
         Assert.Contains(captured[0].Tags, t => t.Key == "reason" && t.Value?.ToString() == "timeout");
-        Assert.Contains(captured[0].Tags, t => t.Key == "dlq_topic" && t.Value?.ToString() == "my-topic.dlq");
 
         listener.Dispose();
     }

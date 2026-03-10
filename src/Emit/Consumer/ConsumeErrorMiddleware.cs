@@ -17,7 +17,6 @@ using Microsoft.Extensions.Logging;
 internal sealed class ConsumeErrorMiddleware<TMessage>(
     Func<Exception, ErrorAction>? evaluatePolicy,
     IDeadLetterSink? deadLetterSink,
-    Func<string, string?>? resolveDeadLetterDestination,
     EmitMetrics emitMetrics,
     ILogger<ConsumeErrorMiddleware<TMessage>> logger,
     string identifier,
@@ -69,8 +68,8 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
         switch (action)
         {
-            case ErrorAction.DeadLetterAction deadLetter:
-                await ExecuteDeadLetterAsync(deadLetter, exception, context).ConfigureAwait(false);
+            case ErrorAction.DeadLetterAction:
+                await ExecuteDeadLetterAsync(exception, context).ConfigureAwait(false);
                 break;
 
             case ErrorAction.DiscardAction:
@@ -88,7 +87,6 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
     }
 
     private async Task ExecuteDeadLetterAsync(
-        ErrorAction.DeadLetterAction deadLetter,
         Exception exception,
         ConsumeContext<TMessage> context)
     {
@@ -98,20 +96,6 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                 "Dead letter sink not configured. Cannot dead-letter message {MessageId} for consumer {Consumer}",
                 context.MessageId, identifier);
             emitMetrics.RecordErrorAction("dead_letter_no_sink");
-            return;
-        }
-
-        // Resolve DLQ destination — convention takes the source topic name, not the consumer identifier
-        var sourceTopic = EmitEndpointAddress.GetEntityName(context.DestinationAddress);
-        var dlqDestination = deadLetter.TopicName
-            ?? (sourceTopic is not null ? resolveDeadLetterDestination?.Invoke(sourceTopic) : null);
-
-        if (dlqDestination is null)
-        {
-            logger.LogError(exception,
-                "Cannot resolve dead letter destination for consumer {Consumer}, message {MessageId}",
-                identifier, context.MessageId);
-            emitMetrics.RecordErrorAction("dead_letter_no_destination");
             return;
         }
 
@@ -133,10 +117,11 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         }
 
         // Create DLQ publish activity
+        var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress);
         using var dlqActivity = EmitActivitySources.Consumer.StartActivity(
             "emit.dlq.publish",
             ActivityKind.Producer);
-        dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, dlqDestination);
+        dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
         dlqActivity?.SetTag(ActivityTagNames.MessagingSystem, "emit");
         dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);
 
@@ -146,13 +131,12 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                 context.TransportContext.RawKey,
                 context.TransportContext.RawValue,
                 headers,
-                dlqDestination,
                 context.CancellationToken).ConfigureAwait(false);
 
             emitMetrics.RecordErrorAction("dead_letter");
             logger.LogWarning(exception,
                 "Dead-lettered message {MessageId} to {Destination} for consumer {Consumer}",
-                context.MessageId, dlqDestination, identifier);
+                context.MessageId, destinationName, identifier);
         }
         catch (Exception dlqEx)
         {
@@ -160,7 +144,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             emitMetrics.RecordErrorAction("dead_letter_failed");
             logger.LogError(dlqEx,
                 "Failed to dead-letter message {MessageId} to {Destination} for consumer {Consumer}",
-                context.MessageId, dlqDestination, identifier);
+                context.MessageId, destinationName, identifier);
         }
     }
 }

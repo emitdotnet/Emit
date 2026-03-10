@@ -82,6 +82,7 @@ public class MongoDbMixedProducerTests
                         {
                             config.BootstrapServers = kafkaFixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
 
                         // Direct producer — no UseOutbox()
                         kafka.Topic<string, string>(directTopic, t =>
@@ -160,6 +161,7 @@ public class MongoDbMixedProducerTests
                         {
                             config.BootstrapServers = kafkaFixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
 
                         // Outbox producer
                         kafka.Topic<string, string>(outboxTopic, t =>

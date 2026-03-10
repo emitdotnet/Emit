@@ -9,6 +9,8 @@ using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -59,15 +61,16 @@ public static class KafkaEmitBuilderExtensions
         // Always register the shared IProducer<byte[], byte[]> singleton
         RegisterProducer(builder.Services, kafkaBuilder);
 
-        // Always register the dead letter sink (DlqProducer depends on the shared producer)
-        builder.Services.TryAddSingleton<IDeadLetterSink, DlqProducer>();
-
         // Register outbox provider and marker only when outbox mode is enabled
         if (builder.OutboxEnabled)
         {
             RegisterOutboxProvider(builder.Services);
             builder.Services.AddSingleton(new OutboxProviderMarker());
         }
+
+        // Register AdminClient singleton and topic verifier at position 0
+        RegisterAdminClient(builder.Services, kafkaBuilder);
+        RegisterTopicVerifier(builder.Services, kafkaBuilder);
 
         return builder;
     }
@@ -112,6 +115,41 @@ public static class KafkaEmitBuilderExtensions
                 .SetStatisticsHandler((_, json) => brokerMetrics.HandleStatistics(json))
                 .Build();
         });
+    }
+
+    private static void RegisterAdminClient(IServiceCollection services, KafkaBuilder kafkaBuilder)
+    {
+        var clientConfigAction = kafkaBuilder.ClientConfigAction;
+
+        services.TryAddSingleton<ConfluentKafka.IAdminClient>(sp =>
+        {
+            var config = new ConfluentKafka.AdminClientConfig();
+
+            if (clientConfigAction is not null)
+            {
+                var kafkaClientConfig = new KafkaClientConfig();
+                clientConfigAction(kafkaClientConfig);
+                kafkaClientConfig.ApplyTo(config);
+            }
+
+            return new ConfluentKafka.AdminClientBuilder(config).Build();
+        });
+    }
+
+    private static void RegisterTopicVerifier(IServiceCollection services, KafkaBuilder kafkaBuilder)
+    {
+        var requiredTopics = kafkaBuilder.GetRequiredTopics();
+        var autoProvision = kafkaBuilder.AutoProvisionEnabled;
+        var provisioningConfigs = kafkaBuilder.GetProvisioningConfigs();
+
+        // Insert at position 0 so it runs before all other hosted services
+        services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp =>
+            new KafkaTopicVerifier(
+                sp.GetRequiredService<ConfluentKafka.IAdminClient>(),
+                requiredTopics,
+                autoProvision,
+                provisioningConfigs,
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<KafkaTopicVerifier>())));
     }
 
     private static void RegisterOutboxProvider(IServiceCollection services)

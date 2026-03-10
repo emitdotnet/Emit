@@ -12,16 +12,13 @@ public class ErrorActionBuilder
     private Backoff? retryBackoff;
 
     /// <summary>
-    /// Routes the message to a dead letter topic.
+    /// Routes the message to the configured dead letter topic.
     /// </summary>
-    /// <param name="topic">
-    /// Explicit dead letter topic name. When <c>null</c>, the global dead letter naming convention is used.
-    /// </param>
     /// <exception cref="InvalidOperationException">An action has already been configured.</exception>
-    public void DeadLetter(string? topic = null)
+    public void DeadLetter()
     {
         EnsureTerminalNotSet();
-        terminalAction = topic is not null ? ErrorAction.DeadLetter(topic) : ErrorAction.DeadLetter();
+        terminalAction = ErrorAction.DeadLetter();
     }
 
     /// <summary>

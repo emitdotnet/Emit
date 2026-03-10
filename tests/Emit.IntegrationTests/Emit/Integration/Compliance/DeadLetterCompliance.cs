@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.Testing;
@@ -49,7 +50,7 @@ public abstract class DeadLetterCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-dlq-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -70,7 +71,7 @@ public abstract class DeadLetterCompliance
 
             // Assert — message arrived in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("failing-message", ctx.Message);
+            Assert.Equal("failing-message", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers are present and contain the exception details.
             var headers = ctx.Headers;
@@ -124,7 +125,7 @@ public abstract class DeadLetterCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-dlq-key-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -146,7 +147,7 @@ public abstract class DeadLetterCompliance
 
             // Assert — message arrives in DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("dlq-key-test-payload", ctx.Message);
+            Assert.Equal("dlq-key-test-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — the DLQ message key bytes match the UTF-8 encoding of the source key.
             var rawKey = ctx.TransportContext.RawKey;
@@ -186,7 +187,7 @@ public abstract class DeadLetterCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-dlq-hdr-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -208,7 +209,7 @@ public abstract class DeadLetterCompliance
 
             // Assert — message arrived in DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("header-test-payload", ctx.Message);
+            Assert.Equal("header-test-payload", Encoding.UTF8.GetString(ctx.Message));
 
             var headers = ctx.Headers;
             Assert.NotNull(headers);
@@ -279,10 +280,10 @@ public abstract class DeadLetterCompliance
     /// Registered on the DLQ topic; the sink must be the only <see cref="MessageSink{T}"/>
     /// registered as a singleton so DI resolves it correctly.
     /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
+    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

@@ -405,7 +405,6 @@ public sealed class ConsumerWorkerTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
         var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
         var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
@@ -523,12 +522,12 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterWithExplicitTopic_ThenProducesToDlq()
+    public async Task GivenDeserializationError_WhenDeadLetterWithSink_ThenProducesToDlq()
     {
         // Arrange
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -542,33 +541,8 @@ public sealed class ConsumerWorkerTests
         mockSink.Verify(s => s.ProduceAsync(
             It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
             It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            "errors.dlt",
             It.IsAny<CancellationToken>()), Times.Once);
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
-    }
-
-    [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterWithConvention_ThenUsesConventionTopic()
-    {
-        // Arrange
-        var mockSink = new Mock<IDeadLetterSink>();
-        var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter(),
-            resolveDeadLetterTopic: topic => $"{topic}.dlt");
-        var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
-        worker.Writer.TryWrite(CreateConsumeResult());
-        worker.Complete();
-        using var cts = new CancellationTokenSource();
-
-        // Act
-        await worker.RunAsync(cts.Token);
-
-        // Assert
-        mockSink.Verify(s => s.ProduceAsync(
-            It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            "test-topic.dlt",
-            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -576,7 +550,7 @@ public sealed class ConsumerWorkerTests
     {
         // Arrange — dead letter configured but no IDeadLetterSink provided
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: null);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -591,42 +565,17 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterButNoTopicResolvable_ThenDiscardsAndReportsOffset()
-    {
-        // Arrange — dead letter with no explicit topic and no convention
-        var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter());
-        var mockSink = new Mock<IDeadLetterSink>();
-        var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
-        var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
-        worker.Writer.TryWrite(CreateConsumeResult());
-        worker.Complete();
-        using var cts = new CancellationTokenSource();
-
-        // Act
-        await worker.RunAsync(cts.Token);
-
-        // Assert — cannot resolve topic, falls back to discard
-        mockSink.Verify(s => s.ProduceAsync(
-            It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            It.IsAny<string>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-        mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
-    }
-
-    [Fact]
     public async Task GivenDeserializationError_WhenDeadLettered_ThenHeadersContainDiagnosticInfo()
     {
         // Arrange
         IReadOnlyList<KeyValuePair<string, string>>? capturedHeaders = null;
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, string, CancellationToken>(
-                (_, _, headers, _, _) => capturedHeaders = headers);
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, CancellationToken>(
+                (_, _, headers, _) => capturedHeaders = headers);
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
         worker.Complete();
@@ -651,13 +600,13 @@ public sealed class ConsumerWorkerTests
     {
         // Arrange
         IReadOnlyList<KeyValuePair<string, string>>? capturedHeaders = null;
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, string, CancellationToken>(
-                (_, _, headers, _, _) => capturedHeaders = headers);
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, CancellationToken>(
+                (_, _, headers, _) => capturedHeaders = headers);
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
         var originalHeaders = new ConfluentKafka.Headers
         {
@@ -679,12 +628,12 @@ public sealed class ConsumerWorkerTests
     public async Task GivenDeserializationError_WhenDlqProduceFails_ThenOffsetStillReportedAndMessageDiscarded()
     {
         // Arrange — DLQ produce throws, message should still be discarded
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("DLQ produce failed"));
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -720,7 +669,6 @@ public sealed class ConsumerWorkerTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = ErrorAction.Discard(),
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
         var scopeFactory = CreateScopeFactory(typeof(CapturingConsumer), consumer);
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
@@ -740,8 +688,7 @@ public sealed class ConsumerWorkerTests
     }
 
     private static ConsumerGroupRegistration<string, string> CreateRegistrationWithFailingDeserializer(
-        ErrorAction? deserializationErrorAction = null,
-        Func<string, string?>? resolveDeadLetterTopic = null)
+        ErrorAction? deserializationErrorAction = null)
     {
         return new ConsumerGroupRegistration<string, string>
         {
@@ -759,8 +706,6 @@ public sealed class ConsumerWorkerTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = deserializationErrorAction,
-            ResolveDeadLetterTopic = resolveDeadLetterTopic,
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 
@@ -784,13 +729,20 @@ public sealed class ConsumerWorkerTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 
     private static KafkaConsumerObserverInvoker CreateObserverInvoker()
     {
         return new KafkaConsumerObserverInvoker([], NullLogger<KafkaConsumerObserverInvoker>.Instance);
+    }
+
+    private static Mock<IDeadLetterSink> CreateMockDeadLetterSink()
+    {
+        var mock = new Mock<IDeadLetterSink>();
+        mock.Setup(s => s.DestinationAddress)
+            .Returns(new Uri("kafka://broker:9092/kafka/errors.dlt"));
+        return mock;
     }
 
     private static KafkaMetrics CreateKafkaMetrics() => new(null, new EmitMetricsEnrichment());

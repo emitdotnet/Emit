@@ -1,6 +1,5 @@
 namespace Emit.Kafka.Tests;
 
-using Confluent.Kafka.Admin;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
@@ -18,14 +17,21 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
         string dlqTopic,
         string dlqGroupId)
     {
-        // DLQ topic must exist before the source consumer starts (DlqTopicVerifier requires it).
-        CreateTopic(dlqTopic);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>
             {
                 config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
             });
 
             // Source topic — producer + consumer with typed exception clause.
@@ -41,22 +47,9 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.OnError(e => e
-                        .When<ArgumentException>(a => a.DeadLetter(dlqTopic))
+                        .When<ArgumentException>(a => a.DeadLetter())
                         .Default(a => a.Discard()));
                     group.AddConsumer<TypedExceptionConsumer>();
-                });
-            });
-
-            // DLQ topic — consumer only; captures dead-lettered messages.
-            kafka.Topic<string, string>(dlqTopic, t =>
-            {
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
-
-                t.ConsumerGroup(dlqGroupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<DlqCaptureConsumer>();
                 });
             });
         });
@@ -69,14 +62,21 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
         string dlqTopic,
         string dlqGroupId)
     {
-        // DLQ topic must exist before the source consumer starts.
-        CreateTopic(dlqTopic);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>
             {
                 config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
             });
 
             // Source topic — producer + consumer that always throws; predicate filters by message content.
@@ -94,35 +94,11 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
                     group.OnError(e => e
                         .When<InvalidOperationException>(
                             ex => ex.Message.Contains("MATCH"),
-                            a => a.DeadLetter(dlqTopic))
+                            a => a.DeadLetter())
                         .Default(a => a.Discard()));
                     group.AddConsumer<PredicateThrowingConsumer>();
                 });
             });
-
-            // DLQ topic — consumer only.
-            kafka.Topic<string, string>(dlqTopic, t =>
-            {
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
-
-                t.ConsumerGroup(dlqGroupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<DlqCaptureConsumer>();
-                });
-            });
         });
-    }
-
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
     }
 }

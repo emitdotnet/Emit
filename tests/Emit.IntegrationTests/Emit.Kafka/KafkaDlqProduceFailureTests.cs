@@ -34,9 +34,6 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
         var successSink = new MessageSink<string>();
         var failToggle = new FailToggle();
 
-        // Create the DLQ topic so DlqTopicVerifier passes at startup.
-        CreateTopic(dlqTopic);
-
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
@@ -50,6 +47,9 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
                         {
                             config.BootstrapServers = fixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
+
+                        kafka.DeadLetter(dlqTopic);
 
                         kafka.Topic<string, string>(sourceTopic, t =>
                         {
@@ -62,7 +62,7 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
                             t.ConsumerGroup(groupId, group =>
                             {
                                 group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                                group.OnError(e => e.Default(d => d.DeadLetter(dlqTopic)));
+                                group.OnError(e => e.Default(d => d.DeadLetter()));
                                 group.AddConsumer<ToggleableSuccessConsumer>();
                             });
                         });
@@ -139,17 +139,6 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
 
             return sink.WriteAsync(context, cancellationToken);
         }
-    }
-
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
     }
 
     private void DeleteTopic(string topicName)

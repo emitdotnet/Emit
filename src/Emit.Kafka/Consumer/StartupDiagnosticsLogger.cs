@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Consumer;
 
+using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
 using Microsoft.Extensions.Logging;
 
@@ -17,13 +18,14 @@ internal static class StartupDiagnosticsLogger
     /// </summary>
     internal static void Log<TKey, TValue>(
         ConsumerGroupRegistration<TKey, TValue> registration,
+        IDeadLetterSink? deadLetterSink,
         ILogger logger)
     {
         LogGroupConfiguration(registration, logger);
 
         foreach (var consumerType in registration.ConsumerTypes)
         {
-            LogConsumerConfiguration(registration, consumerType, logger);
+            LogConsumerConfiguration(registration, deadLetterSink, consumerType, logger);
         }
     }
 
@@ -55,22 +57,25 @@ internal static class StartupDiagnosticsLogger
 
     private static void LogConsumerConfiguration<TKey, TValue>(
         ConsumerGroupRegistration<TKey, TValue> registration,
+        IDeadLetterSink? deadLetterSink,
         Type consumerType,
         ILogger logger)
     {
         var policy = registration.GroupErrorPolicy;
         var policySource = policy is null ? "None" : "Group";
 
-        var dlqTopic = registration.DeadLetterTopicMap.Resolve(consumerType.Name, registration.TopicName) ?? "None";
+        var dlqDestination = deadLetterSink is not null
+            ? EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress) ?? deadLetterSink.DestinationAddress.ToString()
+            : "None";
         var worstCaseRetry = policy is not null ? ComputeWorstCaseRetryDuration(policy) : TimeSpan.Zero;
 
         logger.LogInformation(
             "  [{GroupId}] {Handler}: " +
             "ErrorPolicy={PolicySource}, ErrorHandling={ErrorHandling}, " +
-            "DLQ={DlqTopic}, WorstCaseRetry={WorstCaseRetry}",
+            "DLQ={DlqDestination}, WorstCaseRetry={WorstCaseRetry}",
             registration.GroupId, consumerType.Name,
             policySource, FormatErrorPolicy(policy),
-            dlqTopic, worstCaseRetry);
+            dlqDestination, worstCaseRetry);
 
         // Warning: no error handling configured
         if (policy is null)
@@ -98,8 +103,11 @@ internal static class StartupDiagnosticsLogger
                 consumerType.Name, registration.GroupId);
         }
 
-        // Warning: DLQ loop risk — consumer's resolved DLQ topic equals the source topic
-        if (dlqTopic != "None" && dlqTopic.Equals(registration.TopicName, StringComparison.Ordinal))
+        // Warning: DLQ loop risk — consumer's source topic equals the DLQ destination
+        var dlqEntityName = deadLetterSink is not null
+            ? EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress)
+            : null;
+        if (dlqEntityName is not null && dlqEntityName.Equals(registration.TopicName, StringComparison.Ordinal))
         {
             logger.LogWarning(
                 "Consumer {Handler} on topic {Topic} in group {GroupId} may create infinite loop — " +
@@ -132,7 +140,7 @@ internal static class StartupDiagnosticsLogger
     {
         null => "None",
         ErrorAction.RetryAction r => $"Retry({r.MaxAttempts}x, then {FormatAction(r.ExhaustionAction)})",
-        ErrorAction.DeadLetterAction d => d.TopicName is not null ? $"DeadLetter({d.TopicName})" : "DeadLetter",
+        ErrorAction.DeadLetterAction => "DeadLetter",
         ErrorAction.DiscardAction => "Discard",
         _ => action.GetType().Name,
     };

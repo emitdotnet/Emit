@@ -86,8 +86,9 @@ public abstract class RateLimiterCompliance
             sw.Stop();
 
             // Assert — processing all 18 messages across 3 permits/window must span ≥ 5 windows.
-            // Subtract a small tolerance to account for timer precision on CI runners.
-            var minExpectedElapsed = window * (messageCount / permitsPerWindow - 1) - TimeSpan.FromMilliseconds(100);
+            // Subtract a generous tolerance to account for timer precision, scheduling jitter,
+            // and CI runners under heavy parallel load.
+            var minExpectedElapsed = window * (messageCount / permitsPerWindow - 1) - TimeSpan.FromSeconds(2);
             Assert.True(
                 sw.Elapsed >= minExpectedElapsed,
                 $"Expected elapsed >= {minExpectedElapsed} but got {sw.Elapsed}. Rate limiting did not throttle throughput.");

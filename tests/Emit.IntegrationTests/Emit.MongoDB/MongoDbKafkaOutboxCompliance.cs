@@ -74,6 +74,7 @@ public class MongoDbKafkaOutboxCompliance
             {
                 config.BootstrapServers = kafkaFixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<string, string>(topic, t =>
             {

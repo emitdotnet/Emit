@@ -160,9 +160,9 @@ internal sealed class ConsumerWorker<TKey, TValue>
     {
         var action = registration.DeserializationErrorAction;
 
-        if (action is ErrorAction.DeadLetterAction deadLetter)
+        if (action is ErrorAction.DeadLetterAction)
         {
-            await DeadLetterDeserializationErrorAsync(raw, exception, deadLetter, cancellationToken).ConfigureAwait(false);
+            await DeadLetterDeserializationErrorAsync(raw, exception, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -176,28 +176,12 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private async Task DeadLetterDeserializationErrorAsync(
         ConfluentKafka.ConsumeResult<byte[], byte[]> raw,
         Exception exception,
-        ErrorAction.DeadLetterAction deadLetter,
         CancellationToken cancellationToken)
     {
         if (deadLetterSink is null)
         {
             logger.LogError(exception,
                 "Dead letter sink is not configured; cannot dead-letter deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}'. Discarding message.",
-                raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId);
-            return;
-        }
-
-        // Resolve DLQ topic: explicit override > convention > error
-        var dlqTopic = deadLetter.TopicName;
-        if (dlqTopic is null && registration.ResolveDeadLetterTopic is not null)
-        {
-            dlqTopic = registration.ResolveDeadLetterTopic(raw.Topic);
-        }
-
-        if (dlqTopic is null)
-        {
-            logger.LogError(exception,
-                "Cannot resolve dead letter topic for deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}'. Discarding message.",
                 raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId);
             return;
         }
@@ -229,14 +213,13 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 raw.Message.Key,
                 raw.Message.Value,
                 headers,
-                dlqTopic,
                 cancellationToken).ConfigureAwait(false);
 
-            kafkaMetrics.RecordDlqProduced(groupId, raw.Topic, dlqTopic);
+            kafkaMetrics.RecordDlqProduced(groupId, raw.Topic);
 
             logger.LogWarning(exception,
-                "Dead-lettered deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}' to {DlqTopic}",
-                raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId, dlqTopic);
+                "Dead-lettered deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}' to {Destination}",
+                raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId, deadLetterSink.DestinationAddress);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -244,11 +227,11 @@ internal sealed class ConsumerWorker<TKey, TValue>
         }
         catch (Exception dlqEx)
         {
-            emitMetrics.RecordDlqProduceErrors("deserialization_error", dlqTopic);
+            emitMetrics.RecordDlqProduceErrors("deserialization_error");
 
             logger.LogError(dlqEx,
-                "Failed to dead-letter deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}' to {DlqTopic}. Discarding message.",
-                raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId, dlqTopic);
+                "Failed to dead-letter deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}'. Discarding message.",
+                raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId);
         }
     }
 

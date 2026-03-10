@@ -1,7 +1,5 @@
 namespace Emit.Kafka.Tests;
 
-using Confluent.Kafka;
-using Confluent.Kafka.Admin;
 using Emit.Abstractions;
 using Emit.Consumer;
 using Emit.DependencyInjection;
@@ -39,23 +37,6 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
         var topic = $"test-ordered-{Guid.NewGuid():N}";
         var groupId = $"test-ordered-group-{Guid.NewGuid():N}";
 
-        // Pre-create the topic with multiple partitions. Auto-created topics default to a
-        // single partition on the test broker, which would eliminate the multi-partition aspect.
-        using var adminClient = new AdminClientBuilder(new AdminClientConfig
-        {
-            BootstrapServers = fixture.BootstrapServers,
-        }).Build();
-
-        await adminClient.CreateTopicsAsync(
-        [
-            new TopicSpecification
-            {
-                Name = topic,
-                NumPartitions = PartitionCount,
-                ReplicationFactor = 1,
-            },
-        ]);
-
         var sink = new MessageSink<string>();
         var commitAwaiter = new CommitAwaiter(topic);
 
@@ -72,9 +53,11 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
                         {
                             config.BootstrapServers = fixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
 
                         kafka.Topic<string, string>(topic, t =>
                         {
+                            t.Provisioning(opts => opts.NumPartitions = PartitionCount);
                             t.SetUtf8KeySerializer();
                             t.SetUtf8ValueSerializer();
                             t.SetUtf8KeyDeserializer();

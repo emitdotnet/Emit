@@ -88,17 +88,6 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     public ErrorAction? DeserializationErrorAction { get; init; }
 
     /// <summary>
-    /// Resolves the dead letter topic name from a source topic name using the global convention,
-    /// or <c>null</c> if no dead letter convention is configured.
-    /// </summary>
-    public Func<string, string?>? ResolveDeadLetterTopic { get; init; }
-
-    /// <summary>
-    /// Immutable map of all dead letter topics resolved at registration time.
-    /// </summary>
-    public required DeadLetterTopicMap DeadLetterTopicMap { get; init; }
-
-    /// <summary>
     /// All registered consumer handler types for this group.
     /// </summary>
     public IReadOnlyList<Type> ConsumerTypes { get; init; } = [];

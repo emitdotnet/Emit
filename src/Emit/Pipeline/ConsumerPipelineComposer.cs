@@ -70,12 +70,6 @@ public sealed class ConsumerPipelineComposer<TValue>
     public Func<Exception, ErrorAction>? ErrorPolicy { get; init; }
 
     /// <summary>
-    /// Gets the optional dead letter destination resolver. Receives the consumer identifier and returns
-    /// the dead letter topic name, or <see langword="null"/> if no convention applies.
-    /// </summary>
-    public Func<string, string?>? ResolveDeadLetterDestination { get; init; }
-
-    /// <summary>
     /// Gets the optional circuit breaker notifier. When set, the error handling middleware
     /// reports success/failure outcomes so the circuit breaker can track the failure rate
     /// and pause/resume the consumer group via flow control.
@@ -170,7 +164,6 @@ public sealed class ConsumerPipelineComposer<TValue>
             var errorMw = new ConsumeErrorMiddleware<TValue>(
                 ErrorPolicy,
                 Services.GetService<IDeadLetterSink>(),
-                ResolveDeadLetterDestination,
                 Services.GetRequiredService<EmitMetrics>(),
                 LoggerFactory.CreateLogger<ConsumeErrorMiddleware<TValue>>(),
                 identifier,

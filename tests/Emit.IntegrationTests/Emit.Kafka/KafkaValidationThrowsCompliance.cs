@@ -1,6 +1,5 @@
 namespace Emit.Kafka.Tests;
 
-using Confluent.Kafka.Admin;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration.Compliance;
@@ -24,6 +23,7 @@ public class KafkaValidationThrowsCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<string, string>(topic, t =>
             {
@@ -54,13 +54,21 @@ public class KafkaValidationThrowsCompliance(KafkaContainerFixture fixture)
         string dlqTopic,
         string dlqGroupId)
     {
-        CreateTopic(dlqTopic);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>
             {
                 config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
             });
 
             kafka.Topic<string, string>(sourceTopic, t =>
@@ -78,20 +86,8 @@ public class KafkaValidationThrowsCompliance(KafkaContainerFixture fixture)
                         msg => msg.StartsWith("valid:", StringComparison.Ordinal)
                             ? MessageValidationResult.Success
                             : MessageValidationResult.Fail("invalid"));
-                    group.OnError(e => e.Default(d => d.DeadLetter(dlqTopic)));
+                    group.OnError(e => e.Default(d => d.DeadLetter()));
                     group.AddConsumer<SinkConsumer<string>>();
-                });
-            });
-
-            kafka.Topic<string, string>(dlqTopic, t =>
-            {
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
-
-                t.ConsumerGroup(dlqGroupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<DlqCaptureConsumer>();
                 });
             });
         });
@@ -104,13 +100,21 @@ public class KafkaValidationThrowsCompliance(KafkaContainerFixture fixture)
         string dlqTopic,
         string dlqGroupId)
     {
-        CreateTopic(dlqTopic);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>
             {
                 config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
             });
 
             // Source topic: validator throws → exception propagates to OnError → dead-letters to DLQ.
@@ -127,34 +131,10 @@ public class KafkaValidationThrowsCompliance(KafkaContainerFixture fixture)
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.Validate(
                         (_, _) => throw new InvalidOperationException("Simulated validator exception."));
-                    group.OnError(e => e.Default(d => d.DeadLetter(dlqTopic)));
+                    group.OnError(e => e.Default(d => d.DeadLetter()));
                     group.AddConsumer<SinkConsumer<string>>();
                 });
             });
-
-            // DLQ topic: captures dead-lettered messages.
-            kafka.Topic<string, string>(dlqTopic, t =>
-            {
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
-
-                t.ConsumerGroup(dlqGroupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<DlqCaptureConsumer>();
-                });
-            });
         });
-    }
-
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
     }
 }

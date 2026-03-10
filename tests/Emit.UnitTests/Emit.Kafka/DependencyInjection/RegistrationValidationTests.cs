@@ -78,7 +78,6 @@ public sealed class RegistrationValidationTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             GroupErrorPolicy = groupPolicy.Build(),
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
 
         // Assert
@@ -105,7 +104,6 @@ public sealed class RegistrationValidationTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
 
         // Assert
@@ -132,7 +130,6 @@ public sealed class RegistrationValidationTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = ErrorAction.Discard(),
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
 
         // Assert
@@ -140,27 +137,26 @@ public sealed class RegistrationValidationTests
         Assert.IsType<ErrorAction.DiscardAction>(registration.DeserializationErrorAction);
     }
 
-    // ── DeadLetter deserialization action with explicit topic succeeds ──
+    // ── DeadLetter deserialization action resolves to DeadLetterAction ──
 
     [Fact]
-    public void GivenDeserializationDeadLetterWithExplicitTopic_WhenConfigured_ThenSucceeds()
+    public void GivenDeserializationDeadLetter_WhenConfigured_ThenReturnsDeadLetterAction()
     {
         // Arrange
         var actionBuilder = new ErrorActionBuilder();
-        actionBuilder.DeadLetter("errors.dlt");
+        actionBuilder.DeadLetter();
 
         // Act
         var action = actionBuilder.Build();
 
         // Assert
-        var deadLetter = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Equal("errors.dlt", deadLetter.TopicName);
+        Assert.IsType<ErrorAction.DeadLetterAction>(action);
     }
 
-    // ── DeadLetter deserialization action uses convention when no explicit topic ──
+    // ── DeadLetter DeserializationErrorAction stored on registration ──
 
     [Fact]
-    public void GivenDeserializationDeadLetterWithoutTopic_WhenConventionConfigured_ThenUsesConvention()
+    public void GivenDeadLetterDeserializationErrorAction_WhenStored_ThenRetrievable()
     {
         // Arrange
         var registration = new ConsumerGroupRegistration<string, string>
@@ -177,14 +173,11 @@ public sealed class RegistrationValidationTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = ErrorAction.DeadLetter(),
-            ResolveDeadLetterTopic = topic => $"{topic}.dlt",
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
 
         // Assert
         Assert.NotNull(registration.DeserializationErrorAction);
-        Assert.NotNull(registration.ResolveDeadLetterTopic);
-        Assert.Equal("orders.dlt", registration.ResolveDeadLetterTopic("orders"));
+        Assert.IsType<ErrorAction.DeadLetterAction>(registration.DeserializationErrorAction);
     }
 
     // ── ErrorPolicy Default called twice throws ──
@@ -212,7 +205,7 @@ public sealed class RegistrationValidationTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.OnDeserializationError(err => err.DeadLetter("errors.dlt"));
+        builder.OnDeserializationError(err => err.DeadLetter());
 
         // Assert
         Assert.NotNull(builder.DeserializationErrorAction);

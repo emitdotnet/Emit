@@ -30,23 +30,10 @@ public abstract class ErrorAction
     }
 
     /// <summary>
-    /// Send the message to a dead letter destination. The actual destination is resolved from
-    /// the dead letter configuration.
+    /// Send the message to the configured dead letter topic.
     /// </summary>
     /// <returns>A dead letter error action.</returns>
-    public static ErrorAction DeadLetter() => new DeadLetterAction(null);
-
-    /// <summary>
-    /// Send the message to a specific dead letter topic, overriding the default dead letter configuration.
-    /// </summary>
-    /// <param name="topicName">The explicit dead letter topic name.</param>
-    /// <returns>A dead letter error action targeting the specified topic.</returns>
-    /// <exception cref="ArgumentException"><paramref name="topicName"/> is null or whitespace.</exception>
-    public static ErrorAction DeadLetter(string topicName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(topicName);
-        return new DeadLetterAction(topicName);
-    }
+    public static ErrorAction DeadLetter() => new DeadLetterAction();
 
     /// <summary>
     /// Discard the message permanently. The message will not be retried or dead-lettered.
@@ -70,38 +57,9 @@ public abstract class ErrorAction
     }
 
     /// <summary>
-    /// Dead letter action with optional explicit topic name.
+    /// Dead letter action. The destination topic is resolved from the transport-level dead letter configuration.
     /// </summary>
-    public sealed class DeadLetterAction(string? topicName) : ErrorAction
-    {
-        /// <summary>The explicit dead letter topic name, or <c>null</c> to use the default.</summary>
-        public string? TopicName => topicName;
-
-        /// <summary>
-        /// Resolves the dead-letter destination topic, applying explicit topic override before
-        /// falling back to a convention-based resolver.
-        /// </summary>
-        /// <param name="sourceTopic">The source topic the message originated from, used when applying a convention.</param>
-        /// <param name="resolveConvention">A convention function mapping a source topic to a dead-letter topic.</param>
-        /// <returns>
-        /// The explicit topic name if set; otherwise the result of <paramref name="resolveConvention"/> applied
-        /// to <paramref name="sourceTopic"/>; otherwise <c>null</c> if neither is available.
-        /// </returns>
-        public string? Resolve(string? sourceTopic, Func<string, string?>? resolveConvention)
-        {
-            if (!string.IsNullOrWhiteSpace(TopicName))
-            {
-                return TopicName;
-            }
-
-            if (sourceTopic is not null && resolveConvention is not null)
-            {
-                return resolveConvention(sourceTopic);
-            }
-
-            return null;
-        }
-    }
+    public sealed class DeadLetterAction : ErrorAction;
 
     /// <summary>
     /// Discard the message permanently.

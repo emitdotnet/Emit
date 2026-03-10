@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.Testing;
@@ -110,7 +111,7 @@ public abstract class RetryCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-retry-dlq-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -132,7 +133,7 @@ public abstract class RetryCompliance
 
             // Assert — message arrived in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("always-failing", ctx.Message);
+            Assert.Equal("always-failing", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers carry retry count and exception details.
             var headers = ctx.Headers;
@@ -259,10 +260,10 @@ public abstract class RetryCompliance
     /// <summary>
     /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
     /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
+    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

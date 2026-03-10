@@ -500,4 +500,63 @@ public sealed class KafkaTopicBuilderTests
         Assert.Throws<ArgumentNullException>(() =>
             builder.SetValueDeserializer((ConfluentKafka.IAsyncDeserializer<string>)null!));
     }
+
+    // ── Provisioning ──
+
+    [Fact]
+    public void GivenProvisioning_WhenCalled_ThenOptionsStored()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+
+        // Act
+        builder.Provisioning(opts => opts.Retention = null);
+
+        // Assert
+        Assert.NotNull(builder.ProvisioningOptions);
+        Assert.Null(builder.ProvisioningOptions.Retention);
+    }
+
+    [Fact]
+    public void GivenProvisioning_WhenCalledTwice_ThenThrowsInvalidOperationException()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+        builder.Provisioning(opts => { });
+
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.Provisioning(opts => { }));
+        Assert.Contains("test-topic", ex.Message);
+    }
+
+    [Fact]
+    public void GivenProvisioning_WhenNullConfigure_ThenThrowsArgumentNullException()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => builder.Provisioning(null!));
+    }
+
+    [Fact]
+    public void GivenProvisioning_WhenCallbackModifiesOptions_ThenChangesPreserved()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+
+        // Act
+        builder.Provisioning(opts =>
+        {
+            opts.NumPartitions = 12;
+            opts.ReplicationFactor = 3;
+            opts.CompressionType = global::Emit.Kafka.TopicCompressionType.Zstd;
+        });
+
+        // Assert
+        Assert.NotNull(builder.ProvisioningOptions);
+        Assert.Equal(12, builder.ProvisioningOptions.NumPartitions);
+        Assert.Equal((short)3, builder.ProvisioningOptions.ReplicationFactor);
+        Assert.Equal(global::Emit.Kafka.TopicCompressionType.Zstd, builder.ProvisioningOptions.CompressionType);
+    }
 }

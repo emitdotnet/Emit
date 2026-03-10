@@ -28,7 +28,6 @@ public sealed class ConsumerGroupRegistrationTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = applyClientConfig ?? (_ => { }),
             ApplyConsumerConfigOverrides = applyOverrides ?? (_ => { }),
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 

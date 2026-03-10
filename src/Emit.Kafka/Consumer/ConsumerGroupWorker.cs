@@ -53,8 +53,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
     {
         executionToken = stoppingToken;
 
-        StartupDiagnosticsLogger.Log(registration, logger);
-        VerifyDlqTopics();
+        StartupDiagnosticsLogger.Log(registration, deadLetterSink, logger);
 
         kafkaMetrics.RegisterConsumerGroup(
             registration.GroupId,
@@ -139,27 +138,6 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             .SetErrorHandler((_, e) => logger.LogError("Kafka consumer error in group '{GroupId}': {Reason}",
                 registration.GroupId, e.Reason))
             .Build();
-    }
-
-    private void VerifyDlqTopics()
-    {
-        var dlqTopics = registration.DeadLetterTopicMap.AllTopics;
-
-        DlqTopicVerifier.Verify(
-            dlqTopics,
-            () =>
-            {
-                var config = new ConfluentKafka.AdminClientConfig();
-                registration.ApplyClientConfig(config);
-                using var adminClient = new ConfluentKafka.AdminClientBuilder(config).Build();
-                var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(10));
-                return new HashSet<string>(
-                    metadata.Topics
-                        .Where(t => t.Error.Code == ConfluentKafka.ErrorCode.NoError)
-                        .Select(t => t.Topic),
-                    StringComparer.Ordinal);
-            },
-            logger);
     }
 
     private async Task RunPollLoopAsync(

@@ -5,7 +5,6 @@ using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Observability;
 using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
-using Emit.DependencyInjection;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
@@ -23,7 +22,7 @@ using ConfluentKafka = Confluent.Kafka;
 using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
 /// <summary>
-/// Configures the Kafka provider within an <see cref="EmitBuilder"/>.
+/// Configures the Kafka provider within an <see cref="Emit.DependencyInjection.EmitBuilder"/>.
 /// Provides shared client configuration and topic declarations.
 /// </summary>
 public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipelineConfigurable
@@ -33,6 +32,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     private readonly IMessagePipelineBuilder globalInboundPipeline;
     private readonly IMessagePipelineBuilder globalOutboundPipeline;
     private readonly HashSet<string> registeredTopicNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TopicCreationOptions> provisioningConfigs = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets the Kafka-level inbound middleware pipeline builder. Middleware registered here
@@ -62,9 +62,9 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     internal Action<KafkaSchemaRegistryConfig>? SchemaRegistryConfigAction { get; private set; }
 
     /// <summary>
-    /// The configured dead letter options, or <c>null</c> if <see cref="DeadLetter"/> was not called.
+    /// Whether auto-provisioning of missing topics is enabled.
     /// </summary>
-    internal DeadLetterOptions? DeadLetterConfig { get; private set; }
+    internal bool AutoProvisionEnabled { get; private set; }
 
     /// <summary>
     /// Creates a new Kafka builder.
@@ -154,24 +154,51 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     }
 
     /// <summary>
-    /// Configures the global dead letter queue (DLQ) naming convention. When a consumer
-    /// uses dead lettering without specifying an explicit topic name, the configured convention
-    /// derives the DLQ topic name from the source topic.
+    /// Enables automatic creation of missing topics at application startup.
+    /// Per-topic creation settings can be configured via
+    /// <see cref="KafkaTopicBuilder{TKey,TValue}.Provisioning"/>.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Called more than once.</exception>
-    public KafkaBuilder DeadLetter(Action<DeadLetterOptions> configure)
+    public KafkaBuilder AutoProvision()
     {
-        ArgumentNullException.ThrowIfNull(configure);
+        AutoProvisionEnabled = true;
+        return this;
+    }
 
-        if (DeadLetterConfig is not null)
+    /// <summary>
+    /// Configures a dead letter topic. All dead-lettered messages from any consumer group are
+    /// produced to this topic. Delegates to <see cref="Topic{TKey,TValue}"/> with <c>byte[]</c>
+    /// key/value types, so the DLQ topic participates in all standard topic infrastructure
+    /// (verification, provisioning, consumer groups).
+    /// </summary>
+    /// <param name="topicName">The dead letter topic name.</param>
+    /// <param name="configure">Optional configuration for the DLQ topic (consumer groups, provisioning).</param>
+    /// <exception cref="InvalidOperationException">Called more than once.</exception>
+    public KafkaBuilder DeadLetter(string topicName, Action<KafkaTopicBuilder<byte[], byte[]>>? configure = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(topicName);
+
+        if (services.Any(d => d.ServiceType == typeof(IDeadLetterSink)))
         {
             throw new InvalidOperationException(
                 $"{nameof(DeadLetter)} has already been called. Only one dead letter configuration is allowed per Kafka registration.");
         }
 
-        var options = new DeadLetterOptions();
-        configure(options);
-        DeadLetterConfig = options;
+        services.AddSingleton(new KafkaDeadLetterOptions
+        {
+            TopicName = topicName,
+            DestinationAddress = BuildDestinationAddress(topicName),
+        });
+        services.AddSingleton<IDeadLetterSink, DlqProducer>();
+
+        Topic<byte[], byte[]>(topicName, t =>
+        {
+            t.SetByteArrayKeySerializer();
+            t.SetByteArrayValueSerializer();
+            t.SetByteArrayKeyDeserializer();
+            t.SetByteArrayValueDeserializer();
+            configure?.Invoke(t);
+        });
+
         return this;
     }
 
@@ -196,6 +223,11 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var topicBuilder = new KafkaTopicBuilder<TKey, TValue>(topicName);
         configure(topicBuilder);
         EnsureSchemaRegistryConfigured(topicName, topicBuilder);
+
+        if (topicBuilder.ProvisioningOptions is not null)
+        {
+            provisioningConfigs[topicName] = topicBuilder.ProvisioningOptions;
+        }
 
         if (topicBuilder.ProducerConfigured)
         {
@@ -483,15 +515,9 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var groupErrorPolicy = BuildErrorPolicy(groupBuilder.GroupErrorPolicyAction);
         var deserializationErrorAction = BuildDeserializationErrorAction(groupBuilder.DeserializationErrorAction);
         var validationModule = groupBuilder.Validation;
-        var resolveDeadLetterDestination = DeadLetterConfig?.TopicNamingConvention;
 
         // Extract retry config from error policy (retry is now a separate middleware concern)
         var retryConfig = ExtractRetryConfig(groupErrorPolicy);
-
-        // Build DeadLetterTopicMap from error policies
-        var deadLetterTopicMap = BuildDeadLetterTopicMap(
-            topicName, deserializationErrorAction, groupErrorPolicy,
-            resolveDeadLetterDestination);
 
         // Build rate limiter at registration time (singleton, shared across all workers)
         if (groupBuilder.RateLimitAction is not null)
@@ -567,7 +593,6 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                         Validation = validationModule,
                         RetryConfig = retryConfig,
                         ErrorPolicy = errorEvaluator,
-                        ResolveDeadLetterDestination = resolveDeadLetterDestination is not null ? topic => resolveDeadLetterDestination(topic) : null,
                         ConsumeObservers = consumeObservers,
                         GroupPipeline = groupPipeline,
                         GlobalInboundPipeline = globalInboundPipeline,
@@ -616,8 +641,6 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                 ApplyConsumerConfigOverrides = config => groupBuilder.ApplyTo(config),
                 GroupErrorPolicy = groupErrorPolicy,
                 DeserializationErrorAction = deserializationErrorAction,
-                ResolveDeadLetterTopic = resolveDeadLetterDestination is not null ? topic => resolveDeadLetterDestination(topic) : null,
-                DeadLetterTopicMap = deadLetterTopicMap,
                 ConsumerTypes = invokerEntries.Select(e => e.ConsumerType)
                     .Concat(routers?.SelectMany(r => r.ConsumerTypes) ?? [])
                     .ToList(),
@@ -763,72 +786,15 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         return builder.Build();
     }
 
-    private static DeadLetterTopicMap BuildDeadLetterTopicMap(
-        string topicName,
-        ErrorAction? deserializationErrorAction,
-        ErrorPolicy? groupErrorPolicy,
-        Func<string, string>? resolveConvention)
-    {
-        var entries = new List<DeadLetterEntry>();
+    /// <summary>
+    /// Returns all registered topic names (including the DLQ topic, if configured).
+    /// </summary>
+    internal IReadOnlySet<string> GetRequiredTopics() => registeredTopicNames;
 
-        // Deserialization error action (group-level)
-        CollectFromAction(deserializationErrorAction, null, topicName, resolveConvention, entries);
-
-        // Group error policy (validation failures are now handled by the same error policy)
-        if (groupErrorPolicy is not null)
-        {
-            CollectFromPolicy(groupErrorPolicy, null, topicName, resolveConvention, entries);
-        }
-
-        return entries.Count > 0 ? new DeadLetterTopicMap(entries) : DeadLetterTopicMap.Empty;
-    }
-
-    private static void CollectFromPolicy(
-        ErrorPolicy policy,
-        string? consumerKey,
-        string sourceTopic,
-        Func<string, string>? resolveConvention,
-        List<DeadLetterEntry> entries)
-    {
-        foreach (var clause in policy.Clauses)
-        {
-            if (clause.Action is not null)
-            {
-                CollectFromAction(clause.Action, consumerKey, sourceTopic, resolveConvention, entries);
-            }
-        }
-
-        CollectFromAction(policy.DefaultAction, consumerKey, sourceTopic, resolveConvention, entries);
-    }
-
-    private static void CollectFromAction(
-        ErrorAction? action,
-        string? consumerKey,
-        string sourceTopic,
-        Func<string, string>? resolveConvention,
-        List<DeadLetterEntry> entries)
-    {
-        switch (action)
-        {
-            case ErrorAction.DeadLetterAction dl:
-                var dlqTopic = dl.TopicName ?? resolveConvention?.Invoke(sourceTopic);
-                if (!string.IsNullOrWhiteSpace(dlqTopic))
-                {
-                    entries.Add(new DeadLetterEntry
-                    {
-                        ConsumerKey = consumerKey,
-                        SourceTopic = sourceTopic,
-                        DeadLetterTopic = dlqTopic,
-                    });
-                }
-
-                break;
-
-            case ErrorAction.RetryAction retry:
-                CollectFromAction(retry.ExhaustionAction, consumerKey, sourceTopic, resolveConvention, entries);
-                break;
-        }
-    }
+    /// <summary>
+    /// Returns per-topic provisioning configurations collected from <see cref="KafkaTopicBuilder{TKey,TValue}.Provisioning"/> calls.
+    /// </summary>
+    internal IReadOnlyDictionary<string, TopicCreationOptions> GetProvisioningConfigs() => provisioningConfigs;
 
     /// <summary>
     /// Extracts retry configuration from the default action of an error policy.

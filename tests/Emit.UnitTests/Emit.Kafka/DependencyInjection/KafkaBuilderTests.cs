@@ -270,17 +270,33 @@ public sealed class KafkaBuilderTests
     }
 
     [Fact]
-    public void GivenDeadLetter_WhenCalled_ThenStoresDeadLetterConfig()
+    public void GivenDeadLetter_WhenCalled_ThenRegistersIDeadLetterSinkInServices()
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
-        builder.DeadLetter(options => { });
+        builder.DeadLetter("orders.dlt");
 
         // Assert
-        Assert.NotNull(builder.DeadLetterConfig);
+        Assert.Contains(services, d => d.ServiceType == typeof(global::Emit.Abstractions.IDeadLetterSink));
+    }
+
+    [Fact]
+    public void GivenDeadLetter_WhenCalled_ThenRegistersKafkaDeadLetterOptionsInServices()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+
+        // Act
+        builder.DeadLetter("orders.dlt");
+
+        // Assert
+        Assert.Contains(services, d => d.ServiceType == typeof(KafkaDeadLetterOptions));
     }
 
     [Fact]
@@ -288,10 +304,11 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
-        var result = builder.DeadLetter(options => { });
+        var result = builder.DeadLetter("orders.dlt");
 
         // Assert
         Assert.Same(builder, result);
@@ -302,52 +319,57 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
-        builder.DeadLetter(options => { });
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+        builder.DeadLetter("orders.dlt");
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => builder.DeadLetter(options => { }));
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.DeadLetter("other.dlt"));
         Assert.Contains("already been called", ex.Message);
     }
 
     [Fact]
-    public void GivenNullAction_WhenDeadLetter_ThenThrowsArgumentNullException()
+    public void GivenDeadLetter_WhenNullTopicName_ThenThrowsArgumentException()
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => builder.DeadLetter(null!));
+        Assert.ThrowsAny<ArgumentException>(() => builder.DeadLetter(null!));
     }
 
     [Fact]
-    public void GivenDeadLetter_WhenCustomConvention_ThenConfigApplied()
+    public void GivenDeadLetter_WhenTopicAlreadyDeclared_ThenThrowsInvalidOperationException()
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
-
-        // Act
-        builder.DeadLetter(options =>
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+        builder.Topic<string, string>("orders.dlt", t =>
         {
-            options.TopicNamingConvention = source => $"dlq-{source}";
+            t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
+            t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
         });
 
-        // Assert
-        Assert.NotNull(builder.DeadLetterConfig);
-        Assert.Equal("dlq-orders", builder.DeadLetterConfig.TopicNamingConvention("orders"));
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.DeadLetter("orders.dlt"));
+        Assert.Contains("already been declared", ex.Message);
     }
 
     [Fact]
-    public void GivenDeadLetterNotCalled_WhenChecked_ThenDeadLetterConfigIsNull()
+    public void GivenDeadLetter_WhenNoConfigureCallback_ThenTopicRegistered()
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
-        // Assert
-        Assert.Null(builder.DeadLetterConfig);
+        // Act
+        builder.DeadLetter("dlq-topic");
+
+        // Assert — DLQ topic appears in required topics
+        Assert.Contains("dlq-topic", builder.GetRequiredTopics());
     }
 
     [Fact]
@@ -400,5 +422,104 @@ public sealed class KafkaBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.ConfigureProducer(null!));
+    }
+
+    // ── AutoProvision ──
+
+    [Fact]
+    public void GivenAutoProvision_WhenCalled_ThenAutoProvisionEnabledIsTrue()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+
+        // Act
+        builder.AutoProvision();
+
+        // Assert
+        Assert.True(builder.AutoProvisionEnabled);
+    }
+
+    [Fact]
+    public void GivenAutoProvision_WhenCalled_ThenReturnsSameBuilder()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+
+        // Act
+        var result = builder.AutoProvision();
+
+        // Assert
+        Assert.Same(builder, result);
+    }
+
+    // ── Provisioning configs ──
+
+    [Fact]
+    public void GivenTopicWithProvisioning_WhenCalled_ThenProvisioningConfigsContainsTopic()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+
+        // Act
+        builder.Topic<string, string>("orders", t =>
+        {
+            t.Provisioning(opts => opts.Retention = null);
+        });
+
+        // Assert
+        var configs = builder.GetProvisioningConfigs();
+        Assert.True(configs.ContainsKey("orders"));
+        Assert.Null(configs["orders"].Retention);
+    }
+
+    [Fact]
+    public void GivenTopicWithoutProvisioning_WhenCalled_ThenProvisioningConfigsDoesNotContainTopic()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+
+        // Act
+        builder.Topic<string, string>("orders", t => { });
+
+        // Assert
+        var configs = builder.GetProvisioningConfigs();
+        Assert.False(configs.ContainsKey("orders"));
+    }
+
+    [Fact]
+    public void GivenGetRequiredTopics_WhenDeadLetterConfigured_ThenIncludesDlqTopic()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+
+        // Act
+        builder.DeadLetter("my-dlq-topic");
+
+        // Assert
+        Assert.Contains("my-dlq-topic", builder.GetRequiredTopics());
+    }
+
+    [Fact]
+    public void GivenTopic_ThenDeadLetterWithSameName_ThenThrowsInvalidOperationException()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+        builder.Topic<string, string>("shared-topic", t =>
+        {
+            t.SetKeySerializer(ConfluentKafka.Serializers.Utf8);
+            t.SetValueSerializer(ConfluentKafka.Serializers.Utf8);
+        });
+
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.DeadLetter("shared-topic"));
+        Assert.Contains("already been declared", ex.Message);
     }
 }

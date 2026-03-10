@@ -2,6 +2,7 @@ namespace Emit.Kafka.Tests.Consumer;
 
 using System.Text;
 using global::Emit.Kafka.Consumer;
+using global::Emit.Kafka.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -11,11 +12,23 @@ using ConfluentKafka = Confluent.Kafka;
 public sealed class DlqProducerTests
 {
     private readonly Mock<ConfluentKafka.IProducer<byte[], byte[]>> mockProducer = new();
+    private readonly KafkaDeadLetterOptions options = new()
+    {
+        TopicName = "orders.dlt",
+        DestinationAddress = new Uri("kafka://broker:9092/kafka/orders.dlt"),
+    };
     private readonly DlqProducer sut;
 
     public DlqProducerTests()
     {
-        sut = new DlqProducer(mockProducer.Object, NullLogger<DlqProducer>.Instance);
+        sut = new DlqProducer(mockProducer.Object, options, NullLogger<DlqProducer>.Instance);
+    }
+
+    [Fact]
+    public void GivenKafkaDeadLetterOptions_WhenConstructed_ThenDestinationAddressMatchesOptions()
+    {
+        // Assert
+        Assert.Equal(options.DestinationAddress, sut.DestinationAddress);
     }
 
     [Fact]
@@ -35,7 +48,7 @@ public sealed class DlqProducerTests
             .ReturnsAsync(new ConfluentKafka.DeliveryResult<byte[], byte[]>());
 
         // Act
-        await sut.ProduceAsync(rawKey, rawValue, [], "orders.dlt", CancellationToken.None);
+        await sut.ProduceAsync(rawKey, rawValue, [], CancellationToken.None);
 
         // Assert
         Assert.NotNull(capturedMessage);
@@ -64,7 +77,7 @@ public sealed class DlqProducerTests
             .ReturnsAsync(new ConfluentKafka.DeliveryResult<byte[], byte[]>());
 
         // Act
-        await sut.ProduceAsync(null, null, headers, "orders.dlt", CancellationToken.None);
+        await sut.ProduceAsync(null, null, headers, CancellationToken.None);
 
         // Assert
         Assert.NotNull(capturedMessage);
@@ -92,7 +105,7 @@ public sealed class DlqProducerTests
             .ReturnsAsync(new ConfluentKafka.DeliveryResult<byte[], byte[]>());
 
         // Act
-        await sut.ProduceAsync(null, null, headers, "orders.dlt", CancellationToken.None);
+        await sut.ProduceAsync(null, null, headers, CancellationToken.None);
 
         // Assert
         Assert.NotNull(capturedMessage);
@@ -114,7 +127,7 @@ public sealed class DlqProducerTests
             .ReturnsAsync(new ConfluentKafka.DeliveryResult<byte[], byte[]>());
 
         // Act
-        await sut.ProduceAsync(null, null, [], "orders.dlt", CancellationToken.None);
+        await sut.ProduceAsync(null, null, [], CancellationToken.None);
 
         // Assert
         mockProducer.Verify(
@@ -149,7 +162,7 @@ public sealed class DlqProducerTests
             });
 
         // Act
-        await sut.ProduceAsync(null, null, [], "orders.dlt", CancellationToken.None);
+        await sut.ProduceAsync(null, null, [], CancellationToken.None);
 
         // Assert — 2 failures + 1 success = 3 calls
         Assert.Equal(3, callCount);
@@ -170,11 +183,11 @@ public sealed class DlqProducerTests
 
         // Act & Assert
         await Assert.ThrowsAsync<ConfluentKafka.ProduceException<byte[], byte[]>>(
-            () => sut.ProduceAsync(null, null, [], "orders.dlt", CancellationToken.None));
+            () => sut.ProduceAsync(null, null, [], CancellationToken.None));
     }
 
     [Fact]
-    public async Task GivenDlqTopic_WhenProduceAsync_ThenProducesToCorrectTopic()
+    public async Task GivenOptions_WhenProduceAsync_ThenProducesToConfiguredTopic()
     {
         // Arrange
         string? capturedTopic = null;
@@ -188,9 +201,9 @@ public sealed class DlqProducerTests
             .ReturnsAsync(new ConfluentKafka.DeliveryResult<byte[], byte[]>());
 
         // Act
-        await sut.ProduceAsync(null, null, [], "custom-dlq-topic", CancellationToken.None);
+        await sut.ProduceAsync(null, null, [], CancellationToken.None);
 
         // Assert
-        Assert.Equal("custom-dlq-topic", capturedTopic);
+        Assert.Equal("orders.dlt", capturedTopic);
     }
 }

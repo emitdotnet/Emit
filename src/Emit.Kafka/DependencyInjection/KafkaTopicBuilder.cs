@@ -68,6 +68,9 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
     /// <summary>Consumer group builders collected by <see cref="ConsumerGroup"/> calls.</summary>
     internal IReadOnlyList<(string GroupId, KafkaConsumerGroupBuilder<TKey, TValue> Builder)> ConsumerGroups => consumerGroups;
 
+    /// <summary>Topic provisioning options, if <see cref="Provisioning"/> was called.</summary>
+    internal TopicCreationOptions? ProvisioningOptions { get; private set; }
+
     /// <summary>
     /// Creates a new topic builder.
     /// </summary>
@@ -278,5 +281,25 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
         }
 
         consumerGroups.Add((groupId, builder));
+    }
+
+    /// <summary>
+    /// Configures how this topic should be created when auto-provisioning is enabled.
+    /// </summary>
+    /// <param name="configure">Configures the topic creation options.</param>
+    /// <exception cref="InvalidOperationException">Called more than once.</exception>
+    public void Provisioning(Action<TopicCreationOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        if (ProvisioningOptions is not null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(Provisioning)} has already been declared for topic '{topicName}'.");
+        }
+
+        var options = new TopicCreationOptions();
+        configure(options);
+        ProvisioningOptions = options;
     }
 }
