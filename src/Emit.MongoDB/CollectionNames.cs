@@ -1,7 +1,7 @@
 namespace Emit.MongoDB;
 
 /// <summary>
-/// MongoDB collection names used by the outbox persistence provider.
+/// MongoDB collection names used by the Emit persistence provider.
 /// </summary>
 internal static class CollectionNames
 {
@@ -13,7 +13,7 @@ internal static class CollectionNames
     /// <summary>
     /// The collection name for sequence counters.
     /// </summary>
-    internal const string Sequence = "emit.outbox.sequences";
+    internal const string Sequence = "emit.sequences";
 
     /// <summary>
     /// The collection name for distributed locks.

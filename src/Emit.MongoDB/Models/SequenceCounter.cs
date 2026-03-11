@@ -4,13 +4,13 @@ namespace Emit.MongoDB.Models;
 /// Represents a sequence counter document for atomic sequence generation.
 /// </summary>
 /// <remarks>
-/// Each document tracks the current sequence number for a specific GroupKey.
-/// The _id field is the GroupKey value.
+/// Each document uses a well-known identifier as its <c>_id</c> field (e.g. <c>"emit.outbox"</c>).
+/// A single document provides a globally monotonic counter via atomic <c>$inc</c>.
 /// </remarks>
 internal sealed class SequenceCounter
 {
     /// <summary>
-    /// Gets or sets the GroupKey (used as the document _id).
+    /// Gets or sets the well-known identifier (used as the document _id).
     /// </summary>
     public required string Id { get; set; }
 

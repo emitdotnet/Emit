@@ -17,9 +17,9 @@ using Microsoft.Extensions.Logging;
 /// All queries include GroupKey as the first filter criterion for optimal shard routing.
 /// </para>
 /// <para>
-/// The sequence counter uses a non-transactional <c>FindOneAndUpdate</c> with <c>$inc</c> to
-/// guarantee unique, monotonically increasing sequence numbers even under concurrent transactions.
-/// The outbox insert itself participates in the caller's transaction.
+/// The sequence counter uses a non-transactional <c>FindOneAndUpdate</c> with <c>$inc</c> on a
+/// single global document to guarantee unique, monotonically increasing sequence numbers even
+/// under concurrent transactions. The outbox insert itself participates in the caller's transaction.
 /// </para>
 /// </remarks>
 internal sealed class MongoDbOutboxRepository : IOutboxRepository
@@ -61,18 +61,19 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
         var session = GetSession(emitContext.Transaction);
 
         // Sequence counter is NON-transactional to avoid snapshot isolation duplicates
-        entry.Sequence = await GetNextSequenceAsync(entry.GroupKey, cancellationToken)
+        entry.Sequence = await GetNextSequenceAsync(cancellationToken)
             .ConfigureAwait(false);
 
         await outboxCollection.InsertOneAsync(session, entry, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
+    private const string OutboxSequenceId = "emit.outbox";
+
     private async Task<long> GetNextSequenceAsync(
-        string groupKey,
         CancellationToken cancellationToken)
     {
-        var filter = Builders<SequenceCounter>.Filter.Eq(x => x.Id, groupKey);
+        var filter = Builders<SequenceCounter>.Filter.Eq(x => x.Id, OutboxSequenceId);
         var update = Builders<SequenceCounter>.Update.Inc(x => x.Sequence, 1);
         var findOptions = new FindOneAndUpdateOptions<SequenceCounter>
         {
