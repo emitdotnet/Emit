@@ -64,28 +64,24 @@ public static class ModelBuilderExtensions
             .ValueGeneratedOnAdd();
 
         // String properties
-        entity.Property(e => e.ProviderId)
-            .HasColumnName("provider_id")
+        entity.Property(e => e.SystemId)
+            .HasColumnName("system_id")
             .HasMaxLength(100)
             .IsRequired();
 
-        entity.Property(e => e.RegistrationKey)
-            .HasColumnName("registration_key")
-            .HasMaxLength(200)
+        entity.Property(e => e.Destination)
+            .HasColumnName("destination")
+            .HasMaxLength(2048)
             .IsRequired();
+
+        entity.Property(e => e.ConversationId)
+            .HasColumnName("conversation_id")
+            .HasMaxLength(200);
 
         entity.Property(e => e.GroupKey)
             .HasColumnName("group_key")
             .HasMaxLength(500)
             .IsRequired();
-
-        entity.Property(e => e.TraceParent)
-            .HasColumnName("trace_parent")
-            .HasMaxLength(55); // W3C traceparent is exactly 55 chars
-
-        entity.Property(e => e.TraceState)
-            .HasColumnName("trace_state")
-            .HasMaxLength(2048);
 
         // DateTime properties - UTC timestamps
         entity.Property(e => e.EnqueuedAt)
@@ -93,10 +89,23 @@ public static class ModelBuilderExtensions
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // Payload - binary blob
-        entity.Property(e => e.Payload)
-            .HasColumnName("payload")
-            .IsRequired();
+        // Body - nullable binary blob (null for tombstones)
+        entity.Property(e => e.Body)
+            .HasColumnName("body");
+
+        // Headers - JSON-serialized list of key-value pairs with base64-encoded byte values
+        var headersComparer = new ValueComparer<List<KeyValuePair<string, byte[]>>>(
+            (a, b) => a != null && b != null && a.Count == b.Count &&
+                      a.Zip(b).All(p => p.First.Key == p.Second.Key && p.First.Value.SequenceEqual(p.Second.Value)),
+            v => v.Aggregate(0, (h, p) => HashCode.Combine(h, p.Key.GetHashCode(), p.Value.Length)),
+            v => new List<KeyValuePair<string, byte[]>>(v.Select(p => new KeyValuePair<string, byte[]>(p.Key, p.Value.ToArray()))));
+
+        entity.Property(e => e.Headers)
+            .HasColumnName("headers")
+            .HasConversion(
+                v => SerializeHeaders(v),
+                v => DeserializeHeaders(v),
+                headersComparer);
 
         // Properties - JSON-serialized dictionary
         var propertiesComparer = new ValueComparer<Dictionary<string, string>>(
@@ -115,9 +124,26 @@ public static class ModelBuilderExtensions
         entity.HasIndex(e => new { e.GroupKey, e.Sequence })
             .IsUnique()
             .HasDatabaseName("ix_outbox_group_key_sequence");
+    }
 
-        entity.HasIndex(e => e.TraceParent)
-            .HasDatabaseName("ix_outbox_trace_parent");
+    private static string SerializeHeaders(List<KeyValuePair<string, byte[]>> headers)
+    {
+        var pairs = headers.Select(h => new Dictionary<string, string>
+        {
+            ["k"] = h.Key,
+            ["v"] = Convert.ToBase64String(h.Value)
+        });
+        return JsonSerializer.Serialize(pairs, JsonSerializerOptions.Default);
+    }
+
+    private static List<KeyValuePair<string, byte[]>> DeserializeHeaders(string json)
+    {
+        var pairs = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(json, JsonSerializerOptions.Default);
+        if (pairs is null) return [];
+
+        return pairs
+            .Select(p => new KeyValuePair<string, byte[]>(p["k"], Convert.FromBase64String(p["v"])))
+            .ToList();
     }
 
     private static void ConfigureLockEntity(ModelBuilder modelBuilder)

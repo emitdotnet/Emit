@@ -86,7 +86,7 @@ public class OutboxDaemonTests
         // Arrange
         var entry = CreateEntry("entry-1", "test-provider", "group-1", sequence: 1);
 
-        mockProvider.Setup(p => p.ProviderId).Returns("test-provider");
+        mockProvider.Setup(p => p.SystemId).Returns("test-provider");
         mockProvider
             .Setup(p => p.ProcessAsync(entry, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -123,7 +123,7 @@ public class OutboxDaemonTests
         var entry1 = CreateEntry("entry-1", "test-provider", "group-1", sequence: 1);
         var entry2 = CreateEntry("entry-2", "test-provider", "group-1", sequence: 2);
 
-        mockProvider.Setup(p => p.ProviderId).Returns("test-provider");
+        mockProvider.Setup(p => p.SystemId).Returns("test-provider");
         mockProvider
             .Setup(p => p.ProcessAsync(entry1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Delivery failed"));
@@ -152,18 +152,18 @@ public class OutboxDaemonTests
 
     private static OutboxEntry CreateEntry(
         string id,
-        string providerId,
+        string systemId,
         string groupKey,
         long sequence) =>
         new()
         {
             Id = id,
-            ProviderId = providerId,
-            RegistrationKey = "test-key",
+            SystemId = systemId,
+            Destination = "kafka://localhost:9092/test-topic",
             GroupKey = groupKey,
             Sequence = sequence,
             EnqueuedAt = DateTime.UtcNow,
-            Payload = [1, 2, 3],
+            Body = [1, 2, 3],
             Properties = new Dictionary<string, string>()
         };
 

@@ -381,7 +381,7 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () =>
@@ -434,7 +434,7 @@ public sealed class ConsumerWorkerTests
         var mockScopeFactory = new Mock<IServiceScopeFactory>();
         mockScopeFactory.Setup(f => f.CreateScope())
             .Returns(() => CreateScope(typeof(ThrowOnNthCallConsumer), consumer));
-        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", new Uri("kafka://broker:9092/kafka/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
+        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
         var key = System.Text.Encoding.UTF8.GetBytes("same-key");
 
         // Simulate ConsumerGroupWorker enqueuing offsets before dispatching
@@ -657,7 +657,7 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = failingKeyDeserializer,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "CapturingConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(CapturingConsumer), Pipeline = new HandlerInvoker<string>(typeof(CapturingConsumer)) }],
@@ -694,7 +694,7 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = new AlwaysThrowingDeserializer(),
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
@@ -718,7 +718,7 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () => types.Select(t => new ConsumerPipelineEntry<string> { Identifier = t.Name, Kind = ConsumerKind.Direct, ConsumerType = t, Pipeline = new HandlerInvoker<string>(t) }).ToArray(),
@@ -741,7 +741,7 @@ public sealed class ConsumerWorkerTests
     {
         var mock = new Mock<IDeadLetterSink>();
         mock.Setup(s => s.DestinationAddress)
-            .Returns(new Uri("kafka://broker:9092/kafka/errors.dlt"));
+            .Returns(new Uri("kafka://broker:9092/errors.dlt"));
         return mock;
     }
 
@@ -770,7 +770,7 @@ public sealed class ConsumerWorkerTests
         var committer = CreateCommitter();
         offsetManager ??= new OffsetManager(committer);
         scopeFactory ??= Mock.Of<IServiceScopeFactory>();
-        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/kafka/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
+        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
     }
 
     private static ConfluentKafka.ConsumeResult<byte[], byte[]> CreateConsumeResult(

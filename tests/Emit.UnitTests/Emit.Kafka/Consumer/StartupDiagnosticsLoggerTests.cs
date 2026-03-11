@@ -48,7 +48,7 @@ public sealed class StartupDiagnosticsLoggerTests
         {
             TopicName = topicName,
             GroupId = "group-1",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             BuildConsumerPipelines = () => [],
             WorkerCount = 3,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
@@ -69,7 +69,7 @@ public sealed class StartupDiagnosticsLoggerTests
     {
         var mock = new Mock<IDeadLetterSink>();
         mock.Setup(s => s.DestinationAddress)
-            .Returns(new Uri($"kafka://broker:9092/kafka/{topicName}"));
+            .Returns(new Uri($"kafka://broker:9092/{topicName}"));
         return mock.Object;
     }
 

@@ -76,7 +76,7 @@ public class MongoDbOutboxRepositoryTests
         mockEmitContext.Setup(x => x.Transaction).Returns((ITransactionContext?)null);
 
         var repository = CreateRepository(mockEmitContext.Object);
-        var entry = new OutboxEntry { GroupKey = "test", ProviderId = "kafka", RegistrationKey = "test", Payload = [] };
+        var entry = new OutboxEntry { GroupKey = "test", SystemId = "kafka", Destination = "kafka://localhost:9092/test-topic" };
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(

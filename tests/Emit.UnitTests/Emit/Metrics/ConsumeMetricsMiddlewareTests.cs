@@ -218,7 +218,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         CancellationToken = CancellationToken.None,
         Services = services,
         Message = "test-message",
-        DestinationAddress = EmitEndpointAddress.ForEntity(providerId, "broker", 9092, providerId, "test-topic"),
+        DestinationAddress = EmitEndpointAddress.ForEntity(providerId, "broker", 9092, "test-topic"),
         TransportContext = new TestTransportContext
         {
             MessageId = "test-id",

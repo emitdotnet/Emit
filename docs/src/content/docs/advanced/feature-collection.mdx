@@ -88,7 +88,7 @@ Most metadata that middleware needs is available directly on the context, not th
 
 | Property | Location | Description |
 |---|---|---|
-| `DestinationAddress` | `MessageContext` | Transport URI (e.g. `kafka://broker:9092/kafka/orders`) |
+| `DestinationAddress` | `MessageContext` | Transport URI (e.g. `kafka://broker:9092/orders`) |
 | `SourceAddress` | `MessageContext` | Sender address, propagated via headers |
 | `Message` | `MessageContext<T>` | The typed message payload |
 | `MessageId` | `MessageContext` | Unique message identifier |

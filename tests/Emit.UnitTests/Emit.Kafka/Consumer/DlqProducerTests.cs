@@ -15,7 +15,7 @@ public sealed class DlqProducerTests
     private readonly KafkaDeadLetterOptions options = new()
     {
         TopicName = "orders.dlt",
-        DestinationAddress = new Uri("kafka://broker:9092/kafka/orders.dlt"),
+        DestinationAddress = new Uri("kafka://broker:9092/orders.dlt"),
     };
     private readonly DlqProducer sut;
 

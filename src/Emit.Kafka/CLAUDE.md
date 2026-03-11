@@ -7,7 +7,7 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `README.md` | Kafka provider documentation: configuration, serialization, migration guide | Understand Kafka provider usage or configuration options |
-| `KafkaOutboxProvider.cs` | IOutboxProvider implementation: deserializes KafkaPayload and produces to real Kafka | Understand Kafka entry processing flow |
+| `KafkaOutboxProvider.cs` | IOutboxProvider implementation: reads Body, Headers, and Properties from OutboxEntry and produces to Kafka | Understand Kafka entry processing flow |
 | `KafkaPipelineProducer.cs` | IEventProducer implementation invoking outbound middleware pipeline before serializing and producing | Understand producer pipeline integration |
 | `KafkaSerializationHelper.cs` | Shared serialization utilities for Kafka key/value serialization | Understand or modify Kafka message serialization |
 | `KafkaTopicVerifier.cs` | Hosted service that verifies all required Kafka topics exist before the application starts; auto-provisions missing topics when enabled | Troubleshoot topic provisioning or understand startup topic validation |
@@ -24,4 +24,4 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | `DependencyInjection/` | AddKafka extension methods, KafkaBuilder, and topic/consumer/producer builders | Register Kafka clusters or extend Kafka DI API |
 | `Metrics/` | Kafka provider-specific metrics and broker-level metrics | Monitor Kafka performance or debug consumer lag |
 | `Observability/` | Kafka consumer observer interface and observer invoker | Implement Kafka consumer monitoring or custom instrumentation |
-| `Serialization/` | MessagePack-serialized KafkaPayload model | Understand outbox payload structure for Kafka messages |
+| `Serialization/` | Previously contained KafkaPayload (deleted) — outbox data now stored directly on OutboxEntry | Historical reference only |

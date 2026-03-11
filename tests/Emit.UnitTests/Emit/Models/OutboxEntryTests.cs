@@ -11,23 +11,23 @@ public class OutboxEntryTests
         // Arrange & Act
         var entry = new OutboxEntry
         {
-            ProviderId = "kafka",
-            RegistrationKey = "__default__",
+            SystemId = "kafka",
+            Destination = "kafka://localhost:9092/test-topic",
             GroupKey = "cluster:topic",
-            Payload = [1, 2, 3]
+            Body = [1, 2, 3]
         };
 
         // Assert
         Assert.Null(entry.Id);
-        Assert.Equal("kafka", entry.ProviderId);
-        Assert.Equal("__default__", entry.RegistrationKey);
+        Assert.Equal("kafka", entry.SystemId);
+        Assert.Equal("kafka://localhost:9092/test-topic", entry.Destination);
         Assert.Equal("cluster:topic", entry.GroupKey);
         Assert.Equal(0L, entry.Sequence);
         Assert.Equal(default, entry.EnqueuedAt);
-        Assert.Equal([1, 2, 3], entry.Payload);
+        Assert.Equal([1, 2, 3], entry.Body);
         Assert.Empty(entry.Properties);
-        Assert.Null(entry.TraceParent);
-        Assert.Null(entry.TraceState);
+        Assert.Empty(entry.Headers);
+        Assert.Null(entry.ConversationId);
     }
 
     [Fact]
@@ -50,9 +50,9 @@ public class OutboxEntryTests
 
     private static OutboxEntry CreateTestEntry() => new()
     {
-        ProviderId = "kafka",
-        RegistrationKey = "__default__",
+        SystemId = "kafka",
+        Destination = "kafka://localhost:9092/test-topic",
         GroupKey = "cluster:topic",
-        Payload = [1, 2, 3]
+        Body = [1, 2, 3]
     };
 }

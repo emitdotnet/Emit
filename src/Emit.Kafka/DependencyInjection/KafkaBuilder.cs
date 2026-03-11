@@ -321,7 +321,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                             sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>());
 
                         var terminal = useOutbox
-                            ? CreateOutboxTerminal(topicName, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync)
+                            ? CreateOutboxTerminal(topicName, capturedDestinationAddress, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync)
                             : CreateDirectTerminal(topicName, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync);
 
                         // Pipeline layering: global → kafka → per-producer → terminal
@@ -364,11 +364,14 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
 
     private static IMiddlewarePipeline<SendContext<TValue>> CreateOutboxTerminal<TKey, TValue>(
         string topicName,
+        Uri destinationAddress,
         ConfluentKafka.ISerializer<TKey>? keySerializer,
         ConfluentKafka.ISerializer<TValue>? valueSerializer,
         ConfluentKafka.IAsyncSerializer<TKey>? keyAsyncSerializer,
         ConfluentKafka.IAsyncSerializer<TValue>? valueAsyncSerializer)
     {
+        var destination = destinationAddress.ToString();
+
         return OutboxTerminalBuilder.Build<TValue>(async (context, ct) =>
         {
             var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
@@ -376,7 +379,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
                 messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
-            // Convert all context.Headers (user + trace) to byte headers for the Kafka payload
+            // Convert all context.Headers (user + trace) to byte headers for the outbox entry
             var headers = new List<KeyValuePair<string, byte[]>>();
             if (context.Headers is { Count: > 0 })
             {
@@ -384,28 +387,32 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     headers.Add(new(key, System.Text.Encoding.UTF8.GetBytes(value)));
             }
 
-            var payload = new Serialization.KafkaPayload
+            // Build properties with provider metadata
+            var properties = new Dictionary<string, string>
             {
-                Topic = topicName,
-                KeyBytes = keyBytes,
-                ValueBytes = valueBytes,
-                Headers = headers.Count > 0 ? headers : null,
+                ["topic"] = topicName,
+                ["keyType"] = typeof(TKey).FullName ?? typeof(TKey).Name,
+                ["valueType"] = typeof(TValue).FullName ?? typeof(TValue).Name,
             };
 
-            var payloadBytes = MessagePack.MessagePackSerializer.Serialize(payload, cancellationToken: ct);
-            var groupKey = $"{Provider.Identifier}:{topicName}";
+            // Store the serialized key as base64 in properties
+            if (keyBytes is not null)
+            {
+                properties["key"] = Convert.ToBase64String(keyBytes);
+            }
+
+            var groupKey = keyBytes is not null
+                ? $"{Provider.Identifier}:{topicName}:{Convert.ToBase64String(keyBytes)}"
+                : $"{Provider.Identifier}:{topicName}";
+
             return new Models.OutboxEntry
             {
-                ProviderId = Provider.Identifier,
-                RegistrationKey = Provider.Identifier,
+                SystemId = Provider.Identifier,
+                Destination = destination,
                 GroupKey = groupKey,
-                Payload = payloadBytes,
-                Properties = new Dictionary<string, string>
-                {
-                    ["topic"] = topicName,
-                    ["keyType"] = typeof(TKey).FullName ?? typeof(TKey).Name,
-                    ["valueType"] = typeof(TValue).FullName ?? typeof(TValue).Name,
-                },
+                Body = valueBytes,
+                Headers = headers,
+                Properties = properties,
             };
         });
     }
@@ -694,7 +701,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     private Uri BuildDestinationAddress(string topicName)
     {
         var (host, port) = ParseBrokerAddress(ResolveBootstrapServers());
-        return EmitEndpointAddress.ForEntity("kafka", host, port, "kafka", topicName);
+        return EmitEndpointAddress.ForEntity("kafka", host, port, topicName);
     }
 
     /// <summary>
@@ -703,7 +710,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     private Uri BuildHostAddress()
     {
         var (host, port) = ParseBrokerAddress(ResolveBootstrapServers());
-        return EmitEndpointAddress.ForHost("kafka", host, port, "kafka");
+        return EmitEndpointAddress.ForHost("kafka", host, port);
     }
 
     private static (string Host, int? Port) ParseBrokerAddress(string bootstrapServers)

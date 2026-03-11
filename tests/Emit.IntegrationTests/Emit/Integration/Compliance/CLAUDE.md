@@ -14,7 +14,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `DeadLetterCompliance.cs` | Dead-letter queue delivery after exhausted retries | Add DLQ tests or debug dead-letter routing |
 | `DistributedLockCompliance.cs` | Mutual exclusion, TTL expiry, and lock renewal | Add distributed lock tests or debug locking behavior |
 | `ErrorPolicyCompliance.cs` | Error policy evaluation: retry, discard, and dead-letter branching | Add error policy tests or debug error handling |
-| `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (no KafkaPayload wrapper) | Debug external message ingestion or verify raw message support |
+| `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (raw Kafka messages) | Debug external message ingestion or verify raw message support |
 | `FanOutCompliance.cs` | Multiple consumer groups independently consuming the same topic | Add fan-out tests or debug independent consumer group behavior |
 | `FilterCompliance.cs` | Consumer filter predicate evaluation | Add filter tests or debug filter skipping behavior |
 | `GlobalPipelineCompliance.cs` | Global middleware execution order and context propagation | Add global pipeline tests or debug cross-cutting middleware |

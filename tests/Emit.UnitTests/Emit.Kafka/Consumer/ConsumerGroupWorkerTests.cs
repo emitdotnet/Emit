@@ -64,7 +64,7 @@ public sealed class ConsumerGroupWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            DestinationAddress = new Uri("kafka://broker:9092/kafka/test-topic"),
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,

@@ -29,7 +29,7 @@ public sealed class OutboxMetricsTests
         var m = Assert.Single(longCapture);
         Assert.Equal("emit.outbox.enqueued", m.Name);
         Assert.Equal(1L, m.Value);
-        Assert.Contains(m.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(m.Tags, t => t.Key == "system" && t.Value?.ToString() == "kafka");
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class OutboxMetricsTests
         var m = Assert.Single(doubleCapture);
         Assert.Equal("emit.outbox.processing.duration", m.Name);
         Assert.Equal(1.5, m.Value);
-        Assert.Contains(m.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(m.Tags, t => t.Key == "system" && t.Value?.ToString() == "kafka");
         Assert.Contains(m.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
     }
 
@@ -64,7 +64,7 @@ public sealed class OutboxMetricsTests
         var m = Assert.Single(longCapture);
         Assert.Equal("emit.outbox.processing.completed", m.Name);
         Assert.Equal(1L, m.Value);
-        Assert.Contains(m.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(m.Tags, t => t.Key == "system" && t.Value?.ToString() == "kafka");
         Assert.Contains(m.Tags, t => t.Key == "result" && t.Value?.ToString() == "error");
     }
 
@@ -82,7 +82,7 @@ public sealed class OutboxMetricsTests
         var m = Assert.Single(doubleCapture);
         Assert.Equal("emit.outbox.critical_time", m.Name);
         Assert.Equal(5.2, m.Value);
-        Assert.Contains(m.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(m.Tags, t => t.Key == "system" && t.Value?.ToString() == "kafka");
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class OutboxMetricsTests
         Assert.Equal(3, m.Tags.Length);
         Assert.Contains(m.Tags, t => t.Key == "service" && t.Value?.ToString() == "api");
         Assert.Contains(m.Tags, t => t.Key == "env" && t.Value?.ToString() == "prod");
-        Assert.Contains(m.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(m.Tags, t => t.Key == "system" && t.Value?.ToString() == "kafka");
     }
 
     private static MeterListener CreateListener(

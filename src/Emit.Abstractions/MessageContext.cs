@@ -36,7 +36,7 @@ public abstract class MessageContext
 
     /// <summary>
     /// The address where this message is being sent to or was received from.
-    /// Built as a transport URI (e.g. <c>kafka://broker:9092/kafka/my-topic</c>).
+    /// Built as a transport URI (e.g. <c>kafka://broker:9092/my-topic</c>).
     /// </summary>
     public Uri? DestinationAddress { get; set; }
 

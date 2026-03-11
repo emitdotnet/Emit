@@ -38,7 +38,7 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `IResponseFeature.cs` | Feature interface for request-response patterns, allowing middleware to set a typed response | Implement request-response patterns or access response state in middleware |
 | `MessageValidationResult.cs` | Result type for IMessageValidator with static Success singleton and Fail factory methods | Return or inspect validation outcomes in validators and validation middleware |
 | `MessageValidationException.cs` | Exception thrown when a message fails validation; carries the list of validation error messages | Handle or inspect validation failures in error policies or dead-letter headers |
-| `EmitEndpointAddress.cs` | Transport endpoint address as a URI with scheme, host, port, path prefix, and entity name | Understand or construct endpoint addresses for producers and dead-letter sinks |
+| `EmitEndpointAddress.cs` | Transport endpoint address as a URI with scheme, host, port, and entity name | Understand or construct endpoint addresses for producers and dead-letter sinks |
 | `WellKnownHeaders.cs` | Well-known message header name constants for trace context and address propagation | Reference header names in middleware, producers, or consumers |
 | `DeadLetterHeaders.cs` | Well-known dead-letter header constants and factory methods for failed messages | Implement dead-letter producers or read DLQ diagnostic headers |
 

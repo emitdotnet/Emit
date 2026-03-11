@@ -1,6 +1,8 @@
 namespace Emit.Tracing;
 
 using System.Diagnostics;
+using System.Text;
+using Emit.Abstractions;
 using Emit.Models;
 
 /// <summary>
@@ -9,20 +11,32 @@ using Emit.Models;
 public static class OutboxActivityHelper
 {
     /// <summary>
-    /// Restores an <see cref="ActivityContext"/> from an <see cref="OutboxEntry"/>'s trace information.
+    /// Restores an <see cref="ActivityContext"/> from an <see cref="OutboxEntry"/>'s headers.
     /// </summary>
-    /// <param name="entry">The outbox entry containing W3C trace context fields.</param>
+    /// <param name="entry">The outbox entry containing W3C trace context in its headers.</param>
     /// <returns>
-    /// The restored <see cref="ActivityContext"/> if the entry contains a valid traceparent;
+    /// The restored <see cref="ActivityContext"/> if the entry headers contain a valid traceparent;
     /// otherwise, <see langword="default"/>.
     /// </returns>
     public static ActivityContext RestoreContext(OutboxEntry entry)
     {
-        if (!string.IsNullOrEmpty(entry.TraceParent) &&
-            ActivityContext.TryParse(entry.TraceParent, entry.TraceState, out var context))
+        string? traceParent = null;
+        string? traceState = null;
+
+        foreach (var header in entry.Headers)
+        {
+            if (header.Key == WellKnownHeaders.TraceParent)
+                traceParent = Encoding.UTF8.GetString(header.Value);
+            else if (header.Key == WellKnownHeaders.TraceState)
+                traceState = Encoding.UTF8.GetString(header.Value);
+        }
+
+        if (!string.IsNullOrEmpty(traceParent) &&
+            ActivityContext.TryParse(traceParent, traceState, out var context))
         {
             return context;
         }
+
         return default;
     }
 
@@ -46,10 +60,7 @@ public static class OutboxActivityHelper
             activity.SetTag("emit.sequence", entry.Sequence);
             activity.SetTag("emit.group.key", entry.GroupKey);
 
-            if (entry.Properties.TryGetValue("topic", out var topic))
-            {
-                activity.SetTag("messaging.destination.name", topic);
-            }
+            activity.SetTag("messaging.destination.name", entry.Destination);
 
             if (entry.Properties.TryGetValue("valueType", out var valueType))
             {

@@ -82,7 +82,7 @@ public sealed class ConsumeErrorMiddlewareTests
     {
         // Arrange
         var mockSink = new Mock<IDeadLetterSink>();
-        mockSink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/kafka/dead-letter-topic"));
+        mockSink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/dead-letter-topic"));
         mockSink
             .Setup(s => s.ProduceAsync(
                 It.IsAny<byte[]?>(),
@@ -160,7 +160,7 @@ public sealed class ConsumeErrorMiddlewareTests
     {
         // Arrange
         var mockSink = new Mock<IDeadLetterSink>();
-        mockSink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/kafka/dead-letter-topic"));
+        mockSink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/dead-letter-topic"));
         mockSink
             .Setup(s => s.ProduceAsync(
                 It.IsAny<byte[]?>(),

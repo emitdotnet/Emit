@@ -44,7 +44,7 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "test-topic");
 
         var nextInvoked = false;
         IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
@@ -106,7 +106,7 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "test-topic");
 
         var expectedException = new InvalidOperationException("Test failure");
         IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => throw expectedException);
@@ -168,7 +168,7 @@ public sealed class ProduceMetricsMiddlewareTests
             Message = "test-message"
         };
 
-        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
+        context.DestinationAddress = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "test-topic");
 
         IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
 

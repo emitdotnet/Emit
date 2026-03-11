@@ -46,7 +46,7 @@ Consumers are resolved from the DI container per message, so constructor injecti
 | `Message` | `TValue` | The deserialized message value |
 | `MessageId` | `string` | Unique message identifier |
 | `Timestamp` | `DateTimeOffset` | Message timestamp |
-| `DestinationAddress` | `Uri?` | Transport URI (e.g. `kafka://broker:9092/kafka/orders`) |
+| `DestinationAddress` | `Uri?` | Transport URI (e.g. `kafka://broker:9092/orders`) |
 | `SourceAddress` | `Uri?` | Sender address, propagated via headers |
 | `Headers` | `IReadOnlyList<...>` | Message headers (delegated from transport context) |
 | `RetryAttempt` | `int` | Current retry count (0 on first attempt) |

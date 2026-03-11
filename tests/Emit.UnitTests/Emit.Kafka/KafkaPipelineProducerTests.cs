@@ -8,8 +8,8 @@ using Xunit;
 
 public sealed class KafkaPipelineProducerTests
 {
-    private static readonly Uri TestDestination = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "test-topic");
-    private static readonly Uri TestHost = EmitEndpointAddress.ForHost("kafka", "broker", 9092, "kafka");
+    private static readonly Uri TestDestination = EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "test-topic");
+    private static readonly Uri TestHost = EmitEndpointAddress.ForHost("kafka", "broker", 9092);
     private readonly FakeTimeProvider timeProvider = new(DateTimeOffset.UtcNow);
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class KafkaPipelineProducerTests
             capturedContext = ctx;
             return Task.CompletedTask;
         });
-        var destination = (Uri)EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "kafka", "orders");
+        var destination = (Uri)EmitEndpointAddress.ForEntity("kafka", "broker", 9092, "orders");
         var producer = new KafkaPipelineProducer<string, string>(pipeline, destination, TestHost, null!, timeProvider);
         var message = new EventMessage<string, string>("order-key", "order-value");
 

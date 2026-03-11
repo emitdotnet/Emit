@@ -3,9 +3,7 @@ namespace Emit.Kafka.Tests;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Kafka;
 using global::Emit.Kafka.Metrics;
-using global::Emit.Kafka.Serialization;
 using global::Emit.Models;
-using MessagePack;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -20,25 +18,22 @@ public class KafkaOutboxProviderTests
         loggerMock = new Mock<ILogger<KafkaOutboxProvider>>();
     }
 
-    private static OutboxEntry CreateValidEntry()
-    {
-        var payload = new KafkaPayload
-        {
-            Topic = "test-topic",
-            KeyBytes = [1, 2, 3],
-            ValueBytes = [4, 5, 6]
-        };
-
-        return new OutboxEntry
+    private static OutboxEntry CreateValidEntry() =>
+        new()
         {
             Id = Guid.NewGuid(),
-            ProviderId = Provider.Identifier,
-            RegistrationKey = Provider.Identifier,
+            SystemId = Provider.Identifier,
+            Destination = "kafka://localhost:9092/test-topic",
             GroupKey = $"{Provider.Identifier}:test-topic",
             Sequence = 1,
-            Payload = MessagePackSerializer.Serialize(payload)
+            Body = [4, 5, 6],
+            Properties = new Dictionary<string, string>
+            {
+                ["key"] = Convert.ToBase64String([1, 2, 3]),
+                ["topic"] = "test-topic"
+            },
+            Headers = []
         };
-    }
 
     private static KafkaMetrics CreateKafkaMetrics() => new(null, new EmitMetricsEnrichment());
 
@@ -83,10 +78,10 @@ public class KafkaOutboxProviderTests
 
     #endregion
 
-    #region ProcessAsync Payload Deserialization Tests
+    #region ProcessAsync Destination Validation Tests
 
     [Fact]
-    public async Task GivenInvalidPayload_WhenProcessAsync_ThenThrowsInvalidOperationException()
+    public async Task GivenInvalidDestination_WhenProcessAsync_ThenThrowsInvalidOperationException()
     {
         // Arrange
         var producerMock = new Mock<ConfluentKafka.IProducer<byte[], byte[]>>();
@@ -94,19 +89,15 @@ public class KafkaOutboxProviderTests
         var entry = new OutboxEntry
         {
             Id = Guid.NewGuid(),
-            ProviderId = Provider.Identifier,
-            RegistrationKey = Provider.Identifier,
-            GroupKey = "test-group",
-            Sequence = 1,
-            Payload = [0xFF, 0xFF, 0xFF]
+            SystemId = Provider.Identifier,
+            Destination = "kafka://localhost:9092",
+            GroupKey = "kafka:test-topic",
+            Sequence = 1
         };
 
         // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
             provider.ProcessAsync(entry));
-        Assert.NotNull(exception.Message);
-        Assert.Contains("Failed to deserialize Kafka payload", exception.Message);
-        Assert.Contains(entry.Id.ToString()!, exception.Message!);
     }
 
     #endregion

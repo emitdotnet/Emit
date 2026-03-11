@@ -28,7 +28,7 @@ public sealed class OutboxObserverInvoker(
     /// </summary>
     public async Task OnEnqueuedAsync(OutboxEntry entry, CancellationToken cancellationToken)
     {
-        outboxMetrics.RecordEnqueued(entry.ProviderId);
+        outboxMetrics.RecordEnqueued(entry.SystemId);
 
         foreach (var observer in observers)
         {
@@ -38,7 +38,7 @@ public sealed class OutboxObserverInvoker(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IOutboxObserver.OnEnqueuedAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnEnqueuedAsync), observer.GetType().Name);
             }
         }
     }
@@ -56,7 +56,7 @@ public sealed class OutboxObserverInvoker(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IOutboxObserver.OnProcessingAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessingAsync), observer.GetType().Name);
             }
         }
     }
@@ -74,7 +74,7 @@ public sealed class OutboxObserverInvoker(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IOutboxObserver.OnProcessedAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessedAsync), observer.GetType().Name);
             }
         }
     }
@@ -92,7 +92,7 @@ public sealed class OutboxObserverInvoker(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IOutboxObserver.OnProcessErrorAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessErrorAsync), observer.GetType().Name);
             }
         }
     }

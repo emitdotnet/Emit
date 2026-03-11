@@ -64,27 +64,27 @@ public sealed class OutboxMetrics
 
     internal Counter<long> WorkerErrors { get; }
 
-    internal void RecordEnqueued(string provider)
+    internal void RecordEnqueued(string system)
     {
-        var tags = enrichment.CreateTags([new("provider", provider)]);
+        var tags = enrichment.CreateTags([new("system", system)]);
         Enqueued.Add(1, tags);
     }
 
-    internal void RecordProcessingDuration(double seconds, string provider, string result)
+    internal void RecordProcessingDuration(double seconds, string system, string result)
     {
-        var tags = enrichment.CreateTags([new("provider", provider), new("result", result)]);
+        var tags = enrichment.CreateTags([new("system", system), new("result", result)]);
         ProcessingDuration.Record(seconds, tags);
     }
 
-    internal void RecordProcessingCompleted(string provider, string result)
+    internal void RecordProcessingCompleted(string system, string result)
     {
-        var tags = enrichment.CreateTags([new("provider", provider), new("result", result)]);
+        var tags = enrichment.CreateTags([new("system", system), new("result", result)]);
         ProcessingCompleted.Add(1, tags);
     }
 
-    internal void RecordCriticalTime(double seconds, string provider)
+    internal void RecordCriticalTime(double seconds, string system)
     {
-        var tags = enrichment.CreateTags([new("provider", provider)]);
+        var tags = enrichment.CreateTags([new("system", system)]);
         CriticalTime.Record(seconds, tags);
     }
 

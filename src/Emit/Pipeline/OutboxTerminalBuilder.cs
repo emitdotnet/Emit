@@ -8,9 +8,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Builds a terminal delegate that enqueues messages to the transactional outbox.
-/// Handles transaction validation, trace context propagation, repository enqueue, and
-/// observer notification. Providers supply a delegate that serializes the payload
-/// and populates provider-specific entry fields.
+/// Handles transaction validation, repository enqueue, and observer notification.
+/// Providers supply a delegate that serializes the message body, headers, and properties
+/// into a partially-populated <see cref="OutboxEntry"/>. The builder sets
+/// <see cref="OutboxEntry.EnqueuedAt"/> after the delegate returns.
+/// Trace context flows through <see cref="OutboxEntry.Headers"/> automatically.
 /// </summary>
 public static class OutboxTerminalBuilder
 {
@@ -20,8 +22,7 @@ public static class OutboxTerminalBuilder
     /// <typeparam name="TValue">The message value type.</typeparam>
     /// <param name="createEntry">
     /// Provider-specific delegate that serializes the message and returns a partially-populated
-    /// <see cref="OutboxEntry"/>. The builder sets <see cref="OutboxEntry.TraceParent"/>,
-    /// <see cref="OutboxEntry.TraceState"/>, and <see cref="OutboxEntry.EnqueuedAt"/>
+    /// <see cref="OutboxEntry"/>. The builder sets <see cref="OutboxEntry.EnqueuedAt"/>
     /// after the delegate returns.
     /// </param>
     /// <returns>A terminal pipeline that enqueues entries to the outbox repository.</returns>
@@ -45,21 +46,8 @@ public static class OutboxTerminalBuilder
                 throw new InvalidOperationException("No transaction context is available.");
             }
 
-            // Read trace context from headers (injected by ProduceTracingMiddleware)
-            string? traceParent = null;
-            string? traceState = null;
-            foreach (var header in context.Headers)
-            {
-                if (header.Key == WellKnownHeaders.TraceParent)
-                    traceParent = header.Value;
-                else if (header.Key == WellKnownHeaders.TraceState)
-                    traceState = header.Value;
-            }
-
             var entry = await createEntry(context, context.CancellationToken).ConfigureAwait(false);
 
-            entry.TraceParent = traceParent;
-            entry.TraceState = traceState;
             entry.EnqueuedAt = context.Timestamp.UtcDateTime;
 
             await repository.EnqueueAsync(entry, context.CancellationToken).ConfigureAwait(false);
