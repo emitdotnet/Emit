@@ -59,13 +59,14 @@ Returns `IDistributedLock` if acquired, `null` if the timeout elapsed without ac
 
 ## Extending a lock
 
-If your work takes longer than the TTL, call `ExtendAsync` before it expires:
+If your work takes longer than the TTL, call `ExtendAsync` before it expires. `ExtendAsync` **resets** the lock's expiration to the given duration from the current server time — it does not add to the remaining time.
 
 ```csharp
 await using var handle = await locks.TryAcquireAsync("door:front-entrance", TimeSpan.FromSeconds(30));
 
 // ... work starts ...
 
+// Resets expiration to 30 s from now, regardless of how much time was left.
 var extended = await handle!.ExtendAsync(TimeSpan.FromSeconds(30), ct);
 if (!extended)
 {

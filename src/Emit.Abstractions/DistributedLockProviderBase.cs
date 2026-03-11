@@ -154,11 +154,12 @@ public abstract class DistributedLockProviderBase : IDistributedLockProvider
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Extends the lock's TTL in the underlying store.
+    /// Resets the lock's expiration to <paramref name="ttl"/> from the current server time in the underlying store.
+    /// This replaces the existing expiration — it does not add to the remaining time.
     /// </summary>
     /// <param name="key">The resource key.</param>
     /// <param name="lockId">The lock identifier from acquisition.</param>
-    /// <param name="ttl">The new duration from the current time.</param>
+    /// <param name="ttl">Duration from the current server time until the lock expires.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><c>true</c> if the lock was extended; <c>false</c> if the lock was lost.</returns>
     protected abstract Task<bool> ExtendCoreAsync(
