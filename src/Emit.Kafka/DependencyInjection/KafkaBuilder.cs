@@ -390,15 +390,15 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             // Build properties with provider metadata
             var properties = new Dictionary<string, string>
             {
-                ["topic"] = topicName,
-                ["keyType"] = typeof(TKey).FullName ?? typeof(TKey).Name,
-                ["valueType"] = typeof(TValue).FullName ?? typeof(TValue).Name,
+                [OutboxPropertyKeys.Topic] = topicName,
+                [OutboxPropertyKeys.KeyType] = typeof(TKey).FullName ?? typeof(TKey).Name,
+                [OutboxPropertyKeys.ValueType] = typeof(TValue).FullName ?? typeof(TValue).Name,
             };
 
             // Store the serialized key as base64 in properties
             if (keyBytes is not null)
             {
-                properties["key"] = Convert.ToBase64String(keyBytes);
+                properties[OutboxPropertyKeys.Key] = Convert.ToBase64String(keyBytes);
             }
 
             var groupKey = keyBytes is not null

@@ -82,7 +82,7 @@ internal sealed class KafkaOutboxProvider(
     {
         // Decode key from base64 in properties
         byte[]? keyBytes = null;
-        if (entry.Properties.TryGetValue("key", out var keyBase64))
+        if (entry.Properties.TryGetValue(OutboxPropertyKeys.Key, out var keyBase64))
         {
             keyBytes = Convert.FromBase64String(keyBase64);
         }

@@ -26,74 +26,27 @@ public sealed class OutboxObserverInvoker(
     /// <summary>
     /// Notifies observers that an outbox entry has been enqueued.
     /// </summary>
-    public async Task OnEnqueuedAsync(OutboxEntry entry, CancellationToken cancellationToken)
+    public Task OnEnqueuedAsync(OutboxEntry entry, CancellationToken cancellationToken)
     {
         outboxMetrics.RecordEnqueued(entry.SystemId);
-
-        foreach (var observer in observers)
-        {
-            try
-            {
-                await observer.OnEnqueuedAsync(entry, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnEnqueuedAsync), observer.GetType().Name);
-            }
-        }
+        return observers.InvokeAllAsync(o => o.OnEnqueuedAsync(entry, cancellationToken), logger);
     }
 
     /// <summary>
     /// Notifies observers that an outbox entry is about to be processed.
     /// </summary>
-    public async Task OnProcessingAsync(OutboxEntry entry, CancellationToken cancellationToken)
-    {
-        foreach (var observer in observers)
-        {
-            try
-            {
-                await observer.OnProcessingAsync(entry, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessingAsync), observer.GetType().Name);
-            }
-        }
-    }
+    public Task OnProcessingAsync(OutboxEntry entry, CancellationToken cancellationToken)
+        => observers.InvokeAllAsync(o => o.OnProcessingAsync(entry, cancellationToken), logger);
 
     /// <summary>
     /// Notifies observers that an outbox entry has been successfully processed and deleted.
     /// </summary>
-    public async Task OnProcessedAsync(OutboxEntry entry, CancellationToken cancellationToken)
-    {
-        foreach (var observer in observers)
-        {
-            try
-            {
-                await observer.OnProcessedAsync(entry, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessedAsync), observer.GetType().Name);
-            }
-        }
-    }
+    public Task OnProcessedAsync(OutboxEntry entry, CancellationToken cancellationToken)
+        => observers.InvokeAllAsync(o => o.OnProcessedAsync(entry, cancellationToken), logger);
 
     /// <summary>
     /// Notifies observers that outbox entry processing failed.
     /// </summary>
-    public async Task OnProcessErrorAsync(OutboxEntry entry, Exception exception, CancellationToken cancellationToken)
-    {
-        foreach (var observer in observers)
-        {
-            try
-            {
-                await observer.OnProcessErrorAsync(entry, exception, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "{Interface}.{Method} failed for {ObserverType}", nameof(IOutboxObserver), nameof(IOutboxObserver.OnProcessErrorAsync), observer.GetType().Name);
-            }
-        }
-    }
+    public Task OnProcessErrorAsync(OutboxEntry entry, Exception exception, CancellationToken cancellationToken)
+        => observers.InvokeAllAsync(o => o.OnProcessErrorAsync(entry, exception, cancellationToken), logger);
 }

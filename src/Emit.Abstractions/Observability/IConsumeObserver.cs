@@ -20,7 +20,7 @@ namespace Emit.Abstractions.Observability;
 /// blocks other observers or interrupts the pipeline.
 /// </para>
 /// </remarks>
-public interface IConsumeObserver
+public interface IConsumeObserver : IObserver
 {
     /// <summary>
     /// Called before the inbound pipeline executes.

@@ -21,7 +21,7 @@ public sealed class OutboxEntry
     /// <remarks>
     /// The type is provider-specific.
     /// </remarks>
-    public object? Id { get; set; }
+    public object Id { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the identifier of the target system (e.g., "kafka").

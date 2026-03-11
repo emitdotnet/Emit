@@ -49,14 +49,14 @@ public static class ModelBuilderExtensions
 
         entity.ToTable(TableNames.Outbox);
 
-        // Primary key with value converter for object? type
+        // Primary key with value converter for object type
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id)
             .HasColumnName("id")
             .ValueGeneratedOnAdd()
             .HasConversion(
-                v => v == null ? Guid.Empty : (Guid)v,
-                v => (object?)v);
+                v => (Guid)v,
+                v => v);
 
         // Sequence - auto-generated on add
         entity.Property(e => e.Sequence)

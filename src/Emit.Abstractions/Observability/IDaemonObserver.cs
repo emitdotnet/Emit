@@ -14,7 +14,7 @@ namespace Emit.Abstractions.Observability;
 /// blocks other observers or interrupts daemon coordination.
 /// </para>
 /// </remarks>
-public interface IDaemonObserver
+public interface IDaemonObserver : IObserver
 {
     /// <summary>
     /// Called when the leader assigns a daemon to a node.

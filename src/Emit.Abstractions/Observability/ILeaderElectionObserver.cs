@@ -14,7 +14,7 @@ namespace Emit.Abstractions.Observability;
 /// blocks other observers or interrupts leader election.
 /// </para>
 /// </remarks>
-public interface ILeaderElectionObserver
+public interface ILeaderElectionObserver : IObserver
 {
     /// <summary>
     /// Called when this node has been elected as the leader.

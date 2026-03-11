@@ -47,7 +47,6 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
     private async Task HandleErrorAsync(ConsumeContext<TMessage> context, Exception exception)
     {
-        // Evaluate error policy
         if (evaluatePolicy is null)
         {
             // No policy configured — discard with warning
@@ -55,29 +54,24 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                 "No error policy configured for consumer {Consumer}. Discarding message {MessageId}",
                 identifier, context.MessageId);
             emitMetrics.RecordErrorAction("discard_unconfigured");
-
-            if (circuitBreakerNotifier is not null)
-            {
-                await circuitBreakerNotifier.ReportFailureAsync(exception).ConfigureAwait(false);
-            }
-
-            return;
         }
-
-        var action = evaluatePolicy(exception);
-
-        switch (action)
+        else
         {
-            case ErrorAction.DeadLetterAction:
-                await ExecuteDeadLetterAsync(exception, context).ConfigureAwait(false);
-                break;
+            var action = evaluatePolicy(exception);
 
-            case ErrorAction.DiscardAction:
-                logger.LogWarning(exception,
-                    "Discarding message {MessageId} for consumer {Consumer}",
-                    context.MessageId, identifier);
-                emitMetrics.RecordErrorAction("discard");
-                break;
+            switch (action)
+            {
+                case ErrorAction.DeadLetterAction:
+                    await ExecuteDeadLetterAsync(exception, context).ConfigureAwait(false);
+                    break;
+
+                case ErrorAction.DiscardAction:
+                    logger.LogWarning(exception,
+                        "Discarding message {MessageId} for consumer {Consumer}",
+                        context.MessageId, identifier);
+                    emitMetrics.RecordErrorAction("discard");
+                    break;
+            }
         }
 
         if (circuitBreakerNotifier is not null)

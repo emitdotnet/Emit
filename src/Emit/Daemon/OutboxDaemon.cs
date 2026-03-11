@@ -243,7 +243,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
 
             await provider.ProcessAsync(entry, cancellationToken).ConfigureAwait(false);
 
-            await outboxRepository.DeleteAsync(entry.Id!, cancellationToken).ConfigureAwait(false);
+            await outboxRepository.DeleteAsync(entry.Id, cancellationToken).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(startTicks).TotalSeconds;
             outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, "success");
