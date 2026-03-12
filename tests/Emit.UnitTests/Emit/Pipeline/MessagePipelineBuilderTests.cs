@@ -74,11 +74,11 @@ public sealed class MessagePipelineBuilderTests
         var builder = new MessagePipelineBuilder();
         var provider = new ServiceCollection().BuildServiceProvider();
         var invoked = false;
-        MessageDelegate<TestInboundContext> terminal = _ => { invoked = true; return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { invoked = true; return Task.CompletedTask; });
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert
         Assert.True(invoked);
@@ -96,11 +96,11 @@ public sealed class MessagePipelineBuilderTests
 
         var order = new List<string>();
         MiddlewareA.Order = order;
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert
         Assert.Equal(["A:before", "terminal", "A:after"], order);
@@ -126,11 +126,11 @@ public sealed class MessagePipelineBuilderTests
         var order = new List<string>();
         MiddlewareA.Order = order;
         MiddlewareB.Order = order;
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act — groupBuilder.Build with globalBuilder and patternBuilder as parents
         var pipeline = groupBuilder.Build<TestInboundContext, string>(provider, terminal, globalBuilder, patternBuilder);
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert — global outermost, pattern inner, then terminal
         Assert.Equal(["A:before", "B:before", "terminal", "B:after", "A:after"], order);
@@ -159,11 +159,11 @@ public sealed class MessagePipelineBuilderTests
         MiddlewareA.Order = order;
         MiddlewareB.Order = order;
         MiddlewareC.Order = order;
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act
         var pipeline = groupBuilder.Build<TestInboundContext, string>(provider, terminal, globalBuilder, patternBuilder);
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert — global → pattern → group → terminal
         Assert.Equal(["A:before", "B:before", "C:before", "terminal", "C:after", "B:after", "A:after"], order);
@@ -281,14 +281,14 @@ public sealed class MessagePipelineBuilderTests
         });
 
         var provider = new ServiceCollection().BuildServiceProvider();
-        MessageDelegate<TestInboundContext> terminal = _ => Task.CompletedTask;
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
         Assert.Equal(1, callCount); // Factory called at build time
 
-        await pipeline(CreateContext(provider));
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert — factory was only called once
         Assert.Equal(1, callCount);
@@ -307,16 +307,16 @@ public sealed class MessagePipelineBuilderTests
 
         var instances = new List<ScopedMiddleware>();
         ScopedMiddleware.OnInvoke = mw => instances.Add(mw);
-        MessageDelegate<TestInboundContext> terminal = _ => Task.CompletedTask;
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
 
         using var scope1 = provider.CreateScope();
-        await pipeline(CreateContext(scope1.ServiceProvider));
+        await pipeline.InvokeAsync(CreateContext(scope1.ServiceProvider));
 
         using var scope2 = provider.CreateScope();
-        await pipeline(CreateContext(scope2.ServiceProvider));
+        await pipeline.InvokeAsync(CreateContext(scope2.ServiceProvider));
 
         // Assert — different scopes produce different instances
         Assert.Equal(2, instances.Count);
@@ -336,14 +336,14 @@ public sealed class MessagePipelineBuilderTests
         }, MiddlewareLifetime.Scoped);
 
         var provider = new ServiceCollection().BuildServiceProvider();
-        MessageDelegate<TestInboundContext> terminal = _ => Task.CompletedTask;
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
         Assert.Equal(0, callCount); // Not called at build time
 
-        await pipeline(CreateContext(provider));
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert — factory called once per invocation
         Assert.Equal(2, callCount);
@@ -370,11 +370,11 @@ public sealed class MessagePipelineBuilderTests
         var provider = services.BuildServiceProvider();
 
         MiddlewareA.Order = order;
-        MessageDelegate<TestInboundContext> terminal = _ => { order.Add("terminal"); return Task.CompletedTask; };
+        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
 
         // Act
         var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        await pipeline(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert — all three middlewares wrap the terminal in registration order
         Assert.Equal(
@@ -389,13 +389,14 @@ public sealed class MessagePipelineBuilderTests
         CancellationToken = CancellationToken.None,
         Services = services,
         Message = "test",
+        TransportContext = TestTransportContext.Create(services),
     };
 
-    private sealed class TestInboundContext : InboundContext<string>;
+    private sealed class TestInboundContext : ConsumeContext<string>;
 
     private sealed class PassthroughMiddleware : IMiddleware<TestInboundContext>
     {
-        public Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next) => next(context);
+        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next) => next.InvokeAsync(context);
     }
 
     private sealed class ScopedMiddleware : IMiddleware<TestInboundContext>
@@ -403,19 +404,19 @@ public sealed class MessagePipelineBuilderTests
         [ThreadStatic]
         internal static Action<ScopedMiddleware>? OnInvoke;
 
-        public Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             OnInvoke?.Invoke(this);
-            return next(context);
+            return next.InvokeAsync(context);
         }
     }
 
     private sealed class OrderTrackingMiddleware(string name, List<string> order) : IMiddleware<TestInboundContext>
     {
-        public async Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             order.Add($"{name}:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             order.Add($"{name}:after");
         }
     }
@@ -425,10 +426,10 @@ public sealed class MessagePipelineBuilderTests
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             Order?.Add("A:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("A:after");
         }
     }
@@ -438,10 +439,10 @@ public sealed class MessagePipelineBuilderTests
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             Order?.Add("B:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("B:after");
         }
     }
@@ -451,10 +452,10 @@ public sealed class MessagePipelineBuilderTests
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(TestInboundContext context, MessageDelegate<TestInboundContext> next)
+        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
         {
             Order?.Add("C:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("C:after");
         }
     }

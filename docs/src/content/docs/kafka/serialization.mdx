@@ -134,7 +134,7 @@ If deserialization throws, the error is handled by the `OnDeserializationError` 
 ```csharp
 group.OnDeserializationError(err =>
 {
-    err.DeadLetter("orders.dlq");
+    err.DeadLetter();
 });
 ```
 

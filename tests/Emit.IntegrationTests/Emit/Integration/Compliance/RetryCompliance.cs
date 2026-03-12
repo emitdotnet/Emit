@@ -1,7 +1,7 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,7 +111,7 @@ public abstract class RetryCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-retry-dlq-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -133,15 +133,15 @@ public abstract class RetryCompliance
 
             // Assert — message arrived in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("always-failing", ctx.Message);
+            Assert.Equal("always-failing", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers carry retry count and exception details.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
-            var retryCount = headers.Headers
+            var retryCount = headers
                 .FirstOrDefault(h => h.Key == "x-emit-retry-count").Value;
 
             Assert.NotNull(exceptionType);
@@ -234,7 +234,7 @@ public abstract class RetryCompliance
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (counter.Increment() <= FailuresBeforeSuccess)
             {
@@ -253,17 +253,17 @@ public abstract class RetryCompliance
     public sealed class AlwaysFailingConsumer : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated persistent failure for retry exhaustion test.");
     }
 
     /// <summary>
     /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
     /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
+    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

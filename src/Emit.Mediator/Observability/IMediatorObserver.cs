@@ -1,7 +1,5 @@
 namespace Emit.Mediator.Observability;
 
-using Emit.Abstractions;
-
 /// <summary>
 /// Observes the lifecycle of mediator request handling operations.
 /// Implement this interface for mediator-specific metrics, tracing, logging,
@@ -29,24 +27,24 @@ public interface IMediatorObserver
     /// Called before the mediator inbound pipeline executes for a request.
     /// </summary>
     /// <typeparam name="T">The request type being handled.</typeparam>
-    /// <param name="context">The inbound pipeline context.</param>
+    /// <param name="context">The mediator pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnHandlingAsync<T>(InboundContext<T> context) => Task.CompletedTask;
+    Task OnHandlingAsync<T>(MediatorContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called after the mediator inbound pipeline completes successfully.
     /// </summary>
     /// <typeparam name="T">The request type that was handled.</typeparam>
-    /// <param name="context">The inbound pipeline context.</param>
+    /// <param name="context">The mediator pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnHandledAsync<T>(InboundContext<T> context) => Task.CompletedTask;
+    Task OnHandledAsync<T>(MediatorContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called when the mediator inbound pipeline throws an exception.
     /// </summary>
     /// <typeparam name="T">The request type that failed to handle.</typeparam>
-    /// <param name="context">The inbound pipeline context.</param>
+    /// <param name="context">The mediator pipeline context.</param>
     /// <param name="exception">The exception thrown by the pipeline.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnHandleErrorAsync<T>(InboundContext<T> context, Exception exception) => Task.CompletedTask;
+    Task OnHandleErrorAsync<T>(MediatorContext<T> context, Exception exception) => Task.CompletedTask;
 }

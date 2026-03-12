@@ -1,95 +1,122 @@
 ---
 title: Pipeline Model
-description: How middleware composes across the three levels of the Emit pipeline.
+description: How middleware composes into layered pipelines for consuming and producing messages.
 ---
 
-import Mermaid from '../../../components/Mermaid.astro';
+Every message in Emit flows through a layered middleware pipeline before reaching its handler or destination. Understanding the pipeline model helps you place middleware correctly, reason about error handling, and build advanced processing logic.
 
-Every message in Emit, whether inbound from Kafka or outbound from a producer call, passes through a layered middleware pipeline before reaching its handler or its destination. Understanding this model is what separates "I configured something and it seems to work" from actually knowing what your code is doing.
+## Inbound pipeline (consuming)
 
-## Three levels, two directions
+The inbound path has two distinct phases: **transport processing** followed by **per-consumer pipeline execution**.
 
-The pipeline has three levels, each narrowing the scope of which messages are affected:
+### Transport phase
+
+When a message arrives from the broker, Emit handles deserialization and fan-out before any middleware runs:
+
+1. **Poll** — The consumer group reads raw bytes from the broker and distributes them across worker channels.
+2. **Deserialize** — Key and value are deserialized using the registered `IDeserializer<T>` / `IAsyncDeserializer<T>`. Deserialization errors are handled separately via `OnDeserializationError` on the consumer group — they never enter the consumer pipeline.
+3. **Fan-out** — For each consumer or router registered on the consumer group, Emit creates a fresh DI scope with its own `ConsumeContext<TValue>`. Each entry runs its pipeline independently.
+
+### Consumer pipeline
+
+After fan-out, each consumer gets its own fully-composed pipeline. The pipeline executes outermost-to-innermost through the following layers:
+
+| Layer | What it does | Always present? |
+|---|---|---|
+| **Error handling** | Catches exceptions, evaluates the error policy (dead-letter, discard), notifies the circuit breaker | Yes |
+| **Observers** | Invokes registered `IConsumeObserver` callbacks | Yes |
+| **Tracing** | Creates an `emit.consume` activity with consumer identity tags | Yes |
+| **Metrics** | Records duration, success/failure counters | Yes |
+| **User middleware** | Your custom middleware, composed Global → Provider → Group | Only if registered |
+| **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
+| **Retry** | Re-executes the handler on failure with configurable backoff | Only if configured |
+| **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
+| **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |
+
+This ordering is intentional:
+
+- **Error handling** is outermost so it catches exceptions from every other layer.
+- **Validation** runs outside retry so validation failures are never retried.
+- **User middleware** runs inside tracing/metrics so your middleware is automatically observed.
+
+### Fan-out behavior
+
+When a consumer group has multiple consumers or routers, each one gets independent pipeline execution per message. They share the same deserialized message but each receives:
+
+- A fresh `IServiceScope`
+- Its own context instances
+- Independent error handling — one consumer failing doesn't affect others
+
+### Content-based routing
+
+Routers add a second level of dispatch. A route selector evaluates the message content and dispatches to the matched route's sub-pipeline. Each route can have its own per-route middleware and handler.
+
+Unmatched messages either discard silently (if configured via `WhenRouteUnmatched`) or throw an `UnmatchedRouteException` for the error policy to handle.
+
+## Outbound pipeline (producing)
+
+The outbound path is simpler — no fan-out, no deserialization. When you call `IEventProducer<TKey, TValue>.ProduceAsync()`, the message flows through a single pipeline:
+
+| Layer | What it does | Always present? |
+|---|---|---|
+| **Observers** | Invokes registered `IProduceObserver` callbacks | Yes |
+| **Tracing** | Creates an `emit.produce` activity | Yes |
+| **Metrics** | Records produce duration and counters | Yes |
+| **User middleware** | Your custom middleware, composed Global → Provider → Per-producer | Only if registered |
+| **Terminal** | Delivers the message to its destination | Yes |
+
+The terminal is selected at registration time:
+
+- **`UseOutbox()`** — Enqueues to the database outbox inside the current transaction. A background worker delivers to the broker asynchronously.
+- **Direct mode** (default) — Serializes and produces to the broker immediately.
+
+## Context objects
+
+Middleware receives a typed context that determines which pipeline direction it belongs to:
+
+| Context | Direction | Key properties |
+|---|---|---|
+| `ConsumeContext<T>` | Inbound | Deserialized message, `TransportContext`, consumer identity |
+| `SendContext<T>` | Outbound | Message, mutable headers, destination address |
+
+Both extend `MessageContext<T>` → `MessageContext`, which provides common properties: `MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `Services`, a feature collection, and a payload bag.
+
+### Transport context
+
+`ConsumeContext<T>` holds a reference to its parent `TransportContext`, which carries transport-level data: raw bytes, headers, and the provider ID. For Kafka, this is `KafkaTransportContext<TKey>` with topic, partition, offset, group ID, and the deserialized key:
+
+```csharp
+if (context.TransportContext is KafkaTransportContext<string> kafka)
+    logger.LogDebug("Key: {Key}, Partition: {P}", kafka.Key, kafka.Partition);
+```
+
+See [Feature Collection & Payload Bag](/advanced/feature-collection/) for the full list of context properties and built-in payloads.
+
+## Middleware levels
+
+User middleware composes across three levels, each narrowing scope:
 
 | Level | Scope | Configured on |
 |---|---|---|
 | **Global** | Every message, every provider | `EmitBuilder` |
-| **Provider** | Messages for a specific provider (Kafka, Mediator) | `KafkaBuilder`, `MediatorBuilder` |
-| **Leaf** | A specific consumer group, producer, or handler | `KafkaConsumerGroupBuilder`, `KafkaProducerBuilder`, `MediatorHandlerBuilder` |
+| **Provider** | All messages for one provider | Provider builder (e.g. `KafkaBuilder`) |
+| **Leaf** | One consumer group, producer, or route | Group/producer/route builder |
 
-Middleware registered at a higher level runs *outside* middleware registered at a lower level, just like ASP.NET middleware wraps your endpoint.
-
-## Inbound pipeline (consuming)
-
-When a Kafka message arrives, it passes through the full stack before reaching your `IConsumer<T>`:
-
-<Mermaid code={`flowchart TB
-    K[["Kafka"]]
-    subgraph G["Global"]
-        G1["Tracing · Metrics · Observers"]
-    end
-    subgraph P["Kafka provider"]
-        P1["Provider middleware"]
-    end
-    subgraph CG["Consumer group"]
-        CG1["Error policy · Validation · Circuit breaker · Rate limit"]
-        H["IConsumer&lt;T&gt;"]
-    end
-    K --> G1 --> P1 --> CG1 --> H`} />
-
-## Outbound pipeline (producing)
-
-When you call `IEventProducer.ProduceAsync()`, the message passes through the outbound stack before reaching its terminal. The terminal is either the outbox (when the producer called `UseOutbox()`) or the Kafka broker directly:
-
-<Mermaid code={`flowchart TB
-    A["IEventProducer.ProduceAsync()"]
-    subgraph G["Global"]
-        G1["Tracing · Metrics · Observers"]
-    end
-    subgraph P["Kafka provider"]
-        P1["Provider middleware"]
-    end
-    subgraph PR["Per-producer"]
-        PM1["Custom middleware"]
-    end
-    O[("Outbox\n(UseOutbox)")]
-    K[["Kafka broker\n(direct)"]]
-    A --> G1 --> P1 --> PM1
-    PM1 -->|"UseOutbox()"| O
-    PM1 -->|"direct"| K`} />
-
-## Context objects
-
-Middleware receives a typed context. The type tells you which direction you're in:
-
-- **`InboundContext<TValue>`**: carries the inbound message, its metadata, and access to pipeline features
-- **`OutboundContext<TValue>`**: carries the outbound message and producer configuration
-
-Both extend `MessageContext`, which holds a **feature bag** (`IFeatureCollection`), a type-safe dictionary of named capabilities attached to the current message. This is how middleware communicates across layers without knowing about each other.
-
-```csharp
-// Reading a feature in middleware
-if (context.Features.TryGetValue<IRetryAttemptFeature>(out var retry))
-{
-    logger.LogDebug("Attempt {Attempt}", retry.Attempt);
-}
-```
-
-The built-in features cover things like message headers, the raw key/value bytes, the active activity, dead-letter sink access, consumer flow control, and more. See [Feature Collection](../advanced/feature-collection/) for the full list.
+Middleware registered at a higher level runs *outside* middleware at a lower level, just like ASP.NET Core middleware wraps your endpoints. Within each level, middleware executes in registration order.
 
 ## Middleware lifetimes
-
-When you register middleware, you specify its lifetime:
 
 ```csharp
 group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // one shared instance (default)
 group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per message
 ```
 
-`Singleton` is the default: one instance shared across all concurrent workers. It must be thread-safe and cannot hold per-message state. `Scoped` middleware gets a fresh instance for each message and can safely hold per-message state.
+**Singleton** (default) — One instance shared across all concurrent workers. Must be thread-safe and cannot hold per-message state.
 
-## What's registered automatically
+**Scoped** — A fresh instance for each message. Can safely hold per-message state in fields.
 
-Emit always registers tracing, metrics, and observer middleware at the global level; you don't add them manually. The order is fixed: tracing wraps metrics, which wraps observers, which wraps everything else. Your custom middleware runs inside all of that.
+## Built-in middleware
 
-For more on writing middleware, see [Custom Middleware](../advanced/custom-middleware/).
+Emit automatically registers error handling, tracing, metrics, and observer middleware. You don't add them manually and cannot change their order. Your custom middleware always runs inside the built-in layers.
+
+For more on writing middleware, see [Custom Middleware](/advanced/custom-middleware/).

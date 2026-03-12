@@ -3,22 +3,57 @@ title: Quickstart
 description: Produce and consume your first message through the transactional outbox.
 ---
 
-import { Steps } from '@astrojs/starlight/components';
-import Mermaid from '../../../components/Mermaid.astro';
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
-This gets you from zero to a working producer/consumer pair in about five minutes. This example uses the transactional outbox, so you'll need both Kafka and MongoDB running. If you only want direct Kafka integration without the outbox, skip the MongoDB setup and omit `UseOutbox()` on both the persistence provider and the producer; messages will go straight to Kafka.
+This guide walks you through producing and consuming your first message with the transactional outbox. You'll have a working producer/consumer pair in about five minutes.
+
+## Prerequisites
+
+- **.NET 10+**
+- **Kafka** — running locally on `localhost:9092`
+- **Schema Registry** — running locally on `localhost:8081` (for JSON Schema serialization)
+- **MongoDB** — running locally on `localhost:27017` (for the outbox and distributed locking)
+
+:::tip[Skip the outbox]
+If you only want direct Kafka integration without the outbox, skip the MongoDB setup and omit `UseOutbox()` on both the persistence provider and the producer. Messages will go straight to Kafka.
+:::
 
 <Steps>
 
-1. **Define your message**
+1. **Install the packages**
+
+   <Tabs>
+   <TabItem label=".NET CLI">
+   ```bash
+   dotnet add package Emit
+   dotnet add package Emit.MongoDB
+   dotnet add package Emit.Kafka
+   dotnet add package Emit.Kafka.JsonSerializer
+   ```
+   </TabItem>
+   <TabItem label="PackageReference">
+   ```xml
+   <PackageReference Include="Emit" />
+   <PackageReference Include="Emit.MongoDB" />
+   <PackageReference Include="Emit.Kafka" />
+   <PackageReference Include="Emit.Kafka.JsonSerializer" />
+   ```
+   </TabItem>
+   </Tabs>
+
+2. **Define your message**
 
    Messages are plain records or classes. No base types, no attributes required.
 
    ```csharp title="Messages.cs"
-   public record PizzaOrdered(Guid PizzaId, string CustomerId, string[] Toppings, string DeliveryAddress);
+   public record PizzaOrdered(
+       Guid PizzaId,
+       string CustomerId,
+       string[] Toppings,
+       string DeliveryAddress);
    ```
 
-2. **Register Emit**
+3. **Register Emit**
 
    ```csharp title="Program.cs"
    using MongoDB.Driver;
@@ -47,12 +82,19 @@ This gets you from zero to a working producer/consumer pair in about five minute
                cfg.BootstrapServers = "localhost:9092";
            });
 
+           kafka.ConfigureSchemaRegistry(cfg =>
+           {
+               cfg.Url = "localhost:8081";
+           });
+
+           kafka.AutoProvision();
+
            kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
            {
                topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
-               topic.SetValueSerializer(/* your serializer */);
+               topic.SetJsonSchemaValueSerializer();
                topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
-               topic.SetValueDeserializer(/* your deserializer */);
+               topic.SetJsonSchemaValueDeserializer();
 
                topic.Producer(p => p.UseOutbox());
 
@@ -65,17 +107,22 @@ This gets you from zero to a working producer/consumer pair in about five minute
    });
    ```
 
-3. **Implement your consumer**
+4. **Implement your consumer**
 
    ```csharp title="PizzaOrderedConsumer.cs"
    public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
        : IConsumer<PizzaOrdered>
    {
-       public Task ConsumeAsync(InboundContext<PizzaOrdered> context, CancellationToken cancellationToken)
+       public Task ConsumeAsync(
+           ConsumeContext<PizzaOrdered> context,
+           CancellationToken cancellationToken)
        {
            var pizza = context.Message;
-           logger.LogInformation("New order {PizzaId} for {CustomerId}: {Toppings}",
-               pizza.PizzaId, pizza.CustomerId, string.Join(", ", pizza.Toppings));
+           logger.LogInformation(
+               "New order {PizzaId} for {CustomerId}: {Toppings}",
+               pizza.PizzaId,
+               pizza.CustomerId,
+               string.Join(", ", pizza.Toppings));
 
            // Start preparing the pizza
            return Task.CompletedTask;
@@ -83,9 +130,9 @@ This gets you from zero to a working producer/consumer pair in about five minute
    }
    ```
 
-4. **Produce a message inside a transaction**
+5. **Produce a message inside a transaction**
 
-   The outbox only works its magic if the outbox write and your business write share a database transaction. Inject `IEmitContext`, start a transaction, write your data, produce the event, then commit, atomically.
+   The outbox guarantees atomicity: either both the order document and the outbox entry are persisted, or neither is. Inject `IEmitContext` to start a transaction that spans your business write and the outbox write.
 
    ```csharp title="PlacePizzaOrderEndpoint.cs"
    app.MapPost("/orders", async (
@@ -96,15 +143,20 @@ This gets you from zero to a working producer/consumer pair in about five minute
        IEventProducer<string, PizzaOrdered> producer,
        CancellationToken ct) =>
    {
-       var pizza = new PizzaOrdered(Guid.NewGuid(), request.CustomerId, request.Toppings, request.DeliveryAddress);
+       var pizza = new PizzaOrdered(
+           Guid.NewGuid(),
+           request.CustomerId,
+           request.Toppings,
+           request.DeliveryAddress);
 
        // Begin a MongoDB transaction and wire it to emitContext.
        // await using ensures rollback if anything throws.
-       await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
+       await using var transaction =
+           await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
 
        // Write your business data using the transactional session.
-       var orders = database.GetCollection<BsonDocument>("orders");
-       await orders.InsertOneAsync(transaction.Session, pizza.ToBsonDocument(), cancellationToken: ct);
+       var orders = database.GetCollection<PizzaOrdered>("orders");
+       await orders.InsertOneAsync(transaction.Session, pizza, cancellationToken: ct);
 
        // ProduceAsync writes the outbox entry inside the same session.
        await producer.ProduceAsync(
@@ -122,25 +174,14 @@ This gets you from zero to a working producer/consumer pair in about five minute
 
 ## What just happened
 
-<Mermaid code={`flowchart TD
-    A["PlacePizzaOrderEndpoint"]
-    B["BeginMongoTransactionAsync()"]
-    C["InsertOneAsync(session, pizza)\nbusiness write"]
-    D["ProduceAsync()"]
-    subgraph P["Outbound pipeline"]
-        P1["Middleware"]
-        P2["MongoDB outbox write"]
-        P1 --> P2
-    end
-    E["CommitAsync()\nboth writes land atomically"]
-    F[["Background worker polls"]]
-    G[["Kafka: pizzas topic"]]
-    H["PizzaOrderedConsumer.ConsumeAsync()"]
+When you call `producer.ProduceAsync()` inside a transaction, Emit doesn't send the message to Kafka immediately. Instead, three things happen:
 
-    A --> B --> C --> D --> P --> E --> F --> G --> H`} />
+1. **Atomic write** — The outbox entry is written to MongoDB inside the same transaction as your business data. If either write fails, neither is persisted.
 
-The endpoint returns as soon as `CommitAsync` completes. Delivery to Kafka is asynchronous and durable. If your service crashes between the commit and the delivery, the outbox worker picks it up again on restart. If anything throws before `CommitAsync`, `await using` aborts the transaction and neither the order document nor the outbox entry are written.
+2. **Background delivery** — A background worker polls the outbox, picks up pending entries, and publishes them to Kafka. Your endpoint returns immediately after `CommitAsync` completes.
 
-:::note
-You need to add JSON or another serializer for `PizzaOrdered`. See [Serialization](../kafka/serialization/) for the available options. For a quick smoke test, System.Text.Json + a manual serializer wrapper is enough.
+3. **Crash recovery** — If the process crashes between the commit and delivery, the worker picks up the pending entry on restart. No messages are lost and no duplicates are introduced.
+
+:::tip[Serialization alternatives]
+This quickstart uses JSON Schema serialization via `Emit.Kafka.JsonSerializer`. Emit also ships Avro and Protobuf serializer packages, or you can plug in any `ISerializer<T>` / `IDeserializer<T>` implementation. See [Serialization](/kafka/serialization/) for all options.
 :::

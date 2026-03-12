@@ -225,59 +225,59 @@ public sealed class MediatorMiddlewareTests
 
     // ── Middleware ──
 
-    private sealed class TrackingMiddleware<T> : IMiddleware<InboundContext<T>>
+    private sealed class TrackingMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
         {
             Order?.Add("tracking:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("tracking:after");
         }
     }
 
-    private sealed class GlobalMiddleware<T> : IMiddleware<InboundContext<T>>
+    private sealed class GlobalMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
         {
             Order?.Add("global:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("global:after");
         }
     }
 
-    private sealed class PatternMiddleware<T> : IMiddleware<InboundContext<T>>
+    private sealed class PatternMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
         {
             Order?.Add("pattern:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("pattern:after");
         }
     }
 
-    private sealed class ShortCircuitMiddleware<T> : IMiddleware<InboundContext<T>>
+    private sealed class ShortCircuitMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
-        public Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next) => Task.CompletedTask;
+        public Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next) => Task.CompletedTask;
     }
 
-    private sealed class HandlerMiddleware<T> : IMiddleware<InboundContext<T>>
+    private sealed class HandlerMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
         {
             Order?.Add("handler:before");
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             Order?.Add("handler:after");
         }
     }

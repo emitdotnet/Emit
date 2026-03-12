@@ -6,6 +6,7 @@ using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Kafka.Consumer;
 using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 public sealed class StartupDiagnosticsLoggerTests
@@ -14,12 +15,12 @@ public sealed class StartupDiagnosticsLoggerTests
 
     private sealed class TestConsumerA : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestConsumerB : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class CapturingLogger : ILogger
@@ -38,7 +39,6 @@ public sealed class StartupDiagnosticsLoggerTests
     private static ConsumerGroupRegistration<string, string> CreateRegistration(
         ErrorPolicy? groupErrorPolicy = null,
         ErrorAction? deserializationErrorAction = null,
-        DeadLetterTopicMap? deadLetterTopicMap = null,
         bool circuitBreakerEnabled = false,
         bool rateLimitEnabled = false,
         string topicName = "orders",
@@ -48,6 +48,7 @@ public sealed class StartupDiagnosticsLoggerTests
         {
             TopicName = topicName,
             GroupId = "group-1",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             BuildConsumerPipelines = () => [],
             WorkerCount = 3,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
@@ -58,11 +59,18 @@ public sealed class StartupDiagnosticsLoggerTests
             ApplyConsumerConfigOverrides = _ => { },
             GroupErrorPolicy = groupErrorPolicy,
             DeserializationErrorAction = deserializationErrorAction,
-            DeadLetterTopicMap = deadLetterTopicMap ?? DeadLetterTopicMap.Empty,
             ConsumerTypes = consumerTypes ?? [typeof(TestConsumerA)],
             CircuitBreakerEnabled = circuitBreakerEnabled,
             RateLimitEnabled = rateLimitEnabled,
         };
+    }
+
+    private static IDeadLetterSink CreateMockDeadLetterSink(string topicName)
+    {
+        var mock = new Mock<IDeadLetterSink>();
+        mock.Setup(s => s.DestinationAddress)
+            .Returns(new Uri($"kafka://broker:9092/{topicName}"));
+        return mock.Object;
     }
 
     // ── 1. Configured group logs group-level fields ──
@@ -77,13 +85,13 @@ public sealed class StartupDiagnosticsLoggerTests
 
         var registration = CreateRegistration(
             groupErrorPolicy: groupPolicy.Build(),
-            deserializationErrorAction: ErrorAction.DeadLetter("orders.dlt"),
+            deserializationErrorAction: ErrorAction.DeadLetter(),
             circuitBreakerEnabled: true,
             rateLimitEnabled: true,
             consumerTypes: [typeof(TestConsumerA)]);
 
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, null, logger);
 
         // Assert — group-level Information log
         var groupLog = Assert.Single(logger.Entries, e =>
@@ -93,7 +101,7 @@ public sealed class StartupDiagnosticsLoggerTests
         Assert.Contains("Buffer=32", groupLog.Message);
         Assert.Contains("CircuitBreaker=Enabled", groupLog.Message);
         Assert.Contains("RateLimit=Enabled", groupLog.Message);
-        Assert.Contains("DeserializationError=DeadLetter(orders.dlt)", groupLog.Message);
+        Assert.Contains("DeserializationError=DeadLetter", groupLog.Message);
     }
 
     // ── 2. Configured consumer logs per-consumer fields ──
@@ -108,24 +116,15 @@ public sealed class StartupDiagnosticsLoggerTests
             .When<TimeoutException>(a => a.Retry(3, Backoff.None).Discard())
             .Default(a => a.DeadLetter());
 
-        var dlqEntries = new[]
-        {
-            new DeadLetterEntry
-            {
-                ConsumerKey = nameof(TestConsumerA),
-                SourceTopic = "orders",
-                DeadLetterTopic = "orders.dlt",
-            },
-        };
-
         var registration = CreateRegistration(
             groupErrorPolicy: groupPolicy.Build(),
-            deadLetterTopicMap: new DeadLetterTopicMap(dlqEntries),
             circuitBreakerEnabled: true,
             consumerTypes: [typeof(TestConsumerA)]);
 
+        var deadLetterSink = CreateMockDeadLetterSink("orders.dlt");
+
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, deadLetterSink, logger);
 
         // Assert — per-consumer Information log
         var consumerLog = Assert.Single(logger.Entries, e =>
@@ -146,7 +145,7 @@ public sealed class StartupDiagnosticsLoggerTests
         var registration = CreateRegistration(consumerTypes: [typeof(TestConsumerA)]);
 
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, null, logger);
 
         // Assert
         var warning = Assert.Single(logger.Entries, e =>
@@ -167,25 +166,16 @@ public sealed class StartupDiagnosticsLoggerTests
         var groupPolicy = new ErrorPolicyBuilder();
         groupPolicy.Default(a => a.DeadLetter());
 
-        var dlqEntries = new[]
-        {
-            new DeadLetterEntry
-            {
-                ConsumerKey = null,
-                SourceTopic = "orders.dlt",
-                DeadLetterTopic = "orders.dlt",
-            },
-        };
-
         var registration = CreateRegistration(
             groupErrorPolicy: groupPolicy.Build(),
             topicName: "orders.dlt",
-            deadLetterTopicMap: new DeadLetterTopicMap(dlqEntries),
             circuitBreakerEnabled: true,
             consumerTypes: [typeof(TestConsumerA)]);
 
+        var deadLetterSink = CreateMockDeadLetterSink("orders.dlt");
+
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, deadLetterSink, logger);
 
         // Assert
         var warning = Assert.Single(logger.Entries, e =>
@@ -210,7 +200,7 @@ public sealed class StartupDiagnosticsLoggerTests
             consumerTypes: [typeof(TestConsumerA)]);
 
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, null, logger);
 
         // Assert
         var warning = Assert.Single(logger.Entries, e =>
@@ -235,7 +225,7 @@ public sealed class StartupDiagnosticsLoggerTests
             consumerTypes: [typeof(TestConsumerA), typeof(TestConsumerB)]);
 
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, null, logger);
 
         // Assert — both consumers show "Group"
         var consumerALog = Assert.Single(logger.Entries, e =>
@@ -265,7 +255,7 @@ public sealed class StartupDiagnosticsLoggerTests
             consumerTypes: [typeof(TestConsumerA)]);
 
         // Act
-        StartupDiagnosticsLogger.Log(registration, logger);
+        StartupDiagnosticsLogger.Log(registration, null, logger);
 
         // Assert
         var warning = Assert.Single(logger.Entries, e =>

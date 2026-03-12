@@ -10,27 +10,25 @@ using Emit.Abstractions.Pipeline;
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ProduceMetricsMiddleware<TMessage>(
-    EmitMetrics metrics) : IMiddleware<OutboundContext<TMessage>>
+    EmitMetrics metrics) : IMiddleware<SendContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(OutboundContext<TMessage> context, MessageDelegate<OutboundContext<TMessage>> next)
+    public async Task InvokeAsync(SendContext<TMessage> context, IMiddlewarePipeline<SendContext<TMessage>> next)
     {
-        var provider = context.Features.Get<IProviderIdentifierFeature>()?.ProviderId ?? "unknown";
+        var provider = EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "unknown";
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordProduceDuration(elapsed, provider, "success");
-            metrics.RecordProduceCompleted(provider, "success");
+            metrics.RecordProduceCompleted(elapsed, provider, "success");
         }
         catch
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordProduceDuration(elapsed, provider, "error");
-            metrics.RecordProduceCompleted(provider, "error");
+            metrics.RecordProduceCompleted(elapsed, provider, "error");
             throw;
         }
     }

@@ -23,6 +23,7 @@ public class KafkaWorkerDistributionCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<byte[], string>(topic, t =>
             {

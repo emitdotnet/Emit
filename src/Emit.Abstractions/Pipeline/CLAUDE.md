@@ -9,10 +9,10 @@ Middleware pipeline abstractions: delegates, middleware interfaces, and builder 
 | `MessageDelegate.cs` | Delegate type for async pipeline processing, contravariant on context type | Understand pipeline delegate composition |
 | `MessagePipeline.cs` | Static utility composing middleware instances and terminal delegate into a single chain | Understand pipeline construction |
 | `IMiddleware.cs` | Generic interface for middleware processing messages and delegating to next | Implement custom middleware |
+| `IMiddlewarePipeline.cs` | Generic interface for pipeline nodes that process a context and delegate to the next node | Understand the pipeline node abstraction or implement pipeline adapters |
 | `MessageMiddleware.cs` | Optional base class for cross-cutting middleware running on both inbound and outbound pipelines | Implement middleware that applies to all directions |
 | `MiddlewareDescriptor.cs` | Descriptor capturing type or factory-based middleware registration with lifetime | Understand middleware registration model |
 | `MiddlewareLifetime.cs` | Enum controlling middleware instantiation: Singleton (once) or Scoped (per message) | Configure middleware lifetime |
-| `IHeadersFeature.cs` | Read-only access to message headers as string key-value pairs | Access message headers in middleware |
 | `IConsumerFilter.cs` | Interface for DI-injectable message filters that gate whether a message continues through the consumer pipeline | Implement a reusable consumer filter or understand the filter contract |
 | `IHandlerInvoker.cs` | Generic interface for terminal adapters invoking strongly-typed handlers | Implement a new handler invoker |
 | `IPipelineConfigurable.cs` | Interface for builders exposing middleware pipeline for Use extension methods | Extend pipeline configuration |

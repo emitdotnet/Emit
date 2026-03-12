@@ -10,7 +10,7 @@ Middleware in Emit follows the same pattern as ASP.NET: each component receives 
 ## Implementing middleware
 
 ```csharp
-public class TimingMiddleware<T> : IMiddleware<InboundContext<T>>
+public class TimingMiddleware<T> : IMiddleware<ConsumeContext<T>>
 {
     private readonly ILogger<TimingMiddleware<T>> _logger;
 
@@ -19,12 +19,12 @@ public class TimingMiddleware<T> : IMiddleware<InboundContext<T>>
         _logger = logger;
     }
 
-    public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+    public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
     {
         var sw = Stopwatch.StartNew();
         try
         {
-            await next(context);
+            await next.InvokeAsync(context);
         }
         finally
         {
@@ -34,7 +34,7 @@ public class TimingMiddleware<T> : IMiddleware<InboundContext<T>>
 }
 ```
 
-For outbound middleware, replace `InboundContext<T>` with `OutboundContext<T>`.
+For outbound middleware, replace `ConsumeContext<T>` with `SendContext<T>`.
 
 The type parameter `T` is the message type for that specific pipeline level. Emit closes the open generic at registration time for each message type it handles.
 
@@ -92,11 +92,11 @@ group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);     // one instance per mess
 Middleware is resolved from the DI container. For scoped dependencies, use constructor injection directly (works with `Scoped` lifetime). For singletons that need per-message scoped services, resolve from `context.Services`:
 
 ```csharp
-public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
 {
     var repo = context.Services.GetRequiredService<IOrderRepository>();
     // ...
-    await next(context);
+    await next.InvokeAsync(context);
 }
 ```
 
@@ -105,15 +105,15 @@ public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<Inbound
 Skip `next` to abort the pipeline without throwing. The message is acknowledged (offset committed) and not retried:
 
 ```csharp
-public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
 {
-    if (context.Features.Get<IKeyFeature<string>>()?.Key == "__test__")
+    if (context.TransportContext is KafkaTransportContext<string> { Key: "__test__" })
     {
         logger.LogDebug("Skipping test message");
         return; // pipeline ends here
     }
 
-    await next(context);
+    await next.InvokeAsync(context);
 }
 ```
 
@@ -123,7 +123,7 @@ If you want the message to be treated as failed (triggering error policy), throw
 
 Middleware executes in the order it is registered, outermost to innermost. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your global middleware.
 
-<Mermaid chart={`
+<Mermaid code={`
 flowchart LR
     A[Built-in\nTracing/Metrics] --> B[Global\nmiddleware]
     B --> C[Provider\nmiddleware]

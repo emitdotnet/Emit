@@ -14,6 +14,10 @@ public static class KafkaBuilderExtensions
     /// </summary>
     public static KafkaBuilder AddBuildingSentinelTopics(this KafkaBuilder kafka)
     {
+        kafka.AutoProvision();
+
+        kafka.DeadLetter("building.events.dlt");
+
         kafka.Topic<string, BuildingEvent>("building.events", topic =>
         {
             topic.SetUtf8KeySerializer();
@@ -36,9 +40,9 @@ public static class KafkaBuilderExtensions
 
                 group.OnError(e => e
                     .WhenRouteUnmatched(a => a.Discard())
-                    .Default(a => a.Retry(3, Backoff.Exponential(TimeSpan.FromSeconds(1))).Discard()));
+                    .Default(a => a.Retry(3, Backoff.Exponential(TimeSpan.FromSeconds(1))).DeadLetter()));
 
-                group.OnDeserializationError(a => a.Discard());
+                group.OnDeserializationError(a => a.DeadLetter());
 
                 group.CircuitBreaker(cb => cb
                     .FailureThreshold(5)
@@ -54,9 +58,9 @@ public static class KafkaBuilderExtensions
                 group.AddConsumer<DeviceHeartbeatConsumer>();
 
                 group.OnError(e => e
-                    .Default(a => a.Retry(3, Backoff.Exponential(TimeSpan.FromSeconds(1))).Discard()));
+                    .Default(a => a.Retry(3, Backoff.Exponential(TimeSpan.FromSeconds(1))).DeadLetter()));
 
-                group.OnDeserializationError(a => a.Discard());
+                group.OnDeserializationError(a => a.DeadLetter());
 
                 group.CircuitBreaker(cb => cb
                     .FailureThreshold(5)

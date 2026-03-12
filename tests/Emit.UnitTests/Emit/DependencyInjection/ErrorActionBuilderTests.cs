@@ -8,7 +8,7 @@ using Xunit;
 public sealed class ErrorActionBuilderTests
 {
     [Fact]
-    public void GivenDeadLetterWithoutTopic_WhenCalled_ThenStoresDeadLetterActionWithNullTopic()
+    public void GivenDeadLetter_WhenCalled_ThenStoresDeadLetterAction()
     {
         // Arrange
         var builder = new ErrorActionBuilder();
@@ -18,23 +18,7 @@ public sealed class ErrorActionBuilderTests
 
         // Assert
         var action = builder.Build();
-        var deadLetter = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Null(deadLetter.TopicName);
-    }
-
-    [Fact]
-    public void GivenDeadLetterWithTopic_WhenCalled_ThenStoresDeadLetterActionWithSpecifiedTopic()
-    {
-        // Arrange
-        var builder = new ErrorActionBuilder();
-
-        // Act
-        builder.DeadLetter("validation-dlt");
-
-        // Assert
-        var action = builder.Build();
-        var deadLetter = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Equal("validation-dlt", deadLetter.TopicName);
+        Assert.IsType<ErrorAction.DeadLetterAction>(action);
     }
 
     [Fact]
@@ -85,5 +69,4 @@ public sealed class ErrorActionBuilderTests
         var ex = Assert.Throws<InvalidOperationException>(() => builder.Build());
         Assert.Contains("An error action is required", ex.Message);
     }
-
 }

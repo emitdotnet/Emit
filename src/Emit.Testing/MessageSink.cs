@@ -12,23 +12,23 @@ using Emit.Abstractions;
 /// <typeparam name="T">The message value type.</typeparam>
 public sealed class MessageSink<T>
 {
-    private readonly Channel<InboundContext<T>> channel = Channel.CreateUnbounded<InboundContext<T>>(
+    private readonly Channel<ConsumeContext<T>> channel = Channel.CreateUnbounded<ConsumeContext<T>>(
         new UnboundedChannelOptions { SingleWriter = false, SingleReader = false });
 
-    private readonly ConcurrentQueue<InboundContext<T>> received = new();
+    private readonly ConcurrentQueue<ConsumeContext<T>> received = new();
 
     /// <summary>
     /// All messages received so far, in the order they were consumed.
     /// </summary>
-    public IReadOnlyCollection<InboundContext<T>> ReceivedMessages => received;
+    public IReadOnlyCollection<ConsumeContext<T>> ReceivedMessages => received;
 
     /// <summary>
     /// Writes a consumed message to the sink. Called by <see cref="SinkConsumer{T}"/>.
     /// </summary>
-    /// <param name="context">The inbound context carrying the consumed message.</param>
+    /// <param name="context">The consume context carrying the consumed message.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when the message has been recorded.</returns>
-    public async Task WriteAsync(InboundContext<T> context, CancellationToken cancellationToken)
+    public async Task WriteAsync(ConsumeContext<T> context, CancellationToken cancellationToken)
     {
         received.Enqueue(context);
         await channel.Writer.WriteAsync(context, cancellationToken).ConfigureAwait(false);
@@ -40,10 +40,10 @@ public sealed class MessageSink<T>
     /// </summary>
     /// <param name="timeout">Maximum time to wait for a message.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The inbound context carrying the next consumed message.</returns>
+    /// <returns>The consume context carrying the next consumed message.</returns>
     /// <exception cref="TimeoutException">No message arrived within the timeout.</exception>
     /// <exception cref="OperationCanceledException">The cancellation token was triggered.</exception>
-    public async Task<InboundContext<T>> WaitForMessageAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    public async Task<ConsumeContext<T>> WaitForMessageAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);

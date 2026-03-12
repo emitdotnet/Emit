@@ -9,7 +9,10 @@ using InventorySnapshot.MongoDB.Repositories;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using global::MongoDB.Bson.Serialization.Conventions;
 using global::MongoDB.Driver;
+
+ConventionRegistry.Register("camelCase", new ConventionPack { new CamelCaseElementNameConvention() }, _ => true);
 
 var builder = WebApplication.CreateBuilder(args);
 

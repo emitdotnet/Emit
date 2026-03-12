@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
@@ -48,7 +49,7 @@ public abstract class ErrorPolicyCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-ep-match-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
         var throwControl = new ThrowControl();
 
         var host = Host.CreateDefaultBuilder()
@@ -73,7 +74,7 @@ public abstract class ErrorPolicyCompliance
 
             // Assert — message arrives in the DLQ because the When<ArgumentException> clause matched.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("matching-exception", ctx.Message);
+            Assert.Equal("matching-exception", Encoding.UTF8.GetString(ctx.Message));
         }
         finally
         {
@@ -94,7 +95,7 @@ public abstract class ErrorPolicyCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-ep-default-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
         var throwControl = new ThrowControl();
 
         var host = Host.CreateDefaultBuilder()
@@ -171,7 +172,7 @@ public abstract class ErrorPolicyCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-ep-pred-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
         var predicateControl = new PredicateControl();
 
         var host = Host.CreateDefaultBuilder()
@@ -209,7 +210,7 @@ public abstract class ErrorPolicyCompliance
 
             // Assert — the matching message arrives in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("matching-predicate", ctx.Message);
+            Assert.Equal("matching-predicate", Encoding.UTF8.GetString(ctx.Message));
         }
         finally
         {
@@ -237,7 +238,7 @@ public abstract class ErrorPolicyCompliance
     public sealed class PredicateThrowingConsumer(PredicateControl control) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException($"Simulated error: {control.MessageSuffix}");
     }
 
@@ -267,7 +268,7 @@ public abstract class ErrorPolicyCompliance
     public sealed class TypedExceptionConsumer(ThrowControl throwControl) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             return throwControl.ExceptionToThrow switch
             {
@@ -283,10 +284,10 @@ public abstract class ErrorPolicyCompliance
     /// <summary>
     /// Consumer that captures dead-lettered messages for assertion.
     /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
+    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

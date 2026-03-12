@@ -2,10 +2,12 @@ using Emit.DependencyInjection;
 using Emit.OpenTelemetry;
 using Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.EntityFrameworkCore.HealthChecks;
+using InventorySnapshot.Common.Domain;
 using InventorySnapshot.Common.Repositories;
 using InventorySnapshot.Common.Simulation;
 using InventorySnapshot.Common.Workers;
 using InventorySnapshot.PostgreSQL;
+using InventorySnapshot.PostgreSQL.Entities;
 using InventorySnapshot.PostgreSQL.Repositories;
 using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Metrics;
@@ -29,10 +31,10 @@ builder.Services.AddOpenTelemetry()
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 
 builder.Services.AddDbContext<SampleDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 builder.Services.AddDbContextFactory<SampleDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
 
 // ── Application services ───────────────────────────────────────────────────────
 // Singleton is correct: EfProductRepository and EfSnapshotRepository use IDbContextFactory,
@@ -69,18 +71,8 @@ using (var scope = app.Services.CreateScope())
 
     if (!db.Products.Any())
     {
-        db.Products.AddRange(
-            new() { Sku = "WRENCH-12",  Name = "12mm Socket Wrench",  WarehouseId = "WH-NORTH", Stock = 250  },
-            new() { Sku = "BOLT-M8",    Name = "M8 Hex Bolt (pack)",  WarehouseId = "WH-NORTH", Stock = 1500 },
-            new() { Sku = "CABLE-CAT6", Name = "CAT6 Cable 5m",       WarehouseId = "WH-SOUTH", Stock = 340  },
-            new() { Sku = "GLOVE-L",    Name = "Work Gloves (L)",      WarehouseId = "WH-EAST",  Stock = 85   },
-            new() { Sku = "HELMET-XL",  Name = "Safety Helmet (XL)",   WarehouseId = "WH-EAST",  Stock = 42   },
-            new() { Sku = "PUMP-2HP",   Name = "2HP Water Pump",       WarehouseId = "WH-SOUTH", Stock = 18   },
-            new() { Sku = "TAPE-50M",   Name = "Electrical Tape 50m",  WarehouseId = "WH-NORTH", Stock = 620  },
-            new() { Sku = "DRILL-BIT",  Name = "HSS Drill Bit Set",    WarehouseId = "WH-WEST",  Stock = 95   },
-            new() { Sku = "VALVE-1IN",  Name = "Ball Valve 1-inch",    WarehouseId = "WH-WEST",  Stock = 160  },
-            new() { Sku = "FILTER-OIL", Name = "Oil Filter (generic)", WarehouseId = "WH-EAST",  Stock = 430  }
-        );
+        db.Products.AddRange(ProductCatalog.Seeds.Select(p =>
+            new ProductEntity { Sku = p.Sku, Name = p.Name, WarehouseId = p.WarehouseId, Stock = p.Stock }));
         await db.SaveChangesAsync();
     }
 }

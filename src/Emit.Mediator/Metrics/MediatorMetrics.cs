@@ -38,15 +38,10 @@ public sealed class MediatorMetrics
 
     internal UpDownCounter<long> SendActive { get; }
 
-    internal void RecordSendDuration(double seconds, string requestType, string result)
+    internal void RecordSendCompleted(double durationSeconds, string requestType, string result)
     {
         var tags = enrichment.CreateTags([new("request_type", requestType), new("result", result)]);
-        SendDuration.Record(seconds, tags);
-    }
-
-    internal void RecordSendCompleted(string requestType, string result)
-    {
-        var tags = enrichment.CreateTags([new("request_type", requestType), new("result", result)]);
+        SendDuration.Record(durationSeconds, tags);
         SendCompleted.Add(1, tags);
     }
 

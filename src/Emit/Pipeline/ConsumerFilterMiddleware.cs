@@ -9,13 +9,13 @@ using Emit.Abstractions.Pipeline;
 /// consumer handler is never invoked.
 /// </summary>
 internal sealed class ConsumerFilterMiddleware<TMessage>(
-    Func<InboundContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
-    : IMiddleware<InboundContext<TMessage>>
+    Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
+    : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
         if (await predicate(context, context.CancellationToken).ConfigureAwait(false))
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
     }
 }

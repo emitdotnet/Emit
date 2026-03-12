@@ -1,7 +1,7 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,7 +139,7 @@ public abstract class ValidationCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-invalid-dlq-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -161,7 +161,7 @@ public abstract class ValidationCompliance
 
             // Assert — invalid message arrives in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("invalid-msg", ctx.Message);
+            Assert.Equal("invalid-msg", Encoding.UTF8.GetString(ctx.Message));
         }
         finally
         {
@@ -201,7 +201,7 @@ public abstract class ValidationCompliance
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-val-throw-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -223,13 +223,13 @@ public abstract class ValidationCompliance
 
             // Assert — the OnError policy dead-letters the message (not a validation discard).
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("validator-throws-payload", ctx.Message);
+            Assert.Equal("validator-throws-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers come from the error handling middleware (not validation middleware).
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
             Assert.NotNull(exceptionType);
             Assert.Contains(nameof(InvalidOperationException), exceptionType);
@@ -244,10 +244,10 @@ public abstract class ValidationCompliance
     /// <summary>
     /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
     /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<string> sink) : IConsumer<string>
+    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

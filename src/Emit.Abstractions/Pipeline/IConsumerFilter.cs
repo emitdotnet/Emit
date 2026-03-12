@@ -11,8 +11,8 @@ public interface IConsumerFilter<TMessage>
     /// <summary>
     /// Evaluates whether the message should be consumed.
     /// </summary>
-    /// <param name="context">The inbound context containing the message, features, and scoped services.</param>
+    /// <param name="context">The consume context containing the message, features, and scoped services.</param>
     /// <param name="cancellationToken">A token to observe for cancellation.</param>
     /// <returns><c>true</c> to continue the pipeline and invoke the consumer; <c>false</c> to skip.</returns>
-    ValueTask<bool> ShouldConsumeAsync(InboundContext<TMessage> context, CancellationToken cancellationToken);
+    ValueTask<bool> ShouldConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken);
 }

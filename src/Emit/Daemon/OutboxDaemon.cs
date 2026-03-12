@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 internal sealed class OutboxDaemon : IDaemonAgent
 {
     private readonly IOutboxRepository outboxRepository;
-    private readonly IEnumerable<IOutboxProvider> providers;
+    private readonly Dictionary<string, IOutboxProvider> providers;
     private readonly OutboxObserverInvoker observerInvoker;
     private readonly OutboxMetrics outboxMetrics;
     private readonly OutboxOptions outboxOptions;
@@ -47,7 +47,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
         ArgumentNullException.ThrowIfNull(logger);
 
         this.outboxRepository = outboxRepository;
-        this.providers = providers;
+        this.providers = providers.ToDictionary(p => p.SystemId);
         this.observerInvoker = observerInvoker;
         this.outboxMetrics = outboxMetrics;
         this.outboxOptions = outboxOptions.Value;
@@ -225,13 +225,12 @@ internal sealed class OutboxDaemon : IDaemonAgent
 
     private async Task<bool> ProcessEntryAsync(OutboxEntry entry, CancellationToken cancellationToken)
     {
-        var provider = providers.FirstOrDefault(p => p.ProviderId == entry.ProviderId);
-        if (provider is null)
+        if (!providers.TryGetValue(entry.SystemId, out var provider))
         {
             logger.LogError(
-                "No provider found for ProviderId '{ProviderId}' on entry {EntryId}. " +
+                "No provider found for SystemId '{SystemId}' on entry {EntryId}. " +
                 "Entry will be retried on the next poll cycle.",
-                entry.ProviderId, entry.Id);
+                entry.SystemId, entry.Id);
 
             return false;
         }
@@ -244,13 +243,13 @@ internal sealed class OutboxDaemon : IDaemonAgent
 
             await provider.ProcessAsync(entry, cancellationToken).ConfigureAwait(false);
 
-            await outboxRepository.DeleteAsync(entry.Id!, cancellationToken).ConfigureAwait(false);
+            await outboxRepository.DeleteAsync(entry.Id, cancellationToken).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(startTicks).TotalSeconds;
-            outboxMetrics.RecordProcessingDuration(elapsed, entry.ProviderId, "success");
-            outboxMetrics.RecordProcessingCompleted(entry.ProviderId, "success");
+            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, "success");
+            outboxMetrics.RecordProcessingCompleted(entry.SystemId, "success");
             outboxMetrics.RecordCriticalTime(
-                (DateTime.UtcNow - entry.EnqueuedAt).TotalSeconds, entry.ProviderId);
+                (DateTime.UtcNow - entry.EnqueuedAt).TotalSeconds, entry.SystemId);
 
             await observerInvoker.OnProcessedAsync(entry, cancellationToken).ConfigureAwait(false);
 
@@ -263,8 +262,8 @@ internal sealed class OutboxDaemon : IDaemonAgent
         catch (Exception ex)
         {
             var elapsed = Stopwatch.GetElapsedTime(startTicks).TotalSeconds;
-            outboxMetrics.RecordProcessingDuration(elapsed, entry.ProviderId, "error");
-            outboxMetrics.RecordProcessingCompleted(entry.ProviderId, "error");
+            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, "error");
+            outboxMetrics.RecordProcessingCompleted(entry.SystemId, "error");
 
             await observerInvoker.OnProcessErrorAsync(entry, ex, cancellationToken).ConfigureAwait(false);
 

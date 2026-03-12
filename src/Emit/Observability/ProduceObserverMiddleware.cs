@@ -11,16 +11,16 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 internal sealed class ProduceObserverMiddleware<TMessage>(
     IEnumerable<IProduceObserver> observers,
-    ILogger<ProduceObserverMiddleware<TMessage>> logger) : IMiddleware<OutboundContext<TMessage>>
+    ILogger<ProduceObserverMiddleware<TMessage>> logger) : IMiddleware<SendContext<TMessage>>
 {
     private readonly IProduceObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(OutboundContext<TMessage> context, MessageDelegate<OutboundContext<TMessage>> next)
+    public async Task InvokeAsync(SendContext<TMessage> context, IMiddlewarePipeline<SendContext<TMessage>> next)
     {
         if (this.observers is [])
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -32,13 +32,13 @@ internal sealed class ProduceObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IProduceObserver.OnProducingAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IProduceObserver)}.{nameof(IProduceObserver.OnProducingAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -50,7 +50,7 @@ internal sealed class ProduceObserverMiddleware<TMessage>(
                 }
                 catch (Exception observerEx)
                 {
-                    logger.LogWarning(observerEx, "IProduceObserver.OnProduceErrorAsync failed for {ObserverType}", observer.GetType().Name);
+                    logger.LogWarning(observerEx, $"{nameof(IProduceObserver)}.{nameof(IProduceObserver.OnProduceErrorAsync)} failed for {{ObserverType}}", observer.GetType().Name);
                 }
             }
 
@@ -65,7 +65,7 @@ internal sealed class ProduceObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IProduceObserver.OnProducedAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IProduceObserver)}.{nameof(IProduceObserver.OnProducedAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
     }

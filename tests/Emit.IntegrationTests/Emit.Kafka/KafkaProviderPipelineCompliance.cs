@@ -22,6 +22,7 @@ public class KafkaProviderPipelineCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.InboundPipeline.Use<InboundCounterMiddleware>(MiddlewareLifetime.Singleton);
 

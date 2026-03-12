@@ -27,7 +27,7 @@ public interface IConsumerGroupConfigurable<TMessage> : IInboundConfigurable<TMe
     /// Registers a class-based message validator that is resolved from the service provider
     /// for each message. The validator runs before every handler in this group and must
     /// produce a <see cref="MessageValidationResult"/>. A terminal action
-    /// (<see cref="ErrorActionBuilder.DeadLetter(string?)"/> or <see cref="ErrorActionBuilder.Discard"/>)
+    /// (<see cref="ErrorActionBuilder.DeadLetter()"/> or <see cref="ErrorActionBuilder.Discard"/>)
     /// must be configured for invalid messages.
     /// </summary>
     /// <typeparam name="TValidator">
@@ -41,7 +41,7 @@ public interface IConsumerGroupConfigurable<TMessage> : IInboundConfigurable<TMe
 
     /// <summary>
     /// Registers an inline async delegate validator that runs before every handler
-    /// in this group. A terminal action (<see cref="ErrorActionBuilder.DeadLetter(string?)"/>
+    /// in this group. A terminal action (<see cref="ErrorActionBuilder.DeadLetter()"/>
     /// or <see cref="ErrorActionBuilder.Discard"/>) must be configured for invalid messages.
     /// </summary>
     /// <param name="validator">The async validation delegate.</param>
@@ -54,7 +54,7 @@ public interface IConsumerGroupConfigurable<TMessage> : IInboundConfigurable<TMe
 
     /// <summary>
     /// Registers an inline synchronous delegate validator that runs before every handler
-    /// in this group. A terminal action (<see cref="ErrorActionBuilder.DeadLetter(string?)"/>
+    /// in this group. A terminal action (<see cref="ErrorActionBuilder.DeadLetter()"/>
     /// or <see cref="ErrorActionBuilder.Discard"/>) must be configured for invalid messages.
     /// </summary>
     /// <param name="validator">The synchronous validation delegate.</param>

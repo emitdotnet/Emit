@@ -92,21 +92,21 @@ public abstract class ProduceObserverCompliance
         public int ErrorCount => Volatile.Read(ref errorCount);
 
         /// <inheritdoc />
-        public Task OnProducingAsync<T>(OutboundContext<T> context)
+        public Task OnProducingAsync<T>(SendContext<T> context)
         {
             Interlocked.Increment(ref producingCount);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task OnProducedAsync<T>(OutboundContext<T> context)
+        public Task OnProducedAsync<T>(SendContext<T> context)
         {
             Interlocked.Increment(ref producedCount);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task OnProduceErrorAsync<T>(OutboundContext<T> context, Exception exception)
+        public Task OnProduceErrorAsync<T>(SendContext<T> context, Exception exception)
         {
             Interlocked.Increment(ref errorCount);
             return Task.CompletedTask;

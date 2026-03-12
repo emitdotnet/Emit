@@ -15,7 +15,7 @@ namespace Emit.Kafka.Observability;
 /// blocks other observers or interrupts consumer operation.
 /// </para>
 /// </remarks>
-public interface IKafkaConsumerObserver
+public interface IKafkaConsumerObserver : Emit.Abstractions.Observability.IObserver
 {
     /// <summary>
     /// Called when a consumer group worker starts polling.

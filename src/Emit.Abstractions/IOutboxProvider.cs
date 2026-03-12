@@ -12,7 +12,7 @@ using Emit.Models;
 /// </para>
 /// <para>
 /// The worker dispatches entries to the appropriate provider based on
-/// the <see cref="OutboxEntry.ProviderId"/> field.
+/// the <see cref="OutboxEntry.SystemId"/> field.
 /// </para>
 /// </remarks>
 public interface IOutboxProvider
@@ -21,10 +21,10 @@ public interface IOutboxProvider
     /// Gets the unique identifier for this provider.
     /// </summary>
     /// <remarks>
-    /// This ID must match the <see cref="OutboxEntry.ProviderId"/> field
+    /// This ID must match the <see cref="OutboxEntry.SystemId"/> field
     /// for entries that this provider should process.
     /// </remarks>
-    string ProviderId { get; }
+    string SystemId { get; }
 
     /// <summary>
     /// Processes an outbox entry by delivering it to the external system.
@@ -34,12 +34,9 @@ public interface IOutboxProvider
     /// <returns>A task representing the asynchronous operation.</returns>
     /// <remarks>
     /// <para>
-    /// The provider should deserialize the <see cref="OutboxEntry.Payload"/>
-    /// and deliver the message to the external system.
-    /// </para>
-    /// <para>
-    /// The <see cref="OutboxEntry.RegistrationKey"/> identifies which
-    /// producer registration to use for delivery.
+    /// The provider should read the <see cref="OutboxEntry.Body"/>, <see cref="OutboxEntry.Headers"/>,
+    /// and <see cref="OutboxEntry.Properties"/> to reconstruct the message and deliver it
+    /// to the external system.
     /// </para>
     /// <para>
     /// On success, the method should return normally.

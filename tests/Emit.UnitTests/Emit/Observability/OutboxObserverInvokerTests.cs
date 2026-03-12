@@ -142,10 +142,10 @@ public class OutboxObserverInvokerTests
     {
         return new OutboxEntry
         {
-            ProviderId = "kafka",
+            SystemId = "kafka",
+            Destination = "kafka://localhost:9092/test-topic",
             GroupKey = "kafka:test-topic",
-            RegistrationKey = "kafka",
-            Payload = [1, 2, 3]
+            Body = [1, 2, 3]
         };
     }
 }

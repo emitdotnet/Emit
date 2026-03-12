@@ -3,10 +3,8 @@ namespace Emit.Kafka;
 using System.Diagnostics;
 using Emit.Abstractions;
 using Emit.Kafka.Metrics;
-using Emit.Kafka.Serialization;
 using Emit.Models;
 using Emit.Tracing;
-using MessagePack;
 using Microsoft.Extensions.Logging;
 using ConfluentKafka = Confluent.Kafka;
 
@@ -15,8 +13,8 @@ using ConfluentKafka = Confluent.Kafka;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This provider deserializes <see cref="KafkaPayload"/> from <see cref="OutboxEntry.Payload"/>
-/// and sends the message to Kafka using the configured producer.
+/// This provider reads the message body, headers, and properties directly from the
+/// <see cref="OutboxEntry"/> and sends the message to Kafka using the configured producer.
 /// </para>
 /// </remarks>
 internal sealed class KafkaOutboxProvider(
@@ -25,14 +23,13 @@ internal sealed class KafkaOutboxProvider(
     ILogger<KafkaOutboxProvider> logger) : IOutboxProvider
 {
     private static readonly ActivitySource OutboxActivitySource = new("Emit.Outbox", "1.0.0");
-    private static readonly ActivitySource ProviderActivitySource = new("Emit.Provider.kafka", "1.0.0");
 
     private readonly ConfluentKafka.IProducer<byte[], byte[]> producer = producer ?? throw new ArgumentNullException(nameof(producer));
     private readonly KafkaMetrics kafkaMetrics = kafkaMetrics ?? throw new ArgumentNullException(nameof(kafkaMetrics));
     private readonly ILogger<KafkaOutboxProvider> logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <inheritdoc/>
-    public string ProviderId => Provider.Identifier;
+    public string SystemId => Provider.Identifier;
 
     /// <inheritdoc/>
     public async Task ProcessAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
@@ -41,40 +38,32 @@ internal sealed class KafkaOutboxProvider(
 
         using var processActivity = OutboxActivityHelper.StartProcessActivity(OutboxActivitySource, entry);
 
-        // Step 1: Deserialize payload
-        KafkaPayload payload;
-        try
+        // Extract topic from destination URI
+        var topic = EmitEndpointAddress.GetEntityName(new Uri(entry.Destination));
+        if (string.IsNullOrEmpty(topic))
         {
-            payload = MessagePackSerializer.Deserialize<KafkaPayload>(entry.Payload, cancellationToken: cancellationToken);
-        }
-        catch (MessagePackSerializationException ex)
-        {
-            processActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            logger.LogError(
-                ex,
-                "Failed to deserialize Kafka payload for entry {EntryId}: {Error}",
-                entry.Id, ex.Message);
-            throw new InvalidOperationException(
-                $"Failed to deserialize Kafka payload for entry {entry.Id}. " +
-                "The payload may be corrupted or in an incompatible format.", ex);
+            var errorMessage = $"Cannot extract topic from destination '{entry.Destination}' for entry {entry.Id}.";
+            processActivity?.SetStatus(ActivityStatusCode.Error, errorMessage);
+            logger.LogError("Cannot extract topic from destination '{Destination}' for entry {EntryId}", entry.Destination, entry.Id);
+            throw new InvalidOperationException(errorMessage);
         }
 
-        // Step 2: Produce to Kafka
-        var message = BuildMessage(payload);
+        // Build the Kafka message directly from entry fields
+        var message = BuildMessage(entry);
 
-        var messageSize = (payload.KeyBytes?.Length ?? 0) + (payload.ValueBytes?.Length ?? 0);
-        kafkaMetrics.RecordProduceMessageSize(messageSize, payload.Topic);
+        var messageSize = (message.Key?.Length ?? 0) + (message.Value?.Length ?? 0);
+        kafkaMetrics.RecordProduceMessageSize(messageSize, topic);
 
         var start = Stopwatch.GetTimestamp();
         try
         {
             await producer
-                .ProduceAsync(payload.Topic, message, cancellationToken)
+                .ProduceAsync(topic, message, cancellationToken)
                 .ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            kafkaMetrics.RecordProduceDuration(elapsed, payload.Topic, "success");
-            kafkaMetrics.RecordProduceMessage(payload.Topic, "success");
+            kafkaMetrics.RecordProduceDuration(elapsed, topic, "success");
+            kafkaMetrics.RecordProduceMessage(topic, "success");
         }
         catch (OperationCanceledException)
         {
@@ -83,38 +72,37 @@ internal sealed class KafkaOutboxProvider(
         catch (Exception)
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            kafkaMetrics.RecordProduceDuration(elapsed, payload.Topic, "error");
-            kafkaMetrics.RecordProduceMessage(payload.Topic, "error");
+            kafkaMetrics.RecordProduceDuration(elapsed, topic, "error");
+            kafkaMetrics.RecordProduceMessage(topic, "error");
             throw;
         }
     }
 
-    private static ConfluentKafka.Message<byte[], byte[]> BuildMessage(KafkaPayload payload)
+    private static ConfluentKafka.Message<byte[], byte[]> BuildMessage(OutboxEntry entry)
     {
-        var message = new ConfluentKafka.Message<byte[], byte[]>
+        // Decode key from base64 in properties
+        byte[]? keyBytes = null;
+        if (entry.Properties.TryGetValue(OutboxPropertyKeys.Key, out var keyBase64))
         {
-            Key = payload.KeyBytes!,
-            Value = payload.ValueBytes!
+            keyBytes = Convert.FromBase64String(keyBase64);
+        }
+
+        var kafkaMessage = new ConfluentKafka.Message<byte[], byte[]>
+        {
+            Key = keyBytes!,
+            Value = entry.Body!
         };
 
         // Copy headers if present
-        if (payload.Headers is { Count: > 0 })
+        if (entry.Headers is { Count: > 0 })
         {
-            message.Headers = [];
-            foreach (var (key, value) in payload.Headers)
+            kafkaMessage.Headers = [];
+            foreach (var (key, value) in entry.Headers)
             {
-                message.Headers.Add(key, value);
+                kafkaMessage.Headers.Add(key, value);
             }
         }
 
-        // Set timestamp if present (TimestampType != 0 means timestamp was set)
-        if (payload.TimestampUnixMs.HasValue && payload.TimestampType != 0)
-        {
-            message.Timestamp = new ConfluentKafka.Timestamp(
-                payload.TimestampUnixMs.Value,
-                (ConfluentKafka.TimestampType)payload.TimestampType);
-        }
-
-        return message;
+        return kafkaMessage;
     }
 }

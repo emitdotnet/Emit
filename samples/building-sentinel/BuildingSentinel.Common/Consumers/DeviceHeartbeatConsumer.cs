@@ -12,7 +12,7 @@ public sealed class DeviceHeartbeatConsumer(
     IDeviceHeartbeatRepository heartbeatRepository) : IConsumer<BuildingEvent>
 {
     public async Task ConsumeAsync(
-        InboundContext<BuildingEvent> context,
+        ConsumeContext<BuildingEvent> context,
         CancellationToken cancellationToken)
     {
         var evt = context.Message;

@@ -156,14 +156,14 @@ public abstract class ConsumeObserverCompliance
         public int ErrorCount => Volatile.Read(ref errorCount);
 
         /// <inheritdoc />
-        public Task OnConsumingAsync<T>(InboundContext<T> context)
+        public Task OnConsumingAsync<T>(ConsumeContext<T> context)
         {
             Interlocked.Increment(ref consumingCount);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task OnConsumedAsync<T>(InboundContext<T> context)
+        public Task OnConsumedAsync<T>(ConsumeContext<T> context)
         {
             Interlocked.Increment(ref consumedCount);
             consumedSignal.Release();
@@ -171,7 +171,7 @@ public abstract class ConsumeObserverCompliance
         }
 
         /// <inheritdoc />
-        public Task OnConsumeErrorAsync<T>(InboundContext<T> context, Exception exception)
+        public Task OnConsumeErrorAsync<T>(ConsumeContext<T> context, Exception exception)
         {
             Interlocked.Increment(ref errorCount);
             errorSignal.Release();
@@ -199,7 +199,7 @@ public abstract class ConsumeObserverCompliance
     public sealed class AlwaysFailingConsumer : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated consumer failure for observer test.");
     }
 }

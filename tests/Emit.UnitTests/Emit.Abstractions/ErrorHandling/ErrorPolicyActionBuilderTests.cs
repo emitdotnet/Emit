@@ -29,14 +29,13 @@ public sealed class ErrorPolicyActionBuilderTests
         var builder = new ErrorPolicyActionBuilder();
 
         // Act
-        builder.Retry(3, Backoff.None).DeadLetter("my-dlt");
+        builder.Retry(3, Backoff.None).DeadLetter();
         var action = builder.Build();
 
         // Assert
         var retry = Assert.IsType<ErrorAction.RetryAction>(action);
         Assert.Equal(3, retry.MaxAttempts);
-        var exhaustion = Assert.IsType<ErrorAction.DeadLetterAction>(retry.ExhaustionAction);
-        Assert.Equal("my-dlt", exhaustion.TopicName);
+        Assert.IsType<ErrorAction.DeadLetterAction>(retry.ExhaustionAction);
     }
 
     [Fact]
@@ -60,12 +59,11 @@ public sealed class ErrorPolicyActionBuilderTests
         var builder = new ErrorPolicyActionBuilder();
 
         // Act
-        builder.DeadLetter("orders-dlt");
+        builder.DeadLetter();
         var action = builder.Build();
 
         // Assert
-        var deadLetter = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Equal("orders-dlt", deadLetter.TopicName);
+        Assert.IsType<ErrorAction.DeadLetterAction>(action);
     }
 
     [Fact]
@@ -117,7 +115,7 @@ public sealed class ErrorPolicyActionBuilderTests
     {
         // Arrange
         var builder = new ErrorPolicyActionBuilder();
-        builder.DeadLetter("my-dlt");
+        builder.DeadLetter();
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => builder.Discard());

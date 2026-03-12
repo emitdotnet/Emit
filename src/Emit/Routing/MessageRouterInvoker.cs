@@ -1,8 +1,10 @@
 namespace Emit.Routing;
 
+using System.Diagnostics;
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Pipeline;
+using Emit.Tracing;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -14,13 +16,13 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 internal sealed class MessageRouterInvoker<TMessage>(
     string identifier,
-    Func<InboundContext<TMessage>, object?> routeSelector,
-    Dictionary<object, (Type ConsumerType, MessageDelegate<InboundContext<TMessage>> Pipeline)> routedPipelines,
+    Func<ConsumeContext<TMessage>, object?> routeSelector,
+    Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)> routedPipelines,
     ILogger logger,
-    ErrorAction? unmatchedAction = null) : IHandlerInvoker<InboundContext<TMessage>>
+    ErrorAction? unmatchedAction = null) : IHandlerInvoker<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context)
     {
         var routeKey = routeSelector(context);
 
@@ -34,17 +36,21 @@ internal sealed class MessageRouterInvoker<TMessage>(
                 return;
             }
 
+            // No unmatched action was configured by the user — propagate to the error policy
+            // so ConsumeErrorMiddleware can dead-letter or discard based on the configured policy.
             throw new UnmatchedRouteException(routeKey);
         }
 
-        // Update consumer identity with the resolved route details
-        context.Features.Set<IConsumerIdentityFeature>(
-            new ConsumerIdentityFeature(identifier, ConsumerKind.Router, match.ConsumerType, routeKey));
+        // Tag the current Activity with route details (identity is baked into tracing middleware)
+        if (Activity.Current is { } activity)
+        {
+            activity.SetTag(ActivityTagNames.RouteKey, routeKey.ToString());
+        }
 
         logger.LogDebug(
             "Router '{Identifier}' matched route key '{RouteKey}' to {ConsumerType}",
             identifier, routeKey, match.ConsumerType.Name);
 
-        await match.Pipeline(context).ConfigureAwait(false);
+        await match.Pipeline.InvokeAsync(context).ConfigureAwait(false);
     }
 }

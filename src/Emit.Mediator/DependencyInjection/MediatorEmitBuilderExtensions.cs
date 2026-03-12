@@ -96,8 +96,8 @@ public static class MediatorEmitBuilderExtensions
         var mediatorInbound = mediatorBuilder.InboundPipeline;
 
         // Factory-built singleton — typed pipelines composed when IServiceProvider available.
-        // Each request type gets a typed dispatch delegate that creates MediatorMessageContext<TRequest>
-        // and invokes the typed MessageDelegate<TRequest> pipeline with no runtime reflection.
+        // Each request type gets a typed dispatch delegate that creates MediatorContext<TRequest>
+        // and invokes the typed pipeline with no runtime reflection.
         services.AddSingleton(sp =>
         {
             var dispatchers = new Dictionary<Type, Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>>();
@@ -131,16 +131,16 @@ public static class MediatorEmitBuilderExtensions
             IMessagePipelineBuilder globalInbound,
             IMessagePipelineBuilder? handlerPipeline)
     {
-        var typedInvoker = (IHandlerInvoker<InboundContext<TRequest>>)invoker;
+        var typedInvoker = (IHandlerInvoker<MediatorContext<TRequest>>)invoker;
 
         // Pipeline layering: global → mediator → per-handler → terminal
         var pipeline = handlerPipeline is not null
-            ? handlerPipeline.Build<InboundContext<TRequest>, TRequest>(sp, typedInvoker.InvokeAsync, globalInbound, mediatorInbound)
-            : mediatorInbound.Build<InboundContext<TRequest>, TRequest>(sp, typedInvoker.InvokeAsync, globalInbound);
+            ? handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, typedInvoker, globalInbound, mediatorInbound)
+            : mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, typedInvoker, globalInbound);
 
         return (request, services, timeProvider, ct, responseFeature) =>
         {
-            var context = new InboundContext<TRequest>
+            var context = new MediatorContext<TRequest>
             {
                 MessageId = Guid.NewGuid().ToString(),
                 Timestamp = timeProvider.GetUtcNow(),
@@ -152,7 +152,7 @@ public static class MediatorEmitBuilderExtensions
             if (responseFeature is not null)
                 context.Features.Set<IResponseFeature>(responseFeature);
 
-            return pipeline(context);
+            return pipeline.InvokeAsync(context);
         };
     }
 

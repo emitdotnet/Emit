@@ -24,7 +24,7 @@ using Emit.Models;
 /// blocks other observers or interrupts outbox processing.
 /// </para>
 /// </remarks>
-public interface IOutboxObserver
+public interface IOutboxObserver : IObserver
 {
     /// <summary>
     /// Called after an outbox entry has been persisted to the repository.

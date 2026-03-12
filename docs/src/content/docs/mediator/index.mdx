@@ -3,9 +3,7 @@ title: Mediator
 description: In-process request/response dispatching with the same middleware pipeline as the outbox.
 ---
 
-import Mermaid from '../../../components/Mermaid.astro';
-
-The mediator dispatches typed requests to their registered handlers in-process. It uses the same middleware pipeline model as everything else in Emit, which means tracing, metrics, observers, and custom middleware all work without any extra wiring.
+The mediator dispatches typed requests to their registered handlers in-process. It uses the same [middleware pipeline model](/concepts/pipeline-model/) as the rest of Emit, so tracing, metrics, observers, and custom middleware all work without extra wiring.
 
 ## Registration
 
@@ -20,38 +18,45 @@ builder.Services.AddEmit(emit =>
 });
 ```
 
-`AddMediator` is an extension on `EmitBuilder`. You can call it alongside `AddKafka` or on its own; the two are independent.
+`AddMediator` is an extension on `EmitBuilder`. You can call it alongside `AddKafka` or on its own — the two are independent.
 
 ## Requests
 
-A request is a plain class or record that implements `IRequest` (no response) or `IRequest<TResponse>` (returns a value):
+A request is a plain class or record that implements `IRequest` (fire-and-forget) or `IRequest<TResponse>` (returns a value):
 
 ```csharp
-// Fire-and-forget
-public record PlacePizzaOrder(string CustomerId, string[] Toppings, string Address) : IRequest;
+public record PlacePizzaOrder(
+    string CustomerId,
+    string[] Toppings,
+    string Address) : IRequest;
 
-// Returns a result
 public record GetPizzaStatus(Guid PizzaId) : IRequest<PizzaStatusDto>;
 ```
 
-No base types, no attributes, no conventions to memorize.
-
 ## Handlers
 
-Implement `IRequestHandler<TRequest>` for void handlers, or `IRequestHandler<TRequest, TResponse>` for handlers that return a value:
+Implement `IRequestHandler<TRequest>` or `IRequestHandler<TRequest, TResponse>`:
 
 ```csharp
-public class PlacePizzaOrderHandler(IPizzaRepository pizzas) : IRequestHandler<PlacePizzaOrder>
+public class PlacePizzaOrderHandler(IPizzaRepository pizzas)
+    : IRequestHandler<PlacePizzaOrder>
 {
-    public async Task HandleAsync(PlacePizzaOrder request, CancellationToken cancellationToken)
+    public async Task HandleAsync(
+        PlacePizzaOrder request,
+        CancellationToken cancellationToken)
     {
-        await pizzas.SaveAsync(new PizzaOrder(Guid.NewGuid(), request.CustomerId, request.Toppings, request.Address), cancellationToken);
+        await pizzas.SaveAsync(
+            new PizzaOrder(Guid.NewGuid(), request.CustomerId, request.Toppings, request.Address),
+            cancellationToken);
     }
 }
 
-public class GetPizzaStatusHandler(IPizzaRepository pizzas) : IRequestHandler<GetPizzaStatus, PizzaStatusDto>
+public class GetPizzaStatusHandler(IPizzaRepository pizzas)
+    : IRequestHandler<GetPizzaStatus, PizzaStatusDto>
 {
-    public async Task<PizzaStatusDto> HandleAsync(GetPizzaStatus request, CancellationToken cancellationToken)
+    public async Task<PizzaStatusDto> HandleAsync(
+        GetPizzaStatus request,
+        CancellationToken cancellationToken)
     {
         var order = await pizzas.FindAsync(request.PizzaId, cancellationToken);
         return new PizzaStatusDto(order.PizzaId, order.Status, order.EstimatedDelivery);
@@ -78,81 +83,63 @@ public class PizzeriaService(IMediator mediator)
 
 Sending to an unregistered request type throws `InvalidOperationException` at dispatch time.
 
-## Pipeline
+## Middleware
 
-Middleware runs at three levels before the handler is invoked:
-
-<Mermaid code={`flowchart LR
-    subgraph G["Global"]
-        G1["Tracing · Metrics · Observers"]
-    end
-    subgraph M["Mediator"]
-        M1["Mediator middleware"]
-    end
-    subgraph H["Per-handler"]
-        H1["Handler middleware"]
-        T["HandleAsync()"]
-        H1 --> T
-    end
-    G1 --> M1 --> H1`} />
-
-Register mediator-level middleware on `mediator.InboundPipeline`:
+The mediator supports the same [middleware levels](/concepts/pipeline-model/#middleware-levels) as the rest of Emit. Register mediator-wide middleware on `InboundPipeline`, or per-handler middleware using the two-argument `AddHandler` overload:
 
 ```csharp
 emit.AddMediator(mediator =>
 {
+    // Runs for every request dispatched through this mediator
     mediator.InboundPipeline.Use<LoggingMiddleware>();
 
-    mediator.AddHandler<PlacePizzaOrderHandler>();
+    // Runs only for PlacePizzaOrder requests
+    mediator.AddHandler<PlacePizzaOrderHandler, PlacePizzaOrder>(handler =>
+    {
+        handler.Use<ValidationMiddleware>();
+    });
+
+    mediator.AddHandler<GetPizzaStatusHandler>();
 });
 ```
 
-Register per-handler middleware using the two-argument overload:
-
-```csharp
-mediator.AddHandler<PlacePizzaOrderHandler, PlacePizzaOrder>(handler =>
-{
-    handler.Use<ValidationMiddleware>();
-});
-```
-
-The context flowing through all middleware layers is `InboundContext<TRequest>`. The terminal adapter extracts `context.Message` and calls `HandleAsync`.
+The context flowing through all middleware layers is `MediatorContext<TRequest>`.
 
 ## Observers
 
-`IMediatorObserver` gives you lifecycle hooks without writing middleware:
+`IMediatorObserver` provides lifecycle hooks without writing middleware:
 
 ```csharp
 public class AuditObserver : IMediatorObserver
 {
-    public Task OnHandlingAsync<T>(InboundContext<T> context)
+    public Task OnHandlingAsync<T>(MediatorContext<T> context)
     {
-        // called before the handler
+        // Called before the handler
         return Task.CompletedTask;
     }
 
-    public Task OnHandledAsync<T>(InboundContext<T> context)
+    public Task OnHandledAsync<T>(MediatorContext<T> context)
     {
-        // called after successful completion
+        // Called after successful completion
         return Task.CompletedTask;
     }
 
-    public Task OnHandleErrorAsync<T>(InboundContext<T> context, Exception exception)
+    public Task OnHandleErrorAsync<T>(MediatorContext<T> context, Exception exception)
     {
-        // called on exception
+        // Called on exception
         return Task.CompletedTask;
     }
 }
 ```
 
-Register it on the mediator builder:
+Register observers on the mediator builder:
 
 ```csharp
 mediator.AddObserver<AuditObserver>();
 ```
 
-Observer exceptions are swallowed and logged; a failing observer never interrupts the handler.
+Observer exceptions are swallowed and logged — a failing observer never interrupts the handler.
 
 ## One handler per request type
 
-Registering two handlers for the same request type throws at startup. Fan-out belongs inside a single handler: dispatch to multiple targets explicitly, or publish an event through the outbox.
+Registering two handlers for the same request type throws at startup. If you need fan-out, dispatch to multiple targets inside a single handler, or publish an event through the outbox.

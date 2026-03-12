@@ -19,34 +19,43 @@ public sealed class OutboxEntry
     /// Gets or sets the unique identifier for the entry.
     /// </summary>
     /// <remarks>
-    /// The type is provider-specific (ObjectId for MongoDB, UUID for PostgreSQL).
+    /// The type is provider-specific.
     /// </remarks>
-    public object? Id { get; set; }
+    public object Id { get; set; } = null!;
 
     /// <summary>
-    /// Gets or sets the identifier of the outbox provider (e.g., "kafka").
+    /// Gets or sets the identifier of the target system (e.g., "kafka").
     /// </summary>
     /// <remarks>
     /// Each provider exposes a well-known ID. Used to dispatch entries to the correct
     /// provider during processing.
     /// </remarks>
-    public required string ProviderId { get; set; }
+    public required string SystemId { get; set; }
 
     /// <summary>
-    /// Gets or sets the key name used during registration.
+    /// Gets or sets the destination address as a URI string.
     /// </summary>
     /// <remarks>
-    /// A well-known sentinel value (e.g., "__default__") indicates non-keyed registration.
-    /// Used by the worker to resolve the correct real producer.
+    /// Format: <c>{scheme}://{host}:{port}/{entityName}</c>.
+    /// Parsed via <see cref="Emit.Abstractions.EmitEndpointAddress"/> at delivery time to extract the target entity.
     /// </remarks>
-    public required string RegistrationKey { get; set; }
+    public required string Destination { get; set; }
+
+    /// <summary>
+    /// Gets or sets the conversation identifier for causal chain tracking.
+    /// </summary>
+    /// <remarks>
+    /// Links related messages across a causal chain (e.g., command → event → reaction).
+    /// Null if not participating in a conversation.
+    /// </remarks>
+    public string? ConversationId { get; set; }
 
     /// <summary>
     /// Gets or sets the group key that determines sequential processing order.
     /// </summary>
     /// <remarks>
     /// Entries in the same group are processed strictly in sequence.
-    /// Format: "{providerId}:{destination}" (e.g., "kafka:orders"). Also used as the
+    /// Format is provider-specific and opaque to the core engine. Also used as the
     /// sharding key for MongoDB.
     /// </remarks>
     public required string GroupKey { get; set; }
@@ -65,53 +74,39 @@ public sealed class OutboxEntry
     public DateTime EnqueuedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the opaque binary blob containing provider-specific data.
+    /// Gets or sets the serialized message value bytes.
     /// </summary>
     /// <remarks>
-    /// Only the originating provider knows how to serialize and deserialize this.
+    /// Null for tombstone messages (e.g., Kafka log compaction deletes).
     /// </remarks>
-    public required byte[] Payload { get; set; }
+    public byte[]? Body { get; set; }
 
     /// <summary>
-    /// Gets or sets arbitrary key-value metadata populated by the provider at enqueue time.
+    /// Gets or sets the transport headers.
     /// </summary>
     /// <remarks>
-    /// Not used by the core engine for processing logic — purely for observability, metrics,
-    /// and dashboards (e.g., destination, valueType).
+    /// <para>
+    /// Preserves header semantics of the target transport (e.g., Kafka allows duplicate keys
+    /// and ordering is significant). Includes W3C trace context headers (traceparent, tracestate)
+    /// when distributed tracing is enabled.
+    /// </para>
+    /// <para>
+    /// Never null — empty when no headers are present.
+    /// </para>
+    /// </remarks>
+    public List<KeyValuePair<string, byte[]>> Headers { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets provider-specific metadata for observability and delivery.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Contains provider-defined key-value pairs such as topic name, message type names,
+    /// and the serialized message key. Not used by the core engine for processing logic.
+    /// </para>
+    /// <para>
+    /// Never null — empty when no properties are present.
+    /// </para>
     /// </remarks>
     public Dictionary<string, string> Properties { get; set; } = [];
-
-    /// <summary>
-    /// Gets or sets the W3C trace context for distributed tracing.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Contains the traceparent value (version-traceid-spanid-flags) from the Activity
-    /// that enqueued this entry. Automatically populated when tracing is enabled.
-    /// </para>
-    /// <para>
-    /// Format: "00-{trace-id}-{span-id}-{flags}" (55 characters)
-    /// </para>
-    /// <para>
-    /// Example: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-    /// </para>
-    /// </remarks>
-    public string? TraceParent { get; set; }
-
-    /// <summary>
-    /// Gets or sets the W3C tracestate for vendor-specific trace data.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Preserves vendor extensions (Application Insights, Datadog, etc.) across the async boundary.
-    /// Automatically populated when tracing is enabled and the Activity has tracestate.
-    /// </para>
-    /// <para>
-    /// Format: comma-separated vendor entries, max 2048 characters.
-    /// </para>
-    /// <para>
-    /// Example: "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7"
-    /// </para>
-    /// </remarks>
-    public string? TraceState { get; set; }
 }

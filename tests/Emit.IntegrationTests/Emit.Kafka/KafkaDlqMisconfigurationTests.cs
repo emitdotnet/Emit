@@ -1,7 +1,6 @@
 namespace Emit.Kafka.Tests;
 
 using System.Text;
-using Confluent.Kafka.Admin;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
@@ -34,11 +33,6 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
         var dlqTopic = $"test-dlq-misconfig-dlq-{Guid.NewGuid():N}";
         var sink = new MessageSink<string>();
 
-        // The DLQ topic must exist so DlqTopicVerifier passes at startup.
-        // However, no IDeadLetterSink is registered (no kafka.DeadLetter(...) on the builder),
-        // so ConsumerWorker will find a null sink and silently discard the failed message.
-        CreateTopic(dlqTopic);
-
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
@@ -51,6 +45,7 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
                         {
                             config.BootstrapServers = fixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
 
                         // Source topic with Int32 key deserializer — invalid keys will fail deserialization.
                         // The DLQ policy names a topic but no dead letter sink is registered (no kafka.DeadLetter(...)).
@@ -62,7 +57,7 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
                             t.ConsumerGroup(groupId, group =>
                             {
                                 group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                                group.OnDeserializationError(e => e.DeadLetter(dlqTopic));
+                                group.OnDeserializationError(e => e.DeadLetter());
                                 group.AddConsumer<PassThroughConsumer>();
                             });
                         });
@@ -108,23 +103,12 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
         }
     }
 
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
-    }
-
     /// <summary>
     /// Passes all messages directly to the sink without additional processing.
     /// </summary>
     private sealed class PassThroughConsumer(MessageSink<string> sink) : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => sink.WriteAsync(context, cancellationToken);
     }
 }

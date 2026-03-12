@@ -203,7 +203,7 @@ public abstract class RoutingCompliance
     public sealed class ConsumerA(RoutingCapture capture) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             capture.Add("A:" + context.Message);
             return Task.CompletedTask;
@@ -216,7 +216,7 @@ public abstract class RoutingCompliance
     public sealed class ConsumerB(RoutingCapture capture) : IConsumer<string>
     {
         /// <inheritdoc />
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             capture.Add("B:" + context.Message);
             return Task.CompletedTask;

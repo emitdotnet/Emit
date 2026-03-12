@@ -55,7 +55,7 @@ Validation failed for message from {Source}: {Errors}. Discarding.
 Circuit breaker opened, pausing consumer group. Pause duration: {PauseDuration}
 ```
 
-`{Source}` is a compact string from `IMessageSourceFeature` that includes topic, partition, and offset. In a structured log query you can filter on `Source` to find all events for a specific partition.
+`{Source}` is a compact string derived from the `TransportContext` that includes topic, partition, and offset (e.g., `orders[2]@1547`). In a structured log query you can filter on `Source` to find all events for a specific partition.
 
 ## Adding log context in your consumers
 
@@ -64,7 +64,7 @@ Standard `ILogger` scopes work in consumers because each message runs in its own
 ```csharp
 public class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsumer<OrderPlaced>
 {
-    public async Task ConsumeAsync(InboundContext<OrderPlaced> context, CancellationToken ct)
+    public async Task ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken ct)
     {
         using var scope = logger.BeginScope(new Dictionary<string, object>
         {
@@ -84,13 +84,13 @@ For cross-cutting log context (for example, adding a tenant ID to every message 
 
 ```csharp
 public class TenantLoggingMiddleware<T>(ILogger<TenantLoggingMiddleware<T>> logger, ITenantResolver tenant)
-    : IMiddleware<InboundContext<T>>
+    : IMiddleware<ConsumeContext<T>>
 {
-    public async Task InvokeAsync(InboundContext<T> context, MessageDelegate<InboundContext<T>> next)
+    public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
     {
         var tenantId = await tenant.ResolveAsync(context, context.CancellationToken);
         using var scope = logger.BeginScope(new { TenantId = tenantId });
-        await next(context);
+        await next.InvokeAsync(context);
     }
 }
 ```

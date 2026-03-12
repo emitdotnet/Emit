@@ -34,7 +34,7 @@ builder.Services.AddEmit(emit =>
 
 `Configure` is required. You provide the `IMongoClient` and `IMongoDatabase`; Emit does not create or manage the connection.
 
-`UseOutbox()` and `UseDistributedLock()` are independent. Enable whichever you need. Calling `UseOutbox()` here provisions the outbox infrastructure (collections, background worker). Each producer must also call `UseOutbox()` individually to route messages through the outbox — see [Producers](../kafka/producers/).
+`UseOutbox()` and `UseDistributedLock()` are independent. Enable whichever you need. Calling `UseOutbox()` here provisions the outbox infrastructure (collections, background worker). Each producer must also call `UseOutbox()` individually to route messages through the outbox — see [Producers](../../kafka/producers/).
 
 ## Collections
 
@@ -81,4 +81,4 @@ Pass a configuration action to `UseOutbox()` to tune the worker:
 })
 ```
 
-See [Transactional Outbox](../outbox/) for the full option reference.
+See [Transactional Outbox](../../outbox/) for the full option reference.

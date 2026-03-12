@@ -17,7 +17,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new EmitMetrics(null, enrichment);
-        var middleware = new ConsumeMetricsMiddleware<string>(metrics);
+        var middleware = new ConsumeMetricsMiddleware<string>(metrics, "test-consumer");
         var listener = new MeterListener();
         var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
 
@@ -35,26 +35,18 @@ public sealed class ConsumeMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestInboundContext<string>
-        {
-            MessageId = "test-id",
-            Timestamp = DateTimeOffset.UtcNow,
-            CancellationToken = CancellationToken.None,
-            Services = new TestServiceProvider(),
-            Message = "test-message"
-        };
-
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
+        var testServices = new TestServiceProvider();
+        var context = CreateContext(testServices, "kafka");
 
         var nextInvoked = false;
-        Task Next(InboundContext<string> ctx)
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
         {
             nextInvoked = true;
             return Task.CompletedTask;
-        }
+        });
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.True(nextInvoked);
@@ -64,11 +56,13 @@ public sealed class ConsumeMetricsMiddlewareTests
         Assert.True((double)duration.Value > 0);
         Assert.Contains(duration.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
         Assert.Contains(duration.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+        Assert.Contains(duration.Tags, t => t.Key == "consumer" && t.Value?.ToString() == "test-consumer");
 
         var completed = captured.First(c => c.Name == "emit.pipeline.consume.completed");
         Assert.Equal(1L, completed.Value);
         Assert.Contains(completed.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
         Assert.Contains(completed.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+        Assert.Contains(completed.Tags, t => t.Key == "consumer" && t.Value?.ToString() == "test-consumer");
 
         listener.Dispose();
     }
@@ -79,7 +73,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new EmitMetrics(null, enrichment);
-        var middleware = new ConsumeMetricsMiddleware<string>(metrics);
+        var middleware = new ConsumeMetricsMiddleware<string>(metrics, "test-consumer");
         var listener = new MeterListener();
         var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
 
@@ -97,22 +91,14 @@ public sealed class ConsumeMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestInboundContext<string>
-        {
-            MessageId = "test-id",
-            Timestamp = DateTimeOffset.UtcNow,
-            CancellationToken = CancellationToken.None,
-            Services = new TestServiceProvider(),
-            Message = "test-message"
-        };
-
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
+        var testServices = new TestServiceProvider();
+        var context = CreateContext(testServices, "kafka");
 
         var expectedException = new InvalidOperationException("Test failure");
-        Task Next(InboundContext<string> ctx) => throw expectedException;
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => throw expectedException);
 
         // Act & Assert
-        var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, Next));
+        var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
         Assert.Same(expectedException, actualException);
 
         Assert.Equal(2, captured.Count);
@@ -141,7 +127,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         };
         var enrichment = new EmitMetricsEnrichment(enrichmentTags);
         var metrics = new EmitMetrics(null, enrichment);
-        var middleware = new ConsumeMetricsMiddleware<string>(metrics);
+        var middleware = new ConsumeMetricsMiddleware<string>(metrics, "test-consumer");
         var listener = new MeterListener();
         var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
 
@@ -159,21 +145,13 @@ public sealed class ConsumeMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestInboundContext<string>
-        {
-            MessageId = "test-id",
-            Timestamp = DateTimeOffset.UtcNow,
-            CancellationToken = CancellationToken.None,
-            Services = new TestServiceProvider(),
-            Message = "test-message"
-        };
+        var testServices = new TestServiceProvider();
+        var context = CreateContext(testServices, "kafka");
 
-        context.Features.Set<IProviderIdentifierFeature>(new TestProviderIdentifierFeature { ProviderId = "kafka" });
-
-        Task Next(InboundContext<string> ctx) => Task.CompletedTask;
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.Equal(2, captured.Count);
@@ -190,12 +168,12 @@ public sealed class ConsumeMetricsMiddlewareTests
     }
 
     [Fact]
-    public async Task GivenNoProviderIdentifierFeature_WhenInvoking_ThenUsesUnknownAsProvider()
+    public async Task GivenBakedIdentifier_WhenInvoking_ThenUsesIdentifierInMetrics()
     {
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new EmitMetrics(null, enrichment);
-        var middleware = new ConsumeMetricsMiddleware<string>(metrics);
+        var middleware = new ConsumeMetricsMiddleware<string>(metrics, "my-consumer");
         var listener = new MeterListener();
         var captured = new List<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
 
@@ -213,37 +191,48 @@ public sealed class ConsumeMetricsMiddlewareTests
 
         listener.Start();
 
-        var context = new TestInboundContext<string>
-        {
-            MessageId = "test-id",
-            Timestamp = DateTimeOffset.UtcNow,
-            CancellationToken = CancellationToken.None,
-            Services = new TestServiceProvider(),
-            Message = "test-message"
-        };
+        var testServices = new TestServiceProvider();
+        var context = CreateContext(testServices, "test-provider");
 
-        Task Next(InboundContext<string> ctx) => Task.CompletedTask;
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
 
         // Act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // Assert
         Assert.Equal(2, captured.Count);
 
         foreach (var measurement in captured)
         {
-            Assert.Contains(measurement.Tags, t => t.Key == "provider" && t.Value?.ToString() == "unknown");
+            Assert.Contains(measurement.Tags, t => t.Key == "provider" && t.Value?.ToString() == "test-provider");
+            Assert.Contains(measurement.Tags, t => t.Key == "consumer" && t.Value?.ToString() == "my-consumer");
         }
 
         listener.Dispose();
     }
 
-    private sealed class TestInboundContext<T> : InboundContext<T>;
-
-    private sealed class TestProviderIdentifierFeature : IProviderIdentifierFeature
+    private static TestConsumeContext<string> CreateContext(IServiceProvider services, string providerId) => new()
     {
-        public required string ProviderId { get; init; }
-    }
+        MessageId = "test-id",
+        Timestamp = DateTimeOffset.UtcNow,
+        CancellationToken = CancellationToken.None,
+        Services = services,
+        Message = "test-message",
+        DestinationAddress = EmitEndpointAddress.ForEntity(providerId, "broker", 9092, "test-topic"),
+        TransportContext = new TestTransportContext
+        {
+            MessageId = "test-id",
+            Timestamp = DateTimeOffset.UtcNow,
+            CancellationToken = CancellationToken.None,
+            Services = services,
+            RawKey = null,
+            RawValue = null,
+            Headers = [],
+            ProviderId = providerId,
+        },
+    };
+
+    private sealed class TestConsumeContext<T> : ConsumeContext<T>;
 
     private sealed class TestServiceProvider : IServiceProvider
     {

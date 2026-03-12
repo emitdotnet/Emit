@@ -1,23 +1,28 @@
 ---
-title: Feature Collection
-description: The type-safe feature bag on MessageContext and all built-in features.
+title: Feature Collection & Payload Bag
+description: The type-safe extension mechanisms on MessageContext for sharing data across middleware.
 ---
 
-Every `MessageContext` carries an `IFeatureCollection`, a type-safe dictionary of named capabilities attached to the current message. Middleware and observers use it to share information without knowing about each other, and without coupling to a specific transport.
+Every `MessageContext` carries two extension mechanisms for sharing data across middleware without coupling to a specific transport:
 
-## Reading a feature
+- **Feature collection** (`IFeatureCollection`): a type-safe dictionary of named capabilities, accessed via `context.Features`.
+- **Payload bag** (`SetPayload` / `TryGetPayload`): a type-keyed dictionary for transport-specific objects, accessed directly on the context.
+
+## Feature collection
+
+### Reading a feature
 
 ```csharp
-var feature = context.Features.Get<IRetryAttemptFeature>();
+var feature = context.Features.Get<IResponseFeature>();
 if (feature is not null)
 {
-    logger.LogDebug("Attempt {Attempt}", feature.Attempt);
+    await feature.RespondAsync(result);
 }
 ```
 
-`Get<T>` returns `null` if the feature is not present. Features are optional by design: a Kafka consumer has `IKeyFeature<TKey>` but a mediator request does not.
+`Get<T>` returns `null` if the feature is not present. Features are optional by design.
 
-## Writing a feature
+### Writing a feature
 
 ```csharp
 context.Features.Set<IMyCustomFeature>(new MyCustomFeature(value));
@@ -25,65 +30,9 @@ context.Features.Set<IMyCustomFeature>(new MyCustomFeature(value));
 
 Later middleware in the same pipeline can read it.
 
-## Built-in features
+### Built-in features
 
-### IActivityFeature
-
-W3C trace context. Set by the tracing middleware when OpenTelemetry is enabled. Present on all context types.
-
-| Member | Description |
-|---|---|
-| `TraceParent` | W3C traceparent header (`"00-traceid-spanid-flags"`) |
-| `TraceState` | W3C tracestate header |
-| `Baggage` | Distributed baggage as key-value pairs |
-
-### IConsumerIdentityFeature
-
-Identifies the handler that will process (or processed) this message. Set before the consumer is invoked; updated by routers after route selection. Present on inbound contexts.
-
-| Member | Description |
-|---|---|
-| `Identifier` | Consumer type name, or router ID |
-| `Kind` | `Direct` or `Router` |
-| `ConsumerType` | Resolved handler type |
-| `RouteKey` | Matched route key (routers only) |
-
-### IKeyFeature\<TKey\>
-
-The typed message key. `Key` holds the deserialized key of type `TKey`. Present on Kafka inbound and outbound contexts.
-
-### IKeyTypeFeature
-
-The CLR type of the message key, for code that cannot use generics. `KeyType` returns `System.Type`. Present wherever `IKeyFeature<TKey>` is present.
-
-### IMessageSourceFeature
-
-Transport-agnostic source metadata as a string dictionary. Present on inbound contexts.
-
-`Properties` contains transport-specific values. For Kafka, this includes `topic`, `partition`, `offset`, and `provider`. Useful for logging and building DLQ headers without hardcoding transport details.
-
-### IRetryAttemptFeature
-
-The current retry attempt count. `Attempt` is `0` on the initial attempt, `1` on the first retry, and so on. Set by error handling middleware; not present on the initial attempt.
-
-### IHeadersFeature
-
-Transport headers as `IReadOnlyList<KeyValuePair<string, string>>`. Present on Kafka inbound and outbound contexts.
-
-### IRawBytesFeature
-
-The raw serialized bytes of the message. Present on Kafka inbound contexts; used internally by the DLQ sink to forward bytes without re-serializing.
-
-| Member | Description |
-|---|---|
-| `RawKey` | Serialized key bytes, or `null` |
-| `RawValue` | Serialized value bytes, or `null` |
-
-### IProviderIdentifierFeature
-
-The string identifier of the current provider. `ProviderId` returns the provider name (for example, `"kafka"`). Present on all contexts.
-
-### IResponseFeature
+#### IResponseFeature
 
 For request-response patterns (mediator), carries the response back to the caller. Not present for Kafka consumers.
 
@@ -92,17 +41,71 @@ For request-response patterns (mediator), carries the response back to the calle
 | `HasResponded` | Whether a response has already been set |
 | `RespondAsync<TResponse>` | Sets the response and completes the request |
 
-## Feature presence by context type
+## Payload bag
 
-| Feature | Kafka inbound | Kafka outbound | Mediator |
-|---|---|---|---|
-| `IActivityFeature` | Yes | Yes | Yes |
-| `IConsumerIdentityFeature` | Yes | No | Yes |
-| `IKeyFeature<TKey>` | Yes | Yes | No |
-| `IKeyTypeFeature` | Yes | Yes | No |
-| `IMessageSourceFeature` | Yes | No | No |
-| `IRetryAttemptFeature` | On retry | No | No |
-| `IHeadersFeature` | Yes | Yes | No |
-| `IRawBytesFeature` | Yes | No | No |
-| `IProviderIdentifierFeature` | Yes | Yes | Yes |
-| `IResponseFeature` | No | No | Yes |
+The payload bag stores transport-specific objects keyed by their CLR type. Unlike the feature collection (which uses interface-based features), the payload bag stores concrete types directly.
+
+### Writing a payload
+
+```csharp
+context.SetPayload(myObject);
+```
+
+### Reading a payload
+
+```csharp
+var payload = context.TryGetPayload<MyType>();
+if (payload is not null)
+{
+    // use it
+}
+```
+
+### Built-in payloads
+
+#### KafkaTransportContext\<TKey\>
+
+On the **consume side**, `KafkaTransportContext<TKey>` is set as the `TransportContext` on `ConsumeContext<T>`. It carries all Kafka-specific metadata plus the deserialized message key:
+
+```csharp
+if (context.TransportContext is KafkaTransportContext<string> kafka)
+{
+    logger.LogDebug("Key: {Key}, Topic: {Topic}, Partition: {Partition}, Offset: {Offset}",
+        kafka.Key, kafka.Topic, kafka.Partition, kafka.Offset);
+}
+```
+
+On the **produce side**, the same type is stored as a payload on `SendContext<T>` so the terminal can extract the key:
+
+```csharp
+var kafka = context.TryGetPayload<KafkaTransportContext<string>>();
+// kafka.Key contains the message key
+```
+
+## Context properties
+
+Most metadata that middleware needs is available directly on the context, not through features or payloads:
+
+| Property | Location | Description |
+|---|---|---|
+| `DestinationAddress` | `MessageContext` | Transport URI (e.g. `kafka://broker:9092/orders`) |
+| `SourceAddress` | `MessageContext` | Sender address, propagated via headers |
+| `Message` | `MessageContext<T>` | The typed message payload |
+| `MessageId` | `MessageContext` | Unique message identifier |
+| `Timestamp` | `MessageContext` | When the message was created or received |
+| `Headers` | `ConsumeContext<T>` | Message headers (delegated from `TransportContext`) |
+| `RetryAttempt` | `ConsumeContext<T>` | Current retry count (0 on first attempt) |
+| `Transaction` | `ConsumeContext<T>` | Active transaction context, if any |
+| `TransportContext` | `ConsumeContext<T>` | Full transport metadata (raw bytes, headers, provider ID) |
+
+### Extracting transport info from URIs
+
+Middleware can derive transport-agnostic information from `DestinationAddress` without knowing which transport is in use:
+
+```csharp
+// Get the transport scheme (e.g. "kafka")
+var provider = EmitEndpointAddress.GetScheme(context.DestinationAddress);
+
+// Get the entity name (e.g. topic name "orders")
+var destination = EmitEndpointAddress.GetEntityName(context.DestinationAddress);
+```

@@ -28,8 +28,8 @@ public sealed class EmitModelBuilder
     /// <list type="bullet">
     /// <item><description>UUID type with <c>gen_random_uuid()</c> default for entry IDs</description></item>
     /// <item><description>BIGINT IDENTITY column for sequence numbers</description></item>
-    /// <item><description>JSONB column for properties</description></item>
-    /// <item><description>BYTEA column for payload</description></item>
+    /// <item><description>BYTEA column for message body</description></item>
+    /// <item><description>JSONB columns for headers and properties</description></item>
     /// </list>
     /// </para>
     /// </remarks>
@@ -45,8 +45,11 @@ public sealed class EmitModelBuilder
         outboxEntry.Property(e => e.Sequence)
             .UseIdentityByDefaultColumn();
 
-        outboxEntry.Property(e => e.Payload)
+        outboxEntry.Property(e => e.Body)
             .HasColumnType("bytea");
+
+        outboxEntry.Property(e => e.Headers)
+            .HasColumnType("jsonb");
 
         outboxEntry.Property(e => e.Properties)
             .HasColumnType("jsonb");

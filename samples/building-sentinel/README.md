@@ -8,8 +8,11 @@ You don't need to do anything to see it work. A simulator fires realistic events
 
 - **Transactional outbox** — the event is saved to the database and enqueued to Kafka in one atomic transaction. Kill the app mid-flight; nothing is lost.
 - **Mediator** — the API endpoint dispatches a command and stays out of everything else.
+- **Auto-provisioning** — `kafka.AutoProvision()` creates all required Kafka topics at startup. No manual topic creation needed.
+- **Dead-letter topic** — `kafka.DeadLetter("building.events.dlt")` routes permanently failed messages to a dead-letter topic after retries are exhausted.
 - **Kafka router consumer** (`building.classifier`) — routes on `eventType`. Only `access.denied` events are handled; everything else is discarded. This is the point of the router.
 - **Kafka simple consumer** (`building.watchdog`) — handles every single event, upserts a heartbeat per device. Total contrast to the router above.
+- **Health checks** — `/health` endpoint reports Kafka and database (MongoDB or PostgreSQL) health.
 - **OpenTelemetry** — Prometheus metrics + Tempo traces, explored directly in Grafana.
 - **Dual persistence** — pick MongoDB or PostgreSQL at startup. All business logic is shared.
 

@@ -3,7 +3,6 @@ namespace Emit.Kafka;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.Kafka.Consumer;
-using Emit.Pipeline;
 
 /// <summary>
 /// Kafka producer that invokes the outbound middleware pipeline before serializing and producing.
@@ -13,8 +12,9 @@ using Emit.Pipeline;
 /// <typeparam name="TKey">The message key type.</typeparam>
 /// <typeparam name="TValue">The message value type.</typeparam>
 internal sealed class KafkaPipelineProducer<TKey, TValue>(
-    MessageDelegate<OutboundContext<TValue>> pipeline,
-    string topic,
+    IMiddlewarePipeline<SendContext<TValue>> pipeline,
+    Uri destinationAddress,
+    Uri hostAddress,
     IServiceProvider services,
     TimeProvider timeProvider) : IEventProducer<TKey, TValue>
 {
@@ -23,22 +23,43 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var context = new OutboundContext<TValue>
+        var context = new SendContext<TValue>
         {
             MessageId = Guid.NewGuid().ToString(),
             Timestamp = timeProvider.GetUtcNow(),
             CancellationToken = cancellationToken,
             Services = services,
             Message = message.Value,
+            DestinationAddress = destinationAddress,
+            SourceAddress = hostAddress,
         };
-        var keyFeature = new KeyFeature<TKey>(message.Key);
-        context.Features.Set<IKeyFeature<TKey>>(keyFeature);
-        context.Features.Set<IKeyTypeFeature>(keyFeature);
-        var kafkaFeature = new KafkaFeature(topic, 0, 0);
-        context.Features.Set<IMessageSourceFeature>(kafkaFeature);
-        context.Features.Set<IKafkaFeature>(kafkaFeature);
-        context.Features.Set<IHeadersFeature>(new HeadersFeature(message.Headers));
 
-        await pipeline(context).ConfigureAwait(false);
+        // Set Kafka transport context as payload so the terminal can extract the key
+        context.SetPayload(new KafkaTransportContext<TKey>
+        {
+            Key = message.Key,
+            MessageId = context.MessageId,
+            Timestamp = context.Timestamp,
+            CancellationToken = cancellationToken,
+            Services = services,
+            RawKey = null,
+            RawValue = null,
+            Headers = [],
+            ProviderId = Provider.Identifier,
+            Topic = EmitEndpointAddress.GetEntityName(destinationAddress) ?? "",
+            Partition = -1,
+            Offset = -1,
+            GroupId = "",
+            DestinationAddress = destinationAddress,
+            SourceAddress = hostAddress,
+        });
+
+        // Copy user-provided headers to context
+        if (message.Headers is { Count: > 0 })
+        {
+            context.Headers.AddRange(message.Headers);
+        }
+
+        await pipeline.InvokeAsync(context).ConfigureAwait(false);
     }
 }

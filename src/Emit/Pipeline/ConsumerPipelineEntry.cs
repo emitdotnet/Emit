@@ -5,8 +5,7 @@ using Emit.Abstractions.Pipeline;
 
 /// <summary>
 /// Pairs consumer identity metadata with its fully-composed middleware pipeline delegate.
-/// Used by consumer workers to set <see cref="IConsumerIdentityFeature"/> before invoking
-/// each pipeline.
+/// Used by consumer workers to dispatch each message through the consume pipeline.
 /// </summary>
 /// <typeparam name="TMessage">The message value type.</typeparam>
 public sealed class ConsumerPipelineEntry<TMessage>
@@ -29,7 +28,7 @@ public sealed class ConsumerPipelineEntry<TMessage>
     public Type? ConsumerType { get; init; }
 
     /// <summary>
-    /// The fully-composed middleware pipeline delegate.
+    /// The fully-composed middleware pipeline.
     /// </summary>
-    public required MessageDelegate<InboundContext<TMessage>> Pipeline { get; init; }
+    public required IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline { get; init; }
 }

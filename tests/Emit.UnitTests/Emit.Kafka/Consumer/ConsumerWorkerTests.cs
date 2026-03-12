@@ -1,6 +1,7 @@
 namespace Emit.Kafka.Tests.Consumer;
 
 using System.Threading.Channels;
+using Emit.UnitTests;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
@@ -161,7 +162,8 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Equal("test-key", consumer.CapturedContext.Features.Get<IKeyFeature<string>>()!.Key);
+        var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(consumer.CapturedContext.TransportContext);
+        Assert.Equal("test-key", kafkaContext.Key);
         Assert.Equal("test-value", consumer.CapturedContext.Message);
     }
 
@@ -322,7 +324,7 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Equal(2, consumer.CapturedContext.Features.Get<IHeadersFeature>()!.Headers.Count);
+        Assert.Equal(2, consumer.CapturedContext.Headers.Count);
     }
 
     [Fact]
@@ -343,7 +345,7 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Empty(consumer.CapturedContext.Features.Get<IHeadersFeature>()!.Headers);
+        Assert.Empty(consumer.CapturedContext.Headers);
     }
 
     [Fact]
@@ -374,11 +376,12 @@ public sealed class ConsumerWorkerTests
         // Arrange
         var keyBytes = System.Text.Encoding.UTF8.GetBytes("raw-key");
         var valueBytes = System.Text.Encoding.UTF8.GetBytes("raw-value");
-        IRawBytesFeature? capturedFeature = null;
+        TransportContext? capturedTransport = null;
         var registration = new ConsumerGroupRegistration<string, string>
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () =>
@@ -388,11 +391,11 @@ public sealed class ConsumerWorkerTests
                     Identifier = "TestConsumer",
                     Kind = ConsumerKind.Direct,
                     ConsumerType = typeof(TestConsumer),
-                    Pipeline = ctx =>
+                    Pipeline = new TestPipeline<ConsumeContext<string>>(ctx =>
                     {
-                        capturedFeature = ctx.Features.Get<IRawBytesFeature>();
+                        capturedTransport = ctx.TransportContext;
                         return Task.CompletedTask;
-                    }
+                    })
                 }
             ],
             WorkerCount = 1,
@@ -402,7 +405,6 @@ public sealed class ConsumerWorkerTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
         var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
         var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
@@ -415,9 +417,9 @@ public sealed class ConsumerWorkerTests
         await worker.RunAsync(cts.Token);
 
         // Assert
-        Assert.NotNull(capturedFeature);
-        Assert.Equal(keyBytes, capturedFeature.RawKey);
-        Assert.Equal(valueBytes, capturedFeature.RawValue);
+        Assert.NotNull(capturedTransport);
+        Assert.Equal(keyBytes, capturedTransport.RawKey);
+        Assert.Equal(valueBytes, capturedTransport.RawValue);
     }
 
     [Fact]
@@ -432,7 +434,7 @@ public sealed class ConsumerWorkerTests
         var mockScopeFactory = new Mock<IServiceScopeFactory>();
         mockScopeFactory.Setup(f => f.CreateScope())
             .Returns(() => CreateScope(typeof(ThrowOnNthCallConsumer), consumer));
-        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
+        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, mockScopeFactory.Object, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
         var key = System.Text.Encoding.UTF8.GetBytes("same-key");
 
         // Simulate ConsumerGroupWorker enqueuing offsets before dispatching
@@ -520,12 +522,12 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterWithExplicitTopic_ThenProducesToDlq()
+    public async Task GivenDeserializationError_WhenDeadLetterWithSink_ThenProducesToDlq()
     {
         // Arrange
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -539,33 +541,8 @@ public sealed class ConsumerWorkerTests
         mockSink.Verify(s => s.ProduceAsync(
             It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
             It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            "errors.dlt",
             It.IsAny<CancellationToken>()), Times.Once);
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
-    }
-
-    [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterWithConvention_ThenUsesConventionTopic()
-    {
-        // Arrange
-        var mockSink = new Mock<IDeadLetterSink>();
-        var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter(),
-            resolveDeadLetterTopic: topic => $"{topic}.dlt");
-        var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
-        worker.Writer.TryWrite(CreateConsumeResult());
-        worker.Complete();
-        using var cts = new CancellationTokenSource();
-
-        // Act
-        await worker.RunAsync(cts.Token);
-
-        // Assert
-        mockSink.Verify(s => s.ProduceAsync(
-            It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            "test-topic.dlt",
-            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -573,7 +550,7 @@ public sealed class ConsumerWorkerTests
     {
         // Arrange — dead letter configured but no IDeadLetterSink provided
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: null);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -588,42 +565,17 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterButNoTopicResolvable_ThenDiscardsAndReportsOffset()
-    {
-        // Arrange — dead letter with no explicit topic and no convention
-        var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter());
-        var mockSink = new Mock<IDeadLetterSink>();
-        var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
-        var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
-        worker.Writer.TryWrite(CreateConsumeResult());
-        worker.Complete();
-        using var cts = new CancellationTokenSource();
-
-        // Act
-        await worker.RunAsync(cts.Token);
-
-        // Assert — cannot resolve topic, falls back to discard
-        mockSink.Verify(s => s.ProduceAsync(
-            It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            It.IsAny<string>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-        mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
-    }
-
-    [Fact]
     public async Task GivenDeserializationError_WhenDeadLettered_ThenHeadersContainDiagnosticInfo()
     {
         // Arrange
         IReadOnlyList<KeyValuePair<string, string>>? capturedHeaders = null;
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, string, CancellationToken>(
-                (_, _, headers, _, _) => capturedHeaders = headers);
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, CancellationToken>(
+                (_, _, headers, _) => capturedHeaders = headers);
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
         worker.Complete();
@@ -648,13 +600,13 @@ public sealed class ConsumerWorkerTests
     {
         // Arrange
         IReadOnlyList<KeyValuePair<string, string>>? capturedHeaders = null;
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, string, CancellationToken>(
-                (_, _, headers, _, _) => capturedHeaders = headers);
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .Callback<byte[]?, byte[]?, IReadOnlyList<KeyValuePair<string, string>>, CancellationToken>(
+                (_, _, headers, _) => capturedHeaders = headers);
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var worker = CreateWorker(registration: registration, deadLetterSink: mockSink.Object);
         var originalHeaders = new ConfluentKafka.Headers
         {
@@ -676,12 +628,12 @@ public sealed class ConsumerWorkerTests
     public async Task GivenDeserializationError_WhenDlqProduceFails_ThenOffsetStillReportedAndMessageDiscarded()
     {
         // Arrange — DLQ produce throws, message should still be discarded
-        var mockSink = new Mock<IDeadLetterSink>();
+        var mockSink = CreateMockDeadLetterSink();
         mockSink.Setup(s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("DLQ produce failed"));
         var registration = CreateRegistrationWithFailingDeserializer(
-            deserializationErrorAction: ErrorAction.DeadLetter("errors.dlt"));
+            deserializationErrorAction: ErrorAction.DeadLetter());
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
         var worker = CreateWorker(registration: registration, offsetManager: mockOffsetManager.Object, deadLetterSink: mockSink.Object);
         worker.Writer.TryWrite(CreateConsumeResult());
@@ -705,9 +657,10 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = failingKeyDeserializer,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "CapturingConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(CapturingConsumer), Pipeline = new HandlerInvoker<string>(typeof(CapturingConsumer)).InvokeAsync }],
+            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "CapturingConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(CapturingConsumer), Pipeline = new HandlerInvoker<string>(typeof(CapturingConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = 32,
@@ -716,7 +669,6 @@ public sealed class ConsumerWorkerTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = ErrorAction.Discard(),
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
         var scopeFactory = CreateScopeFactory(typeof(CapturingConsumer), consumer);
         var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
@@ -736,16 +688,16 @@ public sealed class ConsumerWorkerTests
     }
 
     private static ConsumerGroupRegistration<string, string> CreateRegistrationWithFailingDeserializer(
-        ErrorAction? deserializationErrorAction = null,
-        Func<string, string?>? resolveDeadLetterTopic = null)
+        ErrorAction? deserializationErrorAction = null)
     {
         return new ConsumerGroupRegistration<string, string>
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = new AlwaysThrowingDeserializer(),
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)).InvokeAsync }],
+            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = 32,
@@ -754,8 +706,6 @@ public sealed class ConsumerWorkerTests
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = deserializationErrorAction,
-            ResolveDeadLetterTopic = resolveDeadLetterTopic,
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 
@@ -768,9 +718,10 @@ public sealed class ConsumerWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
-            BuildConsumerPipelines = () => types.Select(t => new ConsumerPipelineEntry<string> { Identifier = t.Name, Kind = ConsumerKind.Direct, ConsumerType = t, Pipeline = new HandlerInvoker<string>(t).InvokeAsync }).ToArray(),
+            BuildConsumerPipelines = () => types.Select(t => new ConsumerPipelineEntry<string> { Identifier = t.Name, Kind = ConsumerKind.Direct, ConsumerType = t, Pipeline = new HandlerInvoker<string>(t) }).ToArray(),
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = bufferSize,
@@ -778,13 +729,20 @@ public sealed class ConsumerWorkerTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 
     private static KafkaConsumerObserverInvoker CreateObserverInvoker()
     {
         return new KafkaConsumerObserverInvoker([], NullLogger<KafkaConsumerObserverInvoker>.Instance);
+    }
+
+    private static Mock<IDeadLetterSink> CreateMockDeadLetterSink()
+    {
+        var mock = new Mock<IDeadLetterSink>();
+        mock.Setup(s => s.DestinationAddress)
+            .Returns(new Uri("kafka://broker:9092/errors.dlt"));
+        return mock;
     }
 
     private static KafkaMetrics CreateKafkaMetrics() => new(null, new EmitMetricsEnrichment());
@@ -812,7 +770,7 @@ public sealed class ConsumerWorkerTests
         var committer = CreateCommitter();
         offsetManager ??= new OffsetManager(committer);
         scopeFactory ??= Mock.Of<IServiceScopeFactory>();
-        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
+        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
     }
 
     private static ConfluentKafka.ConsumeResult<byte[], byte[]> CreateConsumeResult(
@@ -857,9 +815,9 @@ public sealed class ConsumerWorkerTests
 
     private sealed class CapturingConsumer : IConsumer<string>
     {
-        public InboundContext<string>? CapturedContext { get; private set; }
+        public ConsumeContext<string>? CapturedContext { get; private set; }
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             CapturedContext = context;
             return Task.CompletedTask;
@@ -868,12 +826,12 @@ public sealed class ConsumerWorkerTests
 
     private sealed class TestConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class ThrowingConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Test failure");
     }
 
@@ -888,7 +846,7 @@ public sealed class ConsumerWorkerTests
             this.name = name;
         }
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             callOrder.Add(name);
             return Task.CompletedTask;
@@ -899,7 +857,7 @@ public sealed class ConsumerWorkerTests
     {
         private int callCount;
 
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (Interlocked.Increment(ref callCount) == throwOnCall)
             {
@@ -914,7 +872,7 @@ public sealed class ConsumerWorkerTests
     {
         public TaskCompletionSource Started { get; } = new();
 
-        public async Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             Started.SetResult();
             await Task.Delay(Timeout.Infinite, cancellationToken);

@@ -64,7 +64,8 @@ public sealed class ConsumerGroupWorkerTests
         {
             TopicName = "test-topic",
             GroupId = "test-group",
-            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)).InvokeAsync }],
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
+            BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
             WorkerCount = 1,
             WorkerDistribution = WorkerDistribution.ByKeyHash,
             BufferSize = 32,
@@ -72,12 +73,11 @@ public sealed class ConsumerGroupWorkerTests
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
-            DeadLetterTopicMap = DeadLetterTopicMap.Empty,
         };
     }
 
     private sealed class TestConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

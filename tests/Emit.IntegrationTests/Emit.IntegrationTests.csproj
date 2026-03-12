@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Emit.Kafka\Emit.Kafka.csproj" />
     <ProjectReference Include="..\..\src\Emit.MongoDB\Emit.MongoDB.csproj" />
     <ProjectReference Include="..\..\src\Emit.EntityFrameworkCore\Emit.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\Emit.Mediator\Emit.Mediator.csproj" />
     <ProjectReference Include="..\..\src\Emit.Testing\Emit.Testing.csproj" />
   </ItemGroup>
 

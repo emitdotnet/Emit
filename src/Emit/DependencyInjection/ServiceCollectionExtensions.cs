@@ -84,12 +84,13 @@ public static class ServiceCollectionExtensions
 
         // Auto-insert tracing middleware first (outermost), then metrics, then observers
         builder.OutboundPipeline.Use(typeof(Tracing.ProduceTracingMiddleware<>));
-        builder.InboundPipeline.Use(typeof(Tracing.ConsumeTracingMiddleware<>));
-
         builder.OutboundPipeline.Use(typeof(ProduceMetricsMiddleware<>));
         builder.OutboundPipeline.Use(typeof(ProduceObserverMiddleware<>));
-        builder.InboundPipeline.Use(typeof(ConsumeMetricsMiddleware<>));
-        builder.InboundPipeline.Use(typeof(ConsumeObserverMiddleware<>));
+
+        // Consume-specific middleware (tracing, metrics, observers) are created directly
+        // by ConsumerPipelineComposer with baked consumer identity — not in the global
+        // InboundPipeline — because they implement IMiddleware<ConsumeContext<T>> which
+        // is incompatible with the mediator's MediatorContext<T> pipeline.
 
         configure(builder);
         builder.Validate();

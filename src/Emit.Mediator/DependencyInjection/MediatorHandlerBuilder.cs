@@ -1,6 +1,5 @@
 namespace Emit.Mediator.DependencyInjection;
 
-using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.Pipeline;
 
@@ -12,7 +11,7 @@ using Emit.Pipeline;
 /// providing compile-time type safety.
 /// </summary>
 /// <typeparam name="TRequest">The request type handled by the associated handler.</typeparam>
-public sealed class MediatorHandlerBuilder<TRequest> : IInboundConfigurable<TRequest>
+public sealed class MediatorHandlerBuilder<TRequest> : IInboundPipelineConfigurable
 {
     /// <inheritdoc />
     IMessagePipelineBuilder IInboundPipelineConfigurable.InboundPipeline => Pipeline;
@@ -30,16 +29,25 @@ public sealed class MediatorHandlerBuilder<TRequest> : IInboundConfigurable<TReq
     {
     }
 
-    /// <inheritdoc />
-    public IInboundConfigurable<TRequest> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class, IMiddleware<InboundContext<TRequest>>
+    /// <summary>
+    /// Registers a middleware type on this handler's pipeline.
+    /// </summary>
+    /// <typeparam name="TMiddleware">The middleware type.</typeparam>
+    /// <param name="lifetime">Controls when the middleware instance is created.</param>
+    /// <returns>This builder for chaining.</returns>
+    public MediatorHandlerBuilder<TRequest> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
+        where TMiddleware : class, IMiddleware<MediatorContext<TRequest>>
     {
         Pipeline.Use(typeof(TMiddleware), lifetime);
         return this;
     }
 
-    /// <inheritdoc />
-    public IInboundConfigurable<TRequest> Filter<TFilter>()
+    /// <summary>
+    /// Registers a consumer filter on this handler's pipeline.
+    /// </summary>
+    /// <typeparam name="TFilter">The filter type.</typeparam>
+    /// <returns>This builder for chaining.</returns>
+    public MediatorHandlerBuilder<TRequest> Filter<TFilter>()
         where TFilter : class, IConsumerFilter<TRequest>
     {
         Pipeline.AddConsumerFilter<TRequest, TFilter>();

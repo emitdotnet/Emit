@@ -9,7 +9,7 @@ public interface IConsumer<TValue>
     /// <summary>
     /// Processes a single consumed message.
     /// </summary>
-    /// <param name="context">The inbound context carrying the message and pipeline metadata.</param>
+    /// <param name="context">The consume context carrying the message and pipeline metadata.</param>
     /// <param name="cancellationToken">Cancellation token for this operation.</param>
-    Task ConsumeAsync(InboundContext<TValue> context, CancellationToken cancellationToken);
+    Task ConsumeAsync(ConsumeContext<TValue> context, CancellationToken cancellationToken);
 }

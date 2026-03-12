@@ -15,27 +15,27 @@ public sealed class KafkaConsumerGroupBuilderTests
 {
     private sealed class TestConsumerA : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestConsumerB : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestConsumerC : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class TestMiddleware : IMiddleware<InboundContext<string>>
+    private sealed class TestMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next) => next(context);
+        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) => next.InvokeAsync(context);
     }
 
-    private sealed class AnotherTestMiddleware : IMiddleware<InboundContext<string>>
+    private sealed class AnotherTestMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(InboundContext<string> context, MessageDelegate<InboundContext<string>> next) => next(context);
+        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) => next.InvokeAsync(context);
     }
 
     [Fact]
@@ -518,45 +518,45 @@ public sealed class KafkaConsumerGroupBuilderTests
     // ── Group-level Validate tests ──
 
     [Fact]
-    public void GivenValidateClassBased_WhenCalled_ThenStoresGroupValidation()
+    public void GivenValidateClassBased_WhenCalled_ThenStoresValidationModule()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate<TestValidator>(v => v.Discard());
+        builder.Validate<TestValidator>();
 
         // Assert
-        Assert.NotNull(builder.GroupValidation);
-        Assert.Equal(typeof(TestValidator), builder.GroupValidation.ValidatorType);
+        Assert.NotNull(builder.Validation);
+        Assert.True(builder.Validation.IsConfigured);
     }
 
     [Fact]
-    public void GivenValidateAsyncDelegate_WhenCalled_ThenStoresGroupValidation()
+    public void GivenValidateAsyncDelegate_WhenCalled_ThenStoresValidationModule()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate((_, _) => Task.FromResult(MessageValidationResult.Success), v => v.Discard());
+        builder.Validate((_, _) => Task.FromResult(MessageValidationResult.Success));
 
         // Assert
-        Assert.NotNull(builder.GroupValidation);
-        Assert.NotNull(builder.GroupValidation.ValidatorDelegate);
+        Assert.NotNull(builder.Validation);
+        Assert.True(builder.Validation.IsConfigured);
     }
 
     [Fact]
-    public void GivenValidateSyncDelegate_WhenCalled_ThenStoresGroupValidation()
+    public void GivenValidateSyncDelegate_WhenCalled_ThenStoresValidationModule()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate(_ => MessageValidationResult.Success, v => v.Discard());
+        builder.Validate(_ => MessageValidationResult.Success);
 
         // Assert
-        Assert.NotNull(builder.GroupValidation);
-        Assert.NotNull(builder.GroupValidation.ValidatorDelegate);
+        Assert.NotNull(builder.Validation);
+        Assert.True(builder.Validation.IsConfigured);
     }
 
     [Fact]
@@ -566,7 +566,7 @@ public sealed class KafkaConsumerGroupBuilderTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        var result = builder.Validate<TestValidator>(v => v.Discard());
+        var result = builder.Validate<TestValidator>();
 
         // Assert
         Assert.Same(builder, result);
@@ -577,22 +577,12 @@ public sealed class KafkaConsumerGroupBuilderTests
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
-        builder.Validate<TestValidator>(v => v.Discard());
+        builder.Validate<TestValidator>();
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(
-            () => builder.Validate<TestValidator>(v => v.Discard()));
+            () => builder.Validate<TestValidator>());
         Assert.Contains("already been called", ex.Message);
-    }
-
-    [Fact]
-    public void GivenValidateClassBased_WhenNullConfigure_ThenThrowsArgumentNullException()
-    {
-        // Arrange
-        var builder = new KafkaConsumerGroupBuilder<string, string>();
-
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => builder.Validate<TestValidator>(null!));
     }
 
     [Fact]
@@ -603,18 +593,7 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(
-            () => builder.Validate((Func<string, CancellationToken, Task<MessageValidationResult>>)null!, v => v.Discard()));
-    }
-
-    [Fact]
-    public void GivenValidateAsyncDelegate_WhenNullConfigure_ThenThrowsArgumentNullException()
-    {
-        // Arrange
-        var builder = new KafkaConsumerGroupBuilder<string, string>();
-
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(
-            () => builder.Validate((_, _) => Task.FromResult(MessageValidationResult.Success), null!));
+            () => builder.Validate((Func<string, CancellationToken, Task<MessageValidationResult>>)null!));
     }
 
     [Fact]
@@ -625,17 +604,17 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(
-            () => builder.Validate((Func<string, MessageValidationResult>)null!, v => v.Discard()));
+            () => builder.Validate((Func<string, MessageValidationResult>)null!));
     }
 
     [Fact]
-    public void GivenNewBuilder_WhenDefaultState_ThenGroupValidationIsNull()
+    public void GivenNewBuilder_WhenDefaultState_ThenValidationIsNull()
     {
         // Arrange & Act
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Assert
-        Assert.Null(builder.GroupValidation);
+        Assert.Null(builder.Validation);
     }
 
     private sealed class TestValidator : IMessageValidator<string>

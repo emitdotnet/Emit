@@ -17,16 +17,6 @@ namespace Emit.Abstractions;
 /// format internally (e.g., Kafka converts string values to UTF-8 bytes).
 /// </para>
 /// </remarks>
-/// <example>
-/// <code>
-/// // Minimal (no headers)
-/// var message = new EventMessage&lt;string, OrderCreated&gt;("order-123", order);
-///
-/// // With headers
-/// var message = new EventMessage&lt;string, OrderCreated&gt;("order-123", order,
-///     [new("correlation-id", correlationId), new("tenant", tenantId)]);
-/// </code>
-/// </example>
 public sealed record EventMessage<TKey, TValue>(
     TKey Key,
     TValue Value,

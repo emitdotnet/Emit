@@ -6,33 +6,30 @@ using Emit.Abstractions.Pipeline;
 
 /// <summary>
 /// Inbound middleware that records pipeline duration and completion metrics.
-/// Auto-inserted as the outermost layer of the inbound pipeline.
+/// Consumer identity is baked in at build time by <see cref="Pipeline.ConsumerPipelineComposer{TValue}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ConsumeMetricsMiddleware<TMessage>(
-    EmitMetrics metrics) : IMiddleware<InboundContext<TMessage>>
+    EmitMetrics metrics,
+    string consumerIdentifier) : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
-        var provider = context.Features.Get<IProviderIdentifierFeature>()?.ProviderId ?? "unknown";
+        var provider = EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "unknown";
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
 
-            var consumer = context.Features.Get<IConsumerIdentityFeature>()?.Identifier ?? "unknown";
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordConsumeDuration(elapsed, provider, "success", consumer);
-            metrics.RecordConsumeCompleted(provider, "success", consumer);
+            metrics.RecordConsumeCompleted(elapsed, provider, "success", consumerIdentifier);
         }
         catch
         {
-            var consumer = context.Features.Get<IConsumerIdentityFeature>()?.Identifier ?? "unknown";
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordConsumeDuration(elapsed, provider, "error", consumer);
-            metrics.RecordConsumeCompleted(provider, "error", consumer);
+            metrics.RecordConsumeCompleted(elapsed, provider, "error", consumerIdentifier);
             throw;
         }
     }

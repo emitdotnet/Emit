@@ -1,6 +1,5 @@
 namespace Emit.Mediator.Observability;
 
-using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -10,16 +9,16 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 internal sealed class MediatorObserverMiddleware<TMessage>(
     IEnumerable<IMediatorObserver> observers,
-    ILogger<MediatorObserverMiddleware<TMessage>> logger) : IMiddleware<InboundContext<TMessage>>
+    ILogger<MediatorObserverMiddleware<TMessage>> logger) : IMiddleware<MediatorContext<TMessage>>
 {
     private readonly IMediatorObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TMessage> context, MessageDelegate<InboundContext<TMessage>> next)
+    public async Task InvokeAsync(MediatorContext<TMessage> context, IMiddlewarePipeline<MediatorContext<TMessage>> next)
     {
         if (this.observers is [])
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -31,13 +30,13 @@ internal sealed class MediatorObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IMediatorObserver.OnHandlingAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IMediatorObserver)}.{nameof(IMediatorObserver.OnHandlingAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next.InvokeAsync(context).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -49,7 +48,7 @@ internal sealed class MediatorObserverMiddleware<TMessage>(
                 }
                 catch (Exception observerEx)
                 {
-                    logger.LogWarning(observerEx, "IMediatorObserver.OnHandleErrorAsync failed for {ObserverType}", observer.GetType().Name);
+                    logger.LogWarning(observerEx, $"{nameof(IMediatorObserver)}.{nameof(IMediatorObserver.OnHandleErrorAsync)} failed for {{ObserverType}}", observer.GetType().Name);
                 }
             }
 
@@ -64,7 +63,7 @@ internal sealed class MediatorObserverMiddleware<TMessage>(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "IMediatorObserver.OnHandledAsync failed for {ObserverType}", observer.GetType().Name);
+                logger.LogWarning(ex, $"{nameof(IMediatorObserver)}.{nameof(IMediatorObserver.OnHandledAsync)} failed for {{ObserverType}}", observer.GetType().Name);
             }
         }
     }

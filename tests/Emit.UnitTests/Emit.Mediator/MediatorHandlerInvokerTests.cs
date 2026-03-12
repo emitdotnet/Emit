@@ -17,7 +17,7 @@ public sealed class MediatorHandlerInvokerTests
         var provider = services.BuildServiceProvider();
 
         var invoker = new MediatorHandlerInvoker<TestRequest, string>(typeof(TestHandler));
-        var context = new InboundContext<TestRequest>
+        var context = new MediatorContext<TestRequest>
         {
             MessageId = "test-1",
             Timestamp = DateTimeOffset.UtcNow,
@@ -45,7 +45,7 @@ public sealed class MediatorHandlerInvokerTests
         var provider = services.BuildServiceProvider();
 
         var invoker = new MediatorHandlerInvoker<TestRequest, string>(typeof(TestHandler));
-        var context = new InboundContext<TestRequest>
+        var context = new MediatorContext<TestRequest>
         {
             MessageId = "test-1",
             Timestamp = DateTimeOffset.UtcNow,
@@ -68,7 +68,7 @@ public sealed class MediatorHandlerInvokerTests
         var provider = services.BuildServiceProvider();
 
         var invoker = new MediatorVoidHandlerInvoker<VoidTestRequest>(typeof(VoidTestHandler));
-        var context = new InboundContext<VoidTestRequest>
+        var context = new MediatorContext<VoidTestRequest>
         {
             MessageId = "test-1",
             Timestamp = DateTimeOffset.UtcNow,

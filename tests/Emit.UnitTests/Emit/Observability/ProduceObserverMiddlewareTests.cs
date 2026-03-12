@@ -20,11 +20,11 @@ public class ProduceObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<OutboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -41,12 +41,12 @@ public class ProduceObserverMiddlewareTests
         var mockObserver = new Mock<IProduceObserver>();
 
         mockObserver
-            .Setup(o => o.OnProducingAsync(It.IsAny<OutboundContext<string>>()))
+            .Setup(o => o.OnProducingAsync(It.IsAny<SendContext<string>>()))
             .Callback(() => callSequence.Add("OnProducing"))
             .Returns(Task.CompletedTask);
 
         mockObserver
-            .Setup(o => o.OnProducedAsync(It.IsAny<OutboundContext<string>>()))
+            .Setup(o => o.OnProducedAsync(It.IsAny<SendContext<string>>()))
             .Callback(() => callSequence.Add("OnProduced"))
             .Returns(Task.CompletedTask);
 
@@ -55,11 +55,11 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<OutboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -80,16 +80,16 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<OutboundContext<string>> next = _ => Task.CompletedTask;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
 
         // Act
         await middleware.InvokeAsync(context, next);
 
         // Assert
-        mockObserver1.Verify(o => o.OnProducingAsync(It.IsAny<OutboundContext<string>>()), Times.Once);
-        mockObserver1.Verify(o => o.OnProducedAsync(It.IsAny<OutboundContext<string>>()), Times.Once);
-        mockObserver2.Verify(o => o.OnProducingAsync(It.IsAny<OutboundContext<string>>()), Times.Once);
-        mockObserver2.Verify(o => o.OnProducedAsync(It.IsAny<OutboundContext<string>>()), Times.Once);
+        mockObserver1.Verify(o => o.OnProducingAsync(It.IsAny<SendContext<string>>()), Times.Once);
+        mockObserver1.Verify(o => o.OnProducedAsync(It.IsAny<SendContext<string>>()), Times.Once);
+        mockObserver2.Verify(o => o.OnProducingAsync(It.IsAny<SendContext<string>>()), Times.Once);
+        mockObserver2.Verify(o => o.OnProducedAsync(It.IsAny<SendContext<string>>()), Times.Once);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class ProduceObserverMiddlewareTests
         // Arrange
         var mockObserver = new Mock<IProduceObserver>();
         mockObserver
-            .Setup(o => o.OnProducingAsync(It.IsAny<OutboundContext<string>>()))
+            .Setup(o => o.OnProducingAsync(It.IsAny<SendContext<string>>()))
             .ThrowsAsync(new InvalidOperationException("Observer failed"));
 
         var middleware = new ProduceObserverMiddleware<string>(
@@ -107,11 +107,11 @@ public class ProduceObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<OutboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -132,7 +132,7 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<OutboundContext<string>> next = _ => throw expectedException;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => throw expectedException);
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -140,10 +140,10 @@ public class ProduceObserverMiddlewareTests
 
         Assert.Same(expectedException, actualException);
         mockObserver.Verify(
-            o => o.OnProduceErrorAsync(It.IsAny<OutboundContext<string>>(), expectedException),
+            o => o.OnProduceErrorAsync(It.IsAny<SendContext<string>>(), expectedException),
             Times.Once);
         mockObserver.Verify(
-            o => o.OnProducedAsync(It.IsAny<OutboundContext<string>>()),
+            o => o.OnProducedAsync(It.IsAny<SendContext<string>>()),
             Times.Never);
     }
 
@@ -153,7 +153,7 @@ public class ProduceObserverMiddlewareTests
         // Arrange
         var mockObserver = new Mock<IProduceObserver>();
         mockObserver
-            .Setup(o => o.OnProducedAsync(It.IsAny<OutboundContext<string>>()))
+            .Setup(o => o.OnProducedAsync(It.IsAny<SendContext<string>>()))
             .ThrowsAsync(new InvalidOperationException("Observer failed"));
 
         var middleware = new ProduceObserverMiddleware<string>(
@@ -161,7 +161,7 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<OutboundContext<string>> next = _ => Task.CompletedTask;
+        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -169,9 +169,9 @@ public class ProduceObserverMiddlewareTests
         // Assert - no exception thrown
     }
 
-    private static TestOutboundContext<string> CreateContext()
+    private static TestSendContext<string> CreateContext()
     {
-        return new TestOutboundContext<string>
+        return new TestSendContext<string>
         {
             MessageId = Guid.NewGuid().ToString(),
             Timestamp = DateTimeOffset.UtcNow,
@@ -181,5 +181,5 @@ public class ProduceObserverMiddlewareTests
         };
     }
 
-    private sealed class TestOutboundContext<T> : OutboundContext<T>;
+    private sealed class TestSendContext<T> : SendContext<T>;
 }

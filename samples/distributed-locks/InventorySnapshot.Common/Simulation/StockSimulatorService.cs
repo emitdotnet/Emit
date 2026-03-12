@@ -1,5 +1,6 @@
 namespace InventorySnapshot.Common.Simulation;
 
+using InventorySnapshot.Common.Domain;
 using InventorySnapshot.Common.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -15,11 +16,7 @@ public sealed class StockSimulatorService(
     IConfiguration configuration,
     ILogger<StockSimulatorService> logger) : BackgroundService
 {
-    private static readonly string[] Skus =
-    [
-        "WRENCH-12", "BOLT-M8", "CABLE-CAT6", "GLOVE-L", "HELMET-XL",
-        "PUMP-2HP", "TAPE-50M", "DRILL-BIT", "VALVE-1IN", "FILTER-OIL",
-    ];
+    private static readonly string[] Skus = ProductCatalog.Seeds.Select(p => p.Sku).ToArray();
 
     private readonly Random _random = new();
 

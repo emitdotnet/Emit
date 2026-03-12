@@ -56,13 +56,13 @@ public sealed class FeatureCollectionTests
         // Arrange
         var features = new FeatureCollection();
         var response = new TestResponseFeature();
-        var headers = new TestHeadersFeature();
+        var marker = new TestMarkerFeature();
         features.Set<IResponseFeature>(response);
-        features.Set<IHeadersFeature>(headers);
+        features.Set<TestMarkerFeature>(marker);
 
         // Act & Assert
         Assert.Same(response, features.Get<IResponseFeature>());
-        Assert.Same(headers, features.Get<IHeadersFeature>());
+        Assert.Same(marker, features.Get<TestMarkerFeature>());
     }
 
     [Fact]
@@ -81,8 +81,5 @@ public sealed class FeatureCollectionTests
         public Task RespondAsync<TResponse>(TResponse response) => Task.CompletedTask;
     }
 
-    private sealed class TestHeadersFeature : IHeadersFeature
-    {
-        public IReadOnlyList<KeyValuePair<string, string>> Headers => [];
-    }
+    private sealed class TestMarkerFeature;
 }

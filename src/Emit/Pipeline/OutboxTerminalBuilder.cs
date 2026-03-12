@@ -8,9 +8,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Builds a terminal delegate that enqueues messages to the transactional outbox.
-/// Handles transaction validation, trace context propagation, repository enqueue, and
-/// observer notification. Providers supply a delegate that serializes the payload
-/// and populates provider-specific entry fields.
+/// Handles transaction validation, repository enqueue, and observer notification.
+/// Providers supply a delegate that serializes the message body, headers, and properties
+/// into a partially-populated <see cref="OutboxEntry"/>. The builder sets
+/// <see cref="OutboxEntry.EnqueuedAt"/> after the delegate returns.
+/// Trace context flows through <see cref="OutboxEntry.Headers"/> automatically.
 /// </summary>
 public static class OutboxTerminalBuilder
 {
@@ -20,15 +22,21 @@ public static class OutboxTerminalBuilder
     /// <typeparam name="TValue">The message value type.</typeparam>
     /// <param name="createEntry">
     /// Provider-specific delegate that serializes the message and returns a partially-populated
-    /// <see cref="OutboxEntry"/>. The builder sets <see cref="OutboxEntry.TraceParent"/>,
-    /// <see cref="OutboxEntry.TraceState"/>, and <see cref="OutboxEntry.EnqueuedAt"/>
+    /// <see cref="OutboxEntry"/>. The builder sets <see cref="OutboxEntry.EnqueuedAt"/>
     /// after the delegate returns.
     /// </param>
-    /// <returns>A terminal delegate that enqueues entries to the outbox repository.</returns>
-    public static MessageDelegate<OutboundContext<TValue>> Build<TValue>(
-        Func<OutboundContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
+    /// <returns>A terminal pipeline that enqueues entries to the outbox repository.</returns>
+    public static IMiddlewarePipeline<SendContext<TValue>> Build<TValue>(
+        Func<SendContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
     {
-        return async context =>
+        return new OutboxTerminalPipeline<TValue>(createEntry);
+    }
+
+    private sealed class OutboxTerminalPipeline<TValue>(
+        Func<SendContext<TValue>, CancellationToken, Task<OutboxEntry>> createEntry)
+        : IMiddlewarePipeline<SendContext<TValue>>
+    {
+        public async Task InvokeAsync(SendContext<TValue> context)
         {
             var repository = context.Services.GetRequiredService<IOutboxRepository>();
             var emitContext = context.Services.GetRequiredService<IEmitContext>();
@@ -38,18 +46,8 @@ public static class OutboxTerminalBuilder
                 throw new InvalidOperationException("No transaction context is available.");
             }
 
-            string? traceParent = null;
-            string? traceState = null;
-            if (context.Features.Get<IActivityFeature>() is { } activityFeature)
-            {
-                traceParent = activityFeature.TraceParent;
-                traceState = activityFeature.TraceState;
-            }
-
             var entry = await createEntry(context, context.CancellationToken).ConfigureAwait(false);
 
-            entry.TraceParent = traceParent;
-            entry.TraceState = traceState;
             entry.EnqueuedAt = context.Timestamp.UtcDateTime;
 
             await repository.EnqueueAsync(entry, context.CancellationToken).ConfigureAwait(false);
@@ -59,6 +57,6 @@ public static class OutboxTerminalBuilder
             {
                 await observerInvoker.OnEnqueuedAsync(entry, context.CancellationToken).ConfigureAwait(false);
             }
-        };
+        }
     }
 }

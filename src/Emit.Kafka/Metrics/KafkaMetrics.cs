@@ -156,9 +156,9 @@ public sealed class KafkaMetrics
         WorkerFaults.Add(1, tags);
     }
 
-    internal void RecordDlqProduced(string consumerGroup, string sourceTopic, string dlqTopic)
+    internal void RecordDlqProduced(string consumerGroup, string sourceTopic)
     {
-        var tags = enrichment.CreateTags([new("consumer_group", consumerGroup), new("source_topic", sourceTopic), new("dlq_topic", dlqTopic)]);
+        var tags = enrichment.CreateTags([new("consumer_group", consumerGroup), new("source_topic", sourceTopic)]);
         DlqProduced.Add(1, tags);
     }
 

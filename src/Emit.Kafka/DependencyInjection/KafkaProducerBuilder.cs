@@ -53,7 +53,7 @@ public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<T
 
     /// <inheritdoc />
     public IOutboundConfigurable<TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class, IMiddleware<OutboundContext<TValue>>
+        where TMiddleware : class, IMiddleware<SendContext<TValue>>
     {
         Pipeline.Use(typeof(TMiddleware), lifetime);
         return this;

@@ -478,7 +478,7 @@ public abstract class OffsetCommitCompliance
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public async Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             await gate.Task.ConfigureAwait(false);
             await sink.WriteAsync(context, cancellationToken).ConfigureAwait(false);
@@ -494,7 +494,7 @@ public abstract class OffsetCommitCompliance
         : IConsumer<string>
     {
         /// <inheritdoc />
-        public async Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
             if (context.Message?.StartsWith("slow", StringComparison.Ordinal) == true)
             {

@@ -60,14 +60,14 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var enrichment = new EmitMetricsEnrichment();
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
-        var context = new TestInboundContext(new TestRequest("test"));
+        var context = new TestMediatorContext(new TestRequest("test"));
         var invoked = false;
 
-        MessageDelegate<InboundContext<TestRequest>> next = _ =>
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ =>
         {
             invoked = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -95,10 +95,10 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var enrichment = new EmitMetricsEnrichment();
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
-        var context = new TestInboundContext(new TestRequest("test"));
+        var context = new TestMediatorContext(new TestRequest("test"));
         var expectedException = new InvalidOperationException("Handler failed");
 
-        MessageDelegate<InboundContext<TestRequest>> next = _ => throw expectedException;
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => throw expectedException);
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -125,9 +125,9 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var enrichment = new EmitMetricsEnrichment();
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
-        var context = new TestInboundContext(new TestRequest("test"));
+        var context = new TestMediatorContext(new TestRequest("test"));
 
-        MessageDelegate<InboundContext<TestRequest>> next = _ => Task.CompletedTask;
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -149,9 +149,9 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var enrichment = new EmitMetricsEnrichment();
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
-        var context = new TestInboundContext(new TestRequest("test"));
+        var context = new TestMediatorContext(new TestRequest("test"));
 
-        MessageDelegate<InboundContext<TestRequest>> next = _ => throw new InvalidOperationException();
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => throw new InvalidOperationException());
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -178,9 +178,9 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         });
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
-        var context = new TestInboundContext(new TestRequest("test"));
+        var context = new TestMediatorContext(new TestRequest("test"));
 
-        MessageDelegate<InboundContext<TestRequest>> next = _ => Task.CompletedTask;
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -207,11 +207,11 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var mediatorMetrics = new MediatorMetrics(null, enrichment);
         var middleware1 = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
         var middleware2 = new MediatorMetricsMiddleware<AnotherRequest>(mediatorMetrics);
-        var context1 = new TestInboundContext(new TestRequest("test"));
-        var context2 = new AnotherInboundContext(new AnotherRequest());
+        var context1 = new TestMediatorContext(new TestRequest("test"));
+        var context2 = new AnotherMediatorContext(new AnotherRequest());
 
-        MessageDelegate<InboundContext<TestRequest>> next1 = _ => Task.CompletedTask;
-        MessageDelegate<InboundContext<AnotherRequest>> next2 = _ => Task.CompletedTask;
+        IMiddlewarePipeline<MediatorContext<TestRequest>> next1 = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
+        IMiddlewarePipeline<MediatorContext<AnotherRequest>> next2 = new TestPipeline<MediatorContext<AnotherRequest>>(_ => Task.CompletedTask);
 
         // Act
         await middleware1.InvokeAsync(context1, next1);
@@ -233,10 +233,10 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
 
     private sealed record AnotherRequest : IRequest;
 
-    private sealed class TestInboundContext : InboundContext<TestRequest>
+    private sealed class TestMediatorContext : MediatorContext<TestRequest>
     {
         [SetsRequiredMembers]
-        public TestInboundContext(TestRequest message)
+        public TestMediatorContext(TestRequest message)
         {
             Message = message;
             MessageId = Guid.NewGuid().ToString();
@@ -246,10 +246,10 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         }
     }
 
-    private sealed class AnotherInboundContext : InboundContext<AnotherRequest>
+    private sealed class AnotherMediatorContext : MediatorContext<AnotherRequest>
     {
         [SetsRequiredMembers]
-        public AnotherInboundContext(AnotherRequest message)
+        public AnotherMediatorContext(AnotherRequest message)
         {
             Message = message;
             MessageId = Guid.NewGuid().ToString();

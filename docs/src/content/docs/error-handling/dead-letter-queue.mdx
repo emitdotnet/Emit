@@ -7,38 +7,47 @@ When a message cannot be processed after retries are exhausted (or when the erro
 
 ## Configuring the DLQ sink
 
-Register the Kafka dead-letter sink on the Kafka builder:
+Register the dead-letter topic on the Kafka builder with an explicit topic name:
 
 ```csharp
 emit.AddKafka(kafka =>
 {
-    kafka.DeadLetter(dlq =>
-    {
-        // Default: appends ".dlt" to the source topic name (e.g. "orders" → "orders.dlt")
-        dlq.TopicNamingConvention = sourceTopic => $"{sourceTopic}.dlt";
-    });
+    kafka.DeadLetter("orders.dlt");
     // ...
 });
 ```
 
-This wires up `IDeadLetterSink` with the Kafka producer. Without this, calling `action.DeadLetter()` logs an error and discards the message instead.
+The DLQ topic is registered as a regular `byte[]` topic. It participates in topic verification at startup and in auto-provisioning when enabled:
+
+```csharp
+kafka.DeadLetter("orders.dlt", dlq =>
+{
+    dlq.Provisioning(options =>
+    {
+        options.NumPartitions = 3;
+        options.Retention = TimeSpan.FromDays(30);
+    });
+});
+```
+
+Without `DeadLetter`, calling `action.DeadLetter()` in an error policy logs an error and discards the message instead.
 
 ## Using dead-letter actions
 
-In your error policy, chain `.DeadLetter()` to send to the default topic, or provide a topic name:
+In your error policy, chain `.DeadLetter()` to route to the configured DLQ topic:
 
 ```csharp
 group.OnError(err =>
 {
     err.When<KitchenCapacityException>(action => action
         .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(500)))
-        .DeadLetter());  // naming convention applied after retries exhausted
+        .DeadLetter());
 
-    err.Default(action => action.DeadLetter("pizzas.dlq"));  // explicit topic
+    err.Default(action => action.DeadLetter());
 });
 ```
 
-The per-clause topic name overrides the naming convention.
+All dead-letter actions route to the single DLQ topic configured via `kafka.DeadLetter(...)`.
 
 ## What gets forwarded
 
@@ -46,20 +55,24 @@ The dead-letter sink receives the **raw bytes** of the original message (key and
 
 ## Headers added by Emit
 
-When forwarding to the DLQ, Emit appends the following headers:
+When forwarding to the DLQ, the original message headers are preserved first, followed by Emit's diagnostic headers:
 
 | Header | Content |
 |---|---|
+| *(original headers)* | All headers from the original message are preserved |
+| `emit.dlq.original_traceparent` | W3C traceparent from the original message (for trace linking) |
+| `emit.dlq.original_topic` | Source topic name |
 | `x-emit-exception-type` | Full name of the exception type |
 | `x-emit-exception-message` | Exception message |
-| `x-emit-retry-count` | Number of retry attempts before dead-lettering |
+| `x-emit-source-topic` | Kafka source topic name |
+| `x-emit-source-partition` | Kafka source partition |
+| `x-emit-source-offset` | Kafka source offset |
+| `x-emit-timestamp` | ISO 8601 timestamp when the DLQ forward occurred |
+| `x-emit-consumer-group` | Consumer group that failed to process the message |
 | `x-emit-consumer` | Consumer identifier |
 | `x-emit-consumer-type` | Consumer handler type name |
 | `x-emit-route-key` | Matched route key (if using a router) |
-| `x-emit-timestamp` | ISO 8601 timestamp when the DLQ forward occurred |
-| `emit.dlq.original_traceparent` | W3C traceparent from the original message (for trace linking) |
-| `emit.dlq.original_topic` | Source topic name |
-| `x-emit-source-{key}` | Each entry from `IMessageSourceFeature.Properties` |
+| `x-emit-retry-count` | Number of retry attempts before dead-lettering |
 
 ## Replaying DLQ messages
 
@@ -80,7 +93,7 @@ Validation failures use the same DLQ mechanism:
 ```csharp
 group.Validate<PizzaValidator>(err =>
 {
-    err.DeadLetter("pizzas.validation.dlq");
+    err.DeadLetter();
 });
 ```
 

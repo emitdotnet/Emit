@@ -1,7 +1,7 @@
 namespace Emit.UnitTests.Mediator.Observability;
 
-using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
+using global::Emit.Mediator;
 using global::Emit.Mediator.Observability;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -19,11 +19,11 @@ public class MediatorObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -40,12 +40,12 @@ public class MediatorObserverMiddlewareTests
         var mockObserver = new Mock<IMediatorObserver>();
 
         mockObserver
-            .Setup(o => o.OnHandlingAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnHandlingAsync(It.IsAny<MediatorContext<string>>()))
             .Callback(() => callSequence.Add("OnHandling"))
             .Returns(Task.CompletedTask);
 
         mockObserver
-            .Setup(o => o.OnHandledAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnHandledAsync(It.IsAny<MediatorContext<string>>()))
             .Callback(() => callSequence.Add("OnHandled"))
             .Returns(Task.CompletedTask);
 
@@ -54,11 +54,11 @@ public class MediatorObserverMiddlewareTests
             NullLogger<MediatorObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -79,7 +79,7 @@ public class MediatorObserverMiddlewareTests
             NullLogger<MediatorObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        MessageDelegate<InboundContext<string>> next = _ => throw expectedException;
+        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(_ => throw expectedException);
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -87,10 +87,10 @@ public class MediatorObserverMiddlewareTests
 
         Assert.Same(expectedException, actualException);
         mockObserver.Verify(
-            o => o.OnHandleErrorAsync(It.IsAny<InboundContext<string>>(), expectedException),
+            o => o.OnHandleErrorAsync(It.IsAny<MediatorContext<string>>(), expectedException),
             Times.Once);
         mockObserver.Verify(
-            o => o.OnHandledAsync(It.IsAny<InboundContext<string>>()),
+            o => o.OnHandledAsync(It.IsAny<MediatorContext<string>>()),
             Times.Never);
     }
 
@@ -100,7 +100,7 @@ public class MediatorObserverMiddlewareTests
         // Arrange
         var mockObserver = new Mock<IMediatorObserver>();
         mockObserver
-            .Setup(o => o.OnHandlingAsync(It.IsAny<InboundContext<string>>()))
+            .Setup(o => o.OnHandlingAsync(It.IsAny<MediatorContext<string>>()))
             .ThrowsAsync(new InvalidOperationException("Observer failed"));
 
         var middleware = new MediatorObserverMiddleware<string>(
@@ -109,11 +109,11 @@ public class MediatorObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = ctx =>
+        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -122,9 +122,9 @@ public class MediatorObserverMiddlewareTests
         Assert.True(nextCalled);
     }
 
-    private static TestInboundContext<string> CreateContext()
+    private static TestMediatorContext<string> CreateContext()
     {
-        return new TestInboundContext<string>
+        return new TestMediatorContext<string>
         {
             MessageId = Guid.NewGuid().ToString(),
             Timestamp = DateTimeOffset.UtcNow,
@@ -134,5 +134,5 @@ public class MediatorObserverMiddlewareTests
         };
     }
 
-    private sealed class TestInboundContext<T> : InboundContext<T>;
+    private sealed class TestMediatorContext<T> : MediatorContext<T>;
 }

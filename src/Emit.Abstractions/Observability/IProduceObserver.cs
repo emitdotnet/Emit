@@ -20,7 +20,7 @@ namespace Emit.Abstractions.Observability;
 /// blocks other observers or interrupts the pipeline.
 /// </para>
 /// </remarks>
-public interface IProduceObserver
+public interface IProduceObserver : IObserver
 {
     /// <summary>
     /// Called before the outbound pipeline executes.
@@ -28,7 +28,7 @@ public interface IProduceObserver
     /// <typeparam name="T">The message type being produced.</typeparam>
     /// <param name="context">The outbound pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnProducingAsync<T>(OutboundContext<T> context) => Task.CompletedTask;
+    Task OnProducingAsync<T>(SendContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called after the outbound pipeline completes successfully.
@@ -36,7 +36,7 @@ public interface IProduceObserver
     /// <typeparam name="T">The message type that was produced.</typeparam>
     /// <param name="context">The outbound pipeline context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnProducedAsync<T>(OutboundContext<T> context) => Task.CompletedTask;
+    Task OnProducedAsync<T>(SendContext<T> context) => Task.CompletedTask;
 
     /// <summary>
     /// Called when the outbound pipeline throws an exception.
@@ -45,5 +45,5 @@ public interface IProduceObserver
     /// <param name="context">The outbound pipeline context.</param>
     /// <param name="exception">The exception thrown by the pipeline.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task OnProduceErrorAsync<T>(OutboundContext<T> context, Exception exception) => Task.CompletedTask;
+    Task OnProduceErrorAsync<T>(SendContext<T> context, Exception exception) => Task.CompletedTask;
 }

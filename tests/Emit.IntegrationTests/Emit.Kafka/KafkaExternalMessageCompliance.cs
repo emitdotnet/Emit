@@ -19,6 +19,7 @@ public class KafkaExternalMessageCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<string, string>(topic, t =>
             {

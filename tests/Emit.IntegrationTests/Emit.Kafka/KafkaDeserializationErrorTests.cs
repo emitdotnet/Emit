@@ -1,9 +1,7 @@
 namespace Emit.Kafka.Tests;
 
 using System.Text;
-using Confluent.Kafka.Admin;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
@@ -34,10 +32,7 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
         var groupId = $"group-src-{Guid.NewGuid():N}";
         var dlqTopic = $"test-deser-dlt-{Guid.NewGuid():N}";
         var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
-        var dlqSink = new MessageSink<string>();
-
-        // DLQ topic must exist before the source consumer starts (DlqTopicVerifier requires it).
-        CreateTopic(dlqTopic);
+        var dlqSink = new MessageSink<byte[]>();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -51,6 +46,16 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
                         {
                             config.BootstrapServers = fixture.BootstrapServers;
                         });
+                        kafka.AutoProvision();
+
+                        kafka.DeadLetter(dlqTopic, t =>
+                        {
+                            t.ConsumerGroup(dlqGroupId, group =>
+                            {
+                                group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                                group.AddConsumer<SinkConsumer<byte[]>>();
+                            });
+                        });
 
                         // Source topic with Int32 key deserializer — 5-byte keys will fail.
                         kafka.Topic<int, string>(sourceTopic, t =>
@@ -61,21 +66,8 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
                             t.ConsumerGroup(groupId, group =>
                             {
                                 group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                                group.OnDeserializationError(e => e.DeadLetter(dlqTopic));
+                                group.OnDeserializationError(e => e.DeadLetter());
                                 group.AddConsumer<NullConsumer>();
-                            });
-                        });
-
-                        // DLQ topic — consumer only; captures dead-lettered messages.
-                        kafka.Topic<string, string>(dlqTopic, t =>
-                        {
-                            t.SetUtf8KeyDeserializer();
-                            t.SetUtf8ValueDeserializer();
-
-                            t.ConsumerGroup(dlqGroupId, group =>
-                            {
-                                group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                                group.AddConsumer<SinkConsumer<string>>();
                             });
                         });
                     });
@@ -106,15 +98,15 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
 
             // Assert — message arrived in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("deserialization-error-payload", ctx.Message);
+            Assert.Equal("deserialization-error-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers identify the deserialization error.
-            var headers = ctx.Features.Get<IHeadersFeature>();
+            var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var exceptionType = headers.Headers
+            var exceptionType = headers
                 .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
-            var sourceTopic_ = headers.Headers
+            var sourceTopic_ = headers
                 .FirstOrDefault(h => h.Key == "x-emit-source-topic").Value;
 
             Assert.NotNull(exceptionType);
@@ -128,24 +120,13 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
         }
     }
 
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
-    }
-
     /// <summary>
     /// Consumer that does nothing. Used on the source topic in deserialization error tests
     /// where messages are expected to fail deserialization before reaching any consumer.
     /// </summary>
     private sealed class NullConsumer : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken)
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 }

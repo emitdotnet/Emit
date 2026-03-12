@@ -26,6 +26,7 @@ public class KafkaRetryDiscardCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<string, string>(topic, t =>
             {
@@ -53,13 +54,21 @@ public class KafkaRetryDiscardCompliance(KafkaContainerFixture fixture)
         string dlqGroupId,
         int maxRetries)
     {
-        CreateTopic(dlqTopic);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>
             {
                 config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
             });
 
             kafka.Topic<string, string>(sourceTopic, t =>
@@ -73,20 +82,8 @@ public class KafkaRetryDiscardCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.OnError(e => e.Default(d => d.Retry(maxRetries, Backoff.None).DeadLetter(dlqTopic)));
+                    group.OnError(e => e.Default(d => d.Retry(maxRetries, Backoff.None).DeadLetter()));
                     group.AddConsumer<AlwaysFailingConsumer>();
-                });
-            });
-
-            kafka.Topic<string, string>(dlqTopic, t =>
-            {
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
-
-                t.ConsumerGroup(dlqGroupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<DlqCaptureConsumer>();
                 });
             });
         });
@@ -103,6 +100,7 @@ public class KafkaRetryDiscardCompliance(KafkaContainerFixture fixture)
             {
                 config.BootstrapServers = fixture.BootstrapServers;
             });
+            kafka.AutoProvision();
 
             kafka.Topic<string, string>(topic, t =>
             {
@@ -120,16 +118,5 @@ public class KafkaRetryDiscardCompliance(KafkaContainerFixture fixture)
                 });
             });
         });
-    }
-
-    private void CreateTopic(string topicName)
-    {
-        using var adminClient = new ConfluentKafka.AdminClientBuilder(
-            new ConfluentKafka.AdminClientConfig { BootstrapServers = fixture.BootstrapServers })
-            .Build();
-
-        adminClient.CreateTopicsAsync(
-            [new Confluent.Kafka.Admin.TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 }])
-            .GetAwaiter().GetResult();
     }
 }

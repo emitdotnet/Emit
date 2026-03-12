@@ -11,11 +11,11 @@ using Microsoft.Extensions.DependencyInjection;
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResponse">The response type.</typeparam>
-internal sealed class MediatorHandlerInvoker<TRequest, TResponse>(Type handlerType) : IHandlerInvoker<InboundContext<TRequest>>
+internal sealed class MediatorHandlerInvoker<TRequest, TResponse>(Type handlerType) : IHandlerInvoker<MediatorContext<TRequest>>
     where TRequest : IRequest<TResponse>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TRequest> context)
+    public async Task InvokeAsync(MediatorContext<TRequest> context)
     {
         var request = context.Message;
         var handler = (IRequestHandler<TRequest, TResponse>)context.Services.GetRequiredService(handlerType);

@@ -134,13 +134,13 @@ public sealed class MessageRouterBuilderTests
 
     private sealed class ConsumerA : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) =>
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 
     private sealed class ConsumerB : IConsumer<string>
     {
-        public Task ConsumeAsync(InboundContext<string> context, CancellationToken cancellationToken) =>
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 

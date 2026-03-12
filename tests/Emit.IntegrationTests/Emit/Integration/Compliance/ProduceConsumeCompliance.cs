@@ -1,8 +1,8 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
+using Emit.Kafka.Consumer;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -50,7 +50,8 @@ public abstract class ProduceConsumeCompliance
 
             // Assert
             var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            Assert.Equal("my-key", context.Features.Get<IKeyFeature<string>>()!.Key);
+            var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(context.TransportContext);
+            Assert.Equal("my-key", kafkaContext.Key);
             Assert.Equal("my-value", context.Message);
         }
         finally

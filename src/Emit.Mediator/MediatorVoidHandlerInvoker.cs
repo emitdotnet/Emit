@@ -1,6 +1,5 @@
 namespace Emit.Mediator;
 
-using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,11 +8,11 @@ using Microsoft.Extensions.DependencyInjection;
 /// service provider and invokes it without producing a response.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
-internal sealed class MediatorVoidHandlerInvoker<TRequest>(Type handlerType) : IHandlerInvoker<InboundContext<TRequest>>
+internal sealed class MediatorVoidHandlerInvoker<TRequest>(Type handlerType) : IHandlerInvoker<MediatorContext<TRequest>>
     where TRequest : IRequest
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(InboundContext<TRequest> context)
+    public async Task InvokeAsync(MediatorContext<TRequest> context)
     {
         var request = context.Message;
         var handler = (IRequestHandler<TRequest>)context.Services.GetRequiredService(handlerType);

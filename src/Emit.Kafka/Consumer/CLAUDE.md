@@ -8,10 +8,10 @@
 | `ConsumerWorker.cs` | Per-partition/per-group worker processing messages via channel and IConsumer | Understand message dispatch and processing flow |
 | `ConsumerGroupRegistration.cs` | Immutable descriptor capturing build-time consumer group configuration | Understand consumer group registration model |
 | `KafkaConsumerFlowControl.cs` | IConsumerFlowControl implementation for pausing and resuming Kafka consumer partitions | Implement flow control or backpressure handling |
+| `KafkaTransportContext.cs` | Kafka-specific TransportContext subclass carrying topic, partition, and offset metadata | Understand Kafka transport context or implement Kafka-specific middleware |
+| `KafkaDeadLetterHeaders.cs` | Kafka-specific dead-letter header constants for source topic, partition, and offset | Implement DLQ producers or read Kafka-specific DLQ diagnostic headers |
 | `DlqProducer.cs` | Dead letter queue producer for routing failed messages to DLQ topics | Understand DLQ message routing or debug DLQ behavior |
 | `StartupDiagnosticsLogger.cs` | Logs consumer group startup diagnostics and configuration | Debug consumer startup issues or understand consumer configuration |
-| `IKafkaFeature.cs` | Interface providing Kafka-specific metadata (topic, partition, offset) via feature collection | Access Kafka metadata in middleware |
-| `KafkaFeature.cs` | IKafkaFeature implementation holding topic, partition, and offset values | Understand Kafka feature storage |
 | `OffsetCommitter.cs` | Accumulates committable watermark offsets and periodically flushes to Kafka | Understand or debug offset commit behavior |
 | `OffsetManager.cs` | Routes enqueue/completion calls to per-partition PartitionOffsets trackers | Understand offset tracking across partitions |
 | `PartitionOffsets.cs` | Per-partition contiguous watermark algorithm for safe offset commits | Understand or debug offset watermark tracking |

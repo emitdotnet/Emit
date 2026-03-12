@@ -12,15 +12,27 @@ internal sealed class EfDeviceHeartbeatRepository(SampleDbContext dbContext) : I
         DateTimeOffset seenAt,
         CancellationToken cancellationToken = default)
     {
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-            INSERT INTO device_heartbeats (device_id, last_seen_at, event_count)
-            VALUES ({deviceId}, {seenAt}, 1)
-            ON CONFLICT (device_id) DO UPDATE
-            SET last_seen_at = EXCLUDED.last_seen_at,
-                event_count  = device_heartbeats.event_count + 1
-            """,
-            cancellationToken).ConfigureAwait(false);
+        var entity = await dbContext.DeviceHeartbeats
+            .FindAsync([deviceId], cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            entity = new DeviceHeartbeatEntity
+            {
+                DeviceId = deviceId,
+                LastSeenAt = seenAt,
+                EventCount = 1,
+            };
+            dbContext.DeviceHeartbeats.Add(entity);
+        }
+        else
+        {
+            entity.LastSeenAt = seenAt;
+            entity.EventCount++;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<DeviceHeartbeat>> GetSilentDevicesAsync(

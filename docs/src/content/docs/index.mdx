@@ -47,7 +47,7 @@ The outbox is one of several tools Emit provides. The library also covers in-pro
 
 **Pluggable persistence**: MongoDB and PostgreSQL (EF Core) backends. You bring your own client; Emit handles the rest.
 
-**Distributed locks**: built-in leader election and distributed locking, used internally by the outbox worker and available to your own code.
+**Cluster coordination**: [leader election](/concepts/leader-election/) with daemon scheduling for background work, plus [distributed locks](/persistence/distributed-locks/) available to your own code.
 
 **OpenTelemetry**: distributed tracing with W3C propagation, metrics across every subsystem, and structured logging throughout.
 

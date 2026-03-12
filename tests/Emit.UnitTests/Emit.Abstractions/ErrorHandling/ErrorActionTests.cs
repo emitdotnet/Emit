@@ -46,42 +46,21 @@ public sealed class ErrorActionTests
     public void GivenRetry_WhenExhaustionActionProvided_ThenStoresExhaustionAction()
     {
         // Act
-        var action = ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter("my-dlt"));
+        var action = ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter());
 
         // Assert
         var retry = Assert.IsType<ErrorAction.RetryAction>(action);
-        var exhaustion = Assert.IsType<ErrorAction.DeadLetterAction>(retry.ExhaustionAction);
-        Assert.Equal("my-dlt", exhaustion.TopicName);
+        Assert.IsType<ErrorAction.DeadLetterAction>(retry.ExhaustionAction);
     }
 
     [Fact]
-    public void GivenDeadLetterWithoutTopic_WhenCreated_ThenTopicNameIsNull()
+    public void GivenDeadLetter_WhenCreated_ThenReturnsDeadLetterAction()
     {
         // Act
         var action = ErrorAction.DeadLetter();
 
         // Assert
-        var dl = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Null(dl.TopicName);
-    }
-
-    [Fact]
-    public void GivenDeadLetterWithTopic_WhenCreated_ThenTopicNameIsSet()
-    {
-        // Act
-        var action = ErrorAction.DeadLetter("my-dlq");
-
-        // Assert
-        var dl = Assert.IsType<ErrorAction.DeadLetterAction>(action);
-        Assert.Equal("my-dlq", dl.TopicName);
-    }
-
-    [Fact]
-    public void GivenDeadLetterWithEmptyTopic_WhenCreated_ThenThrowsArgumentException()
-    {
-        // Act & Assert
-        Assert.ThrowsAny<ArgumentException>(
-            () => ErrorAction.DeadLetter(""));
+        Assert.IsType<ErrorAction.DeadLetterAction>(action);
     }
 
     [Fact]
@@ -93,5 +72,4 @@ public sealed class ErrorActionTests
         // Assert
         Assert.IsType<ErrorAction.DiscardAction>(action);
     }
-
 }

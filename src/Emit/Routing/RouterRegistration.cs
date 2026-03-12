@@ -15,11 +15,11 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public sealed class RouterRegistration<TMessage>
 {
-    private readonly Func<InboundContext<TMessage>, object?> routeSelector;
+    private readonly Func<ConsumeContext<TMessage>, object?> routeSelector;
     private readonly IReadOnlyList<RouteEntry<TMessage>> routes;
 
     internal RouterRegistration(
-        Func<InboundContext<TMessage>, object?> routeSelector,
+        Func<ConsumeContext<TMessage>, object?> routeSelector,
         IReadOnlyList<RouteEntry<TMessage>> routes)
     {
         this.routeSelector = routeSelector;
@@ -51,8 +51,8 @@ public sealed class RouterRegistration<TMessage>
     /// the invoker discards unmatched messages inline without throwing. Pass <c>null</c> to always throw.
     /// </param>
     /// <returns>The constructed router invoker ready to participate in fan-out.</returns>
-    public IHandlerInvoker<InboundContext<TMessage>> BuildInvoker(
-        Func<Type, IHandlerInvoker<InboundContext<TMessage>>> terminalFactory,
+    public IHandlerInvoker<ConsumeContext<TMessage>> BuildInvoker(
+        Func<Type, IHandlerInvoker<ConsumeContext<TMessage>>> terminalFactory,
         IServiceProvider services,
         ILoggerFactory loggerFactory,
         ErrorAction? unmatchedAction = null)
@@ -61,13 +61,13 @@ public sealed class RouterRegistration<TMessage>
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        var subPipelines = new Dictionary<object, (Type ConsumerType, MessageDelegate<InboundContext<TMessage>> Pipeline)>();
+        var subPipelines = new Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)>();
         foreach (var route in routes)
         {
             var subInvoker = terminalFactory(route.ConsumerType);
-            MessageDelegate<InboundContext<TMessage>> subPipeline = subInvoker.InvokeAsync;
+            IMiddlewarePipeline<ConsumeContext<TMessage>> subPipeline = subInvoker;
             if (route.Pipeline is not null)
-                subPipeline = route.Pipeline.Build<InboundContext<TMessage>, TMessage>(services, subPipeline);
+                subPipeline = route.Pipeline.Build<ConsumeContext<TMessage>, TMessage>(services, subPipeline);
             subPipelines[route.RouteKey] = (route.ConsumerType, subPipeline);
         }
 

@@ -62,7 +62,8 @@ You'll see one instance log `Lock acquired` and the other log:
 
 - **`emit_lock_acquire_duration_seconds`** — how long acquisition takes (near-zero when uncontested)
 - **`emit_lock_acquire_retries`** — retry count per acquisition attempt
-- **`emit_lock_releases_total`** — how many locks have been released
+- **`emit_lock_held_duration_seconds`** — how long locks are held before release
+- **`emit_lock_renewal_completed_total`** — count of lock renewal attempts
 
 **In Mongo Express / pgAdmin** — browse the `products` and `snapshots` collections to see stock levels change and snapshot records accumulate.
 

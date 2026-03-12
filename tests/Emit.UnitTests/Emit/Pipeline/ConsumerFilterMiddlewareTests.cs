@@ -15,11 +15,11 @@ public class ConsumerFilterMiddlewareTests
         var middleware = new ConsumerFilterMiddleware<string>((_, _) => ValueTask.FromResult(true));
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = _ =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -35,11 +35,11 @@ public class ConsumerFilterMiddlewareTests
         var middleware = new ConsumerFilterMiddleware<string>((_, _) => ValueTask.FromResult(false));
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = _ =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -61,11 +61,11 @@ public class ConsumerFilterMiddlewareTests
         });
         var context = CreateContext();
         var nextCalled = false;
-        MessageDelegate<InboundContext<string>> next = _ =>
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        };
+        });
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -81,7 +81,7 @@ public class ConsumerFilterMiddlewareTests
         // Arrange
         using var cts = new CancellationTokenSource();
         var context = CreateContext(cancellationToken: cts.Token);
-        InboundContext<string>? receivedContext = null;
+        ConsumeContext<string>? receivedContext = null;
         CancellationToken receivedToken = default;
 
         var middleware = new ConsumerFilterMiddleware<string>((ctx, ct) =>
@@ -91,7 +91,7 @@ public class ConsumerFilterMiddlewareTests
             return ValueTask.FromResult(true);
         });
 
-        MessageDelegate<InboundContext<string>> next = _ => Task.CompletedTask;
+        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -101,17 +101,19 @@ public class ConsumerFilterMiddlewareTests
         Assert.Equal(cts.Token, receivedToken);
     }
 
-    private static TestInboundContext<string> CreateContext(CancellationToken cancellationToken = default)
+    private static TestConsumeContext<string> CreateContext(CancellationToken cancellationToken = default)
     {
-        return new TestInboundContext<string>
+        var services = Mock.Of<IServiceProvider>();
+        return new TestConsumeContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = cancellationToken,
-            Services = Mock.Of<IServiceProvider>(),
-            Message = "test-message"
+            Services = services,
+            Message = "test-message",
+            TransportContext = TestTransportContext.Create(services),
         };
     }
 
-    private sealed class TestInboundContext<T> : InboundContext<T>;
+    private sealed class TestConsumeContext<T> : ConsumeContext<T>;
 }

@@ -22,6 +22,9 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// <summary>The consumer group ID.</summary>
     public required string GroupId { get; init; }
 
+    /// <summary>Pre-built destination address URI for the topic.</summary>
+    public required Uri DestinationAddress { get; init; }
+
     // ── Deserializers ──
 
     /// <summary>Synchronous key deserializer.</summary>
@@ -83,17 +86,6 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// Deserialization errors are handled before message fan-out.
     /// </summary>
     public ErrorAction? DeserializationErrorAction { get; init; }
-
-    /// <summary>
-    /// Resolves the dead letter topic name from a source topic name using the global convention,
-    /// or <c>null</c> if no dead letter convention is configured.
-    /// </summary>
-    public Func<string, string?>? ResolveDeadLetterTopic { get; init; }
-
-    /// <summary>
-    /// Immutable map of all dead letter topics resolved at registration time.
-    /// </summary>
-    public required DeadLetterTopicMap DeadLetterTopicMap { get; init; }
 
     /// <summary>
     /// All registered consumer handler types for this group.

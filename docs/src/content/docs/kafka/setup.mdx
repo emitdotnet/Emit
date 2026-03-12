@@ -3,7 +3,7 @@ title: Kafka Setup
 description: Connecting Emit to Kafka and registering topics, producers, and consumer groups.
 ---
 
-All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](../kafka/producers/) and [Consumers](../kafka/consumers/) for the specifics of each.
+All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](../producers/) and [Consumers](../consumers/) for the specifics of each.
 
 ## Package
 
@@ -86,7 +86,7 @@ kafka.ConfigureSchemaRegistry(cfg =>
 });
 ```
 
-See [Serialization](../kafka/serialization/) for how to wire schema-aware serializers to topics.
+See [Serialization](../serialization/) for how to wire schema-aware serializers to topics.
 
 ## Topics
 
@@ -135,6 +135,60 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 
 This is standard Kafka consumer group semantics; Emit does not add any special fan-out mechanism.
 
+## Auto-provisioning
+
+By default, Emit verifies that all declared topics exist when the application starts. If a topic is missing, startup fails with an `InvalidOperationException`. Enable auto-provisioning to create missing topics automatically:
+
+```csharp
+emit.AddKafka(kafka =>
+{
+    kafka.AutoProvision();
+
+    kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+    {
+        // Per-topic creation options (optional)
+        topic.Provisioning(options =>
+        {
+            options.NumPartitions = 6;
+            options.ReplicationFactor = 3;
+            options.Retention = TimeSpan.FromDays(14);
+            options.CompressionType = TopicCompressionType.Zstd;
+        });
+
+        // ... serializers, producer, consumer groups ...
+    });
+});
+```
+
+Without per-topic `Provisioning`, topics are created with broker defaults and a 7-day retention.
+
+### Topic creation options
+
+| Option | Default | Description |
+|---|---|---|
+| `NumPartitions` | broker default | Number of partitions |
+| `ReplicationFactor` | broker default | Number of replicas |
+| `Retention` | 7 days | How long messages are retained (`null` = infinite) |
+| `RetentionBytes` | no limit | Maximum partition size before old segments are discarded |
+| `CleanupPolicy` | `Delete` | `Delete`, `Compact`, or `DeleteAndCompact` |
+| `DeleteRetention` | 1 day | How long delete tombstones are retained for compacted topics |
+| `CompressionType` | `Producer` | `Producer`, `Uncompressed`, `Gzip`, `Snappy`, `Lz4`, or `Zstd` |
+| `MinCleanableDirtyRatio` | `0.5` | Minimum dirty-to-total ratio before the compactor runs |
+| `MinCompactionLag` | `0` | Minimum time a message remains uncompacted |
+| `MaxCompactionLag` | none | Maximum time a message can remain uncompacted |
+
+Compression-specific levels are applied when matching `CompressionType` is set:
+
+| Option | Range | Default |
+|---|---|---|
+| `GzipCompressionLevel` | 1–9 (or -1 for default) | -1 |
+| `Lz4CompressionLevel` | 1–17 | 9 |
+| `ZstdCompressionLevel` | negative for fast mode, 1–22 for normal | 3 |
+
+### How it works
+
+`KafkaTopicVerifier` runs as a hosted service before all other hosted services. It queries the broker for existing topics and compares against all declared topics (including the DLQ topic). When auto-provisioning is enabled, missing topics are created with their configured `TopicCreationOptions`. When disabled, missing topics cause a startup failure.
+
 ## Provider-level middleware
 
 Middleware registered on `kafka.InboundPipeline` or `kafka.OutboundPipeline` runs for all Kafka consumers or producers, respectively:
@@ -148,4 +202,4 @@ emit.AddKafka(kafka =>
 });
 ```
 
-This is the Provider level of the [three-level pipeline model](../concepts/pipeline-model/).
+This is the Provider level of the [pipeline model](../../concepts/pipeline-model/).

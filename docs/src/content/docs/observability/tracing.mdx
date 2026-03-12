@@ -38,19 +38,19 @@ The `Emit.Provider.*` wildcard captures any additional provider sources added in
 
 Emit propagates the W3C `traceparent` header across the async outbox boundary:
 
-1. When `ProduceAsync` is called inside an active activity, Emit captures the `traceparent` and stores it in the outbox entry's `TraceParent` field.
-2. When the outbox worker delivers the entry to the broker, it sets the `traceparent` as a Kafka message header.
+1. When `ProduceAsync` is called inside an active activity, Emit captures the `traceparent` and stores it in the outbox entry's `Headers`.
+2. When the outbox worker delivers the entry to the broker, the `traceparent` header is forwarded as a Kafka message header.
 3. When the consumer processes the message, Emit extracts the `traceparent` and starts a linked consumer span.
 
 This gives you a connected trace even though the produce and consume operations run in different processes at different times.
 
 ## What gets traced
 
-**Produce pipeline:** a span is started when `ProduceAsync` is called and completed when the outbox entry is written (or the direct produce completes). The span includes topic name and provider attributes.
+**Produce pipeline:** a span is started when `ProduceAsync` is called and completed when the outbox entry is written (or the direct produce completes). The span includes `messaging.system` (derived from the `DestinationAddress` URI scheme, e.g. `"kafka"`) and `messaging.destination.name` (the topic or entity name extracted from the URI).
 
 **Outbox delivery:** the worker creates a span when it picks up an entry and delivers it to the broker. The span is linked to the original produce span via `traceparent`.
 
-**Consume pipeline:** a span is started when a message is received and completed when `ConsumeAsync` returns. It is linked to the producer span.
+**Consume pipeline:** a span is started when a message is received and completed when `ConsumeAsync` returns. It is linked to the producer span. The `SourceAddress` is propagated via the `emit-source-address` header so the consumer can trace back to the originating broker.
 
 **Retries:** each retry attempt gets its own `emit.consume.retry` span.
 
@@ -126,11 +126,12 @@ Enrichers are invoked after Emit sets its own standard tags. `EnrichmentContext.
 
 ## Accessing the current activity in middleware
 
-The current activity is available from `Activity.Current`. The feature bag also exposes the W3C context via `IActivityFeature`:
+The current activity is available from `Activity.Current`:
 
 ```csharp
-var activityFeature = context.Features.Get<IActivityFeature>();
-// activityFeature.TraceParent
-// activityFeature.TraceState
-// activityFeature.Baggage
+var activity = Activity.Current;
+if (activity is not null)
+{
+    activity.SetTag("custom.tag", "value");
+}
 ```
