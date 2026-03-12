@@ -91,9 +91,11 @@ public static class MongoDbEmitBuilderExtensions
         if (outboxEnabled)
         {
             context.OutboxCollection = context.Database
-                .GetCollection<OutboxEntry>(CollectionNames.Outbox);
+                .GetCollection<OutboxEntry>(CollectionNames.Outbox)
+                .WithWriteConcern(WriteConcern.WMajority);
             context.SequenceCollection = context.Database
-                .GetCollection<SequenceCounter>(CollectionNames.Sequence);
+                .GetCollection<SequenceCounter>(CollectionNames.Sequence)
+                .WithWriteConcern(WriteConcern.WMajority);
         }
 
         if (distributedLockEnabled)
@@ -143,8 +145,7 @@ public static class MongoDbEmitBuilderExtensions
 
         context.DaemonAssignmentCollection.Indexes.CreateOne(
             new CreateIndexModel<DaemonAssignmentDocument>(
-                Builders<DaemonAssignmentDocument>.IndexKeys.Ascending(x => x.AssignedNodeId),
-                new CreateIndexOptions { Background = true }));
+                Builders<DaemonAssignmentDocument>.IndexKeys.Ascending(x => x.AssignedNodeId)));
     }
 
     private static void RegisterOutboxServices(EmitBuilder builder, MongoDbBuilder mongoBuilder)

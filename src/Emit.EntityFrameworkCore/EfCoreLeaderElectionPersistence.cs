@@ -3,6 +3,7 @@ namespace Emit.EntityFrameworkCore;
 using System.Data;
 using System.Data.Common;
 using Emit.Abstractions.LeaderElection;
+using Emit.EntityFrameworkCore.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -66,7 +67,7 @@ internal sealed class EfCoreLeaderElectionPersistence<TDbContext>(
         // Query the current leader.
         await reader.CloseAsync().ConfigureAwait(false);
 
-        var currentLeader = await GetCurrentLeaderAsync(connection, cancellationToken).ConfigureAwait(false);
+        var currentLeader = await GetCurrentLeaderAsync(dbContext, cancellationToken).ConfigureAwait(false);
         return new HeartbeatResult(false, currentLeader);
     }
 
@@ -75,23 +76,13 @@ internal sealed class EfCoreLeaderElectionPersistence<TDbContext>(
         Guid nodeId,
         CancellationToken cancellationToken)
     {
-        var sql = $"""
-            DELETE FROM "{TableNames.Leader}" WHERE key = 'leader' AND node_id = @nodeId
-            """;
-
         try
         {
             await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-            var connection = dbContext.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddParameter(command, "@nodeId", nodeId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.Set<LeaderEntity>()
+                .Where(e => e.Key == "leader" && e.NodeId == nodeId)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -112,10 +103,7 @@ internal sealed class EfCoreLeaderElectionPersistence<TDbContext>(
 
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await EnsureOpenAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -136,23 +124,13 @@ internal sealed class EfCoreLeaderElectionPersistence<TDbContext>(
         Guid nodeId,
         CancellationToken cancellationToken)
     {
-        var sql = $"""
-            DELETE FROM "{TableNames.Nodes}" WHERE node_id = @nodeId
-            """;
-
         try
         {
             await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-            var connection = dbContext.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddParameter(command, "@nodeId", nodeId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.Set<NodeEntity>()
+                .Where(e => e.NodeId == nodeId)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -160,47 +138,37 @@ internal sealed class EfCoreLeaderElectionPersistence<TDbContext>(
         }
     }
 
-    private static async Task<Guid> GetCurrentLeaderAsync(
-        DbConnection connection,
-        CancellationToken cancellationToken)
-    {
-        var sql = $"""
-            SELECT node_id FROM "{TableNames.Leader}" WHERE key = 'leader'
-            """;
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is Guid guid ? guid : Guid.Empty;
-    }
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<Guid>> GetActiveNodeIdsAsync(
         CancellationToken cancellationToken)
     {
-        var sql = $"""
-            SELECT node_id FROM "{TableNames.Nodes}"
-            """;
-
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var connection = dbContext.Database.GetDbConnection();
+
+        return await dbContext.Set<NodeEntity>()
+            .AsNoTracking()
+            .Select(e => e.NodeId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<Guid> GetCurrentLeaderAsync(
+        DbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.Set<LeaderEntity>()
+            .AsNoTracking()
+            .Where(e => e.Key == "leader")
+            .Select(e => e.NodeId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task EnsureOpenAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
         if (connection.State != ConnectionState.Open)
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-
-        List<Guid> nodeIds = [];
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            nodeIds.Add(reader.GetGuid(0));
-        }
-
-        return nodeIds;
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

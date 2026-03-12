@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
+using Emit.EntityFrameworkCore.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -25,21 +26,19 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
+        // Atomic conditional upsert using server-side clock_timestamp().
+        // INSERT ON CONFLICT DO UPDATE WHERE expires_at <= clock_timestamp() cannot be
+        // expressed as EF Core LINQ — raw SQL is justified here.
         var sql = $"""
-            INSERT INTO "{TableNames.Locks}" (key, lock_id, expires_at)
+            INSERT INTO {TableNames.Locks} (key, lock_id, expires_at)
             VALUES (@key, @lockId, clock_timestamp() + @ttl)
-            ON CONFLICT (key) DO UPDATE
-                SET lock_id = @lockId, expires_at = clock_timestamp() + @ttl
-                WHERE "{TableNames.Locks}".expires_at <= clock_timestamp()
-            RETURNING key
+            ON CONFLICT (key) DO UPDATE SET lock_id = @lockId, expires_at = clock_timestamp() + @ttl
+            WHERE {TableNames.Locks}.expires_at <= clock_timestamp()
             """;
 
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await EnsureOpenAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -47,8 +46,8 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
         AddParameter(command, "@lockId", lockId);
         AddParameter(command, "@ttl", ttl);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is not null;
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
     }
 
     /// <inheritdoc />
@@ -57,24 +56,13 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
         Guid lockId,
         CancellationToken cancellationToken)
     {
-        var sql = $"""
-            DELETE FROM "{TableNames.Locks}" WHERE key = @key AND lock_id = @lockId
-            """;
-
         try
         {
             await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-            var connection = dbContext.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddParameter(command, "@key", key);
-            AddParameter(command, "@lockId", lockId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.Set<LockEntity>()
+                .Where(e => e.Key == key && e.LockId == lockId)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -89,19 +77,16 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
+        // Uses server-side clock_timestamp() to avoid client/server clock skew on lock expiry.
         var sql = $"""
-            UPDATE "{TableNames.Locks}"
+            UPDATE {TableNames.Locks}
             SET expires_at = clock_timestamp() + @ttl
             WHERE key = @key AND lock_id = @lockId
-            RETURNING key
             """;
 
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await EnsureOpenAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -109,8 +94,16 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
         AddParameter(command, "@lockId", lockId);
         AddParameter(command, "@ttl", ttl);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is not null;
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    private static async Task EnsureOpenAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

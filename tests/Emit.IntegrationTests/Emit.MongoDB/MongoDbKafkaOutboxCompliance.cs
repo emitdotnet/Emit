@@ -5,6 +5,7 @@ using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
+using Emit.Models;
 using Emit.MongoDB.DependencyInjection;
 using Emit.MongoDB.Tests.TestInfrastructure;
 using Emit.Testing;
@@ -121,5 +122,25 @@ public class MongoDbKafkaOutboxCompliance
         {
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc/>
+    protected override async Task EnqueueDirectlyAsync(
+        IServiceProvider services,
+        OutboxEntry entry,
+        CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+        var emitContext = sp.GetRequiredService<IEmitContext>();
+        var repository = sp.GetRequiredService<IOutboxRepository>();
+
+        // MongoDB EnqueueAsync requires an active transaction.
+        await using var transaction = await emitContext
+            .BeginMongoTransactionAsync(mongoClient, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        await repository.EnqueueAsync(entry, ct).ConfigureAwait(false);
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 }

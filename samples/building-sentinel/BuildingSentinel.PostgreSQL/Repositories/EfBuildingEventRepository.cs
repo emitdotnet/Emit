@@ -6,7 +6,7 @@ using BuildingSentinel.PostgreSQL.Entities;
 
 internal sealed class EfBuildingEventRepository(SampleDbContext dbContext) : IBuildingEventRepository
 {
-    public async Task SaveAsync(BuildingEvent evt, CancellationToken cancellationToken = default)
+    public Task InsertAsync(BuildingEvent evt, CancellationToken cancellationToken = default)
     {
         dbContext.BuildingEvents.Add(new BuildingEventEntity
         {
@@ -16,6 +16,6 @@ internal sealed class EfBuildingEventRepository(SampleDbContext dbContext) : IBu
             OccurredAt = evt.OccurredAt
         });
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return Task.CompletedTask;
     }
 }

@@ -15,7 +15,7 @@ internal sealed class MongoBuildingEventRepository(
     private readonly IMongoCollection<BuildingEventDocument> collection =
         context.Database.GetCollection<BuildingEventDocument>("building_events");
 
-    public async Task SaveAsync(BuildingEvent evt, CancellationToken cancellationToken = default)
+    public async Task InsertAsync(BuildingEvent evt, CancellationToken cancellationToken = default)
     {
         var doc = new BuildingEventDocument
         {

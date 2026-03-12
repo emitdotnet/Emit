@@ -25,7 +25,7 @@ public sealed class SubmitBuildingEventHandler(
             .BeginTransactionAsync(emitContext, cancellationToken)
             .ConfigureAwait(false);
 
-        await eventRepository.SaveAsync(request.Event, cancellationToken).ConfigureAwait(false);
+        await eventRepository.InsertAsync(request.Event, cancellationToken).ConfigureAwait(false);
 
         await producer.ProduceAsync(
             new EventMessage<string, BuildingEvent>(request.Event.DeviceId, request.Event),

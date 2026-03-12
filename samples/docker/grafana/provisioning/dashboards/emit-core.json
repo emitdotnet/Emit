@@ -15,7 +15,7 @@
         "label": "Provider",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-        "query": "label_values(emit_outbox_enqueued_total, provider)",
+        "query": "label_values(emit_pipeline_produce_completed_total, provider)",
         "includeAll": true,
         "allValue": ".*",
         "multi": true,

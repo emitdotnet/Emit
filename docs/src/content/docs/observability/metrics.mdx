@@ -46,10 +46,9 @@ Pipeline and consumer middleware metrics.
 | `emit.consumer.circuit_breaker.state_transitions` | Counter | `to_state` | Circuit state changes |
 | `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | — | How long the circuit stayed open |
 | `emit.consumer.circuit_breaker.state` | Gauge | — | Current circuit state: 0=closed, 1=open, 2=half-open |
-| `emit.consumer.rate_limit.acquired` | Counter | — | Rate limit permits acquired |
 | `emit.consumer.rate_limit.wait_duration` | Histogram (s) | — | Time waiting for a rate limit permit |
-| `emit.consumer.dlq.produced` | Counter | `reason`, `dlq_topic` | Messages forwarded to DLQ |
-| `emit.consumer.dlq.produce_errors` | Counter | `reason`, `dlq_topic` | Failures while forwarding to DLQ |
+| `emit.consumer.dlq.produced` | Counter | `reason` | Messages forwarded to DLQ |
+| `emit.consumer.dlq.produce_errors` | Counter | `reason` | Failures while forwarding to DLQ |
 
 ## Meter: `Emit.Outbox`
 
@@ -57,10 +56,10 @@ Outbox entry lifecycle and worker health.
 
 | Instrument | Type | Tags | Description |
 |---|---|---|---|
-| `emit.outbox.enqueued` | Counter | `provider` | Entries written to the outbox |
-| `emit.outbox.processing.duration` | Histogram (s) | `provider`, `result` | Time to deliver one entry |
-| `emit.outbox.processing.completed` | Counter | `provider`, `result` | Entries processed |
-| `emit.outbox.critical_time` | Histogram (s) | `provider` | End-to-end latency from enqueue to delivery |
+| `emit.outbox.enqueued` | Counter | `system` | Entries written to the outbox |
+| `emit.outbox.processing.duration` | Histogram (s) | `system`, `result` | Time to deliver one entry |
+| `emit.outbox.processing.completed` | Counter | `system`, `result` | Entries processed |
+| `emit.outbox.critical_time` | Histogram (s) | `system` | End-to-end latency from enqueue to delivery |
 | `emit.outbox.worker.poll_cycles` | Counter | `has_entries` | Worker poll cycles |
 | `emit.outbox.worker.batch_entries` | Histogram | — | Entries per poll cycle |
 | `emit.outbox.worker.active_groups` | Gauge | — | Concurrent group processing count |
@@ -111,7 +110,7 @@ Kafka producer and consumer client metrics.
 | `emit.kafka.consume.partition.events` | Counter | `consumer_group`, `topic`, `type` | Partition rebalance events |
 | `emit.kafka.consume.offset.commits` | Counter | `consumer_group`, `result` | Offset commit operations |
 | `emit.kafka.consume.worker.faults` | Counter | `consumer_group` | Worker fault events |
-| `emit.kafka.consume.dlq.produced` | Counter | `consumer_group`, `source_topic`, `dlq_topic` | Deserialization errors forwarded to DLQ |
+| `emit.kafka.consume.dlq.produced` | Counter | `consumer_group`, `source_topic` | Deserialization errors forwarded to DLQ |
 | `emit.kafka.consume.worker.channel_depth` | Gauge | `consumer_group`, `worker_index` | Messages queued in worker channels |
 | `emit.kafka.consume.groups.active` | Gauge | — | Active consumer groups |
 | `emit.kafka.consume.worker_pool.size` | Gauge | `consumer_group` | Configured worker count per group |
