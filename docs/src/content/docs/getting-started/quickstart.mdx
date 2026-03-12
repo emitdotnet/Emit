@@ -183,5 +183,5 @@ When you call `producer.ProduceAsync()` inside a transaction, Emit doesn't send 
 3. **Crash recovery** — If the process crashes between the commit and delivery, the worker picks up the pending entry on restart. No messages are lost and no duplicates are introduced.
 
 :::tip[Serialization alternatives]
-This quickstart uses JSON Schema serialization via `Emit.Kafka.JsonSerializer`. Emit also ships Avro and Protobuf serializer packages, or you can plug in any `ISerializer<T>` / `IDeserializer<T>` implementation. See [Serialization](/kafka/serialization/) for all options.
+This quickstart uses JSON Schema serialization via `Emit.Kafka.JsonSerializer`. Emit also ships Avro and Protobuf serializer packages, or you can plug in any `ISerializer<T>` / `IDeserializer<T>` implementation. See [Serialization](../kafka/serialization/) for all options.
 :::

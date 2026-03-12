@@ -90,7 +90,7 @@ if (context.TransportContext is KafkaTransportContext<string> kafka)
     logger.LogDebug("Key: {Key}, Partition: {P}", kafka.Key, kafka.Partition);
 ```
 
-See [Feature Collection & Payload Bag](/advanced/feature-collection/) for the full list of context properties and built-in payloads.
+See [Feature Collection & Payload Bag](../advanced/feature-collection/) for the full list of context properties and built-in payloads.
 
 ## Middleware levels
 
@@ -119,4 +119,4 @@ group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per mes
 
 Emit automatically registers error handling, tracing, metrics, and observer middleware. You don't add them manually and cannot change their order. Your custom middleware always runs inside the built-in layers.
 
-For more on writing middleware, see [Custom Middleware](/advanced/custom-middleware/).
+For more on writing middleware, see [Custom Middleware](../advanced/custom-middleware/).

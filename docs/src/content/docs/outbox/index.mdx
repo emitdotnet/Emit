@@ -9,7 +9,7 @@ The transactional outbox solves the dual-write problem by ensuring that your bus
 
 1. **Atomic write** — When `ProduceAsync` is called inside a transaction, the outbox entry is written to the database in the same session as your business data. `CommitAsync` persists both atomically.
 
-2. **Background delivery** — A [daemon](/concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the broker. Your endpoint returns immediately after the commit.
+2. **Background delivery** — A [daemon](../concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the broker. Your endpoint returns immediately after the commit.
 
 3. **Delete on success** — Once delivery succeeds, the entry is deleted. There are no intermediate status fields: entry present means pending, entry absent means delivered.
 
@@ -55,7 +55,7 @@ emit.AddKafka(kafka =>
 | `BatchSize` | 100 | Maximum entries processed per cycle across all groups |
 | `MaxGroupsPerCycle` | 1000 | Maximum distinct groups evaluated per cycle |
 
-See [Installation](/getting-started/installation/) for the full setup.
+See [Installation](../getting-started/installation/) for the full setup.
 
 ## Ordering guarantees
 
@@ -65,7 +65,7 @@ The worker processes different groups in parallel, so two topics make progress i
 
 ## Single-worker guarantee
 
-The outbox worker runs as a [daemon](/concepts/leader-election/#daemon-coordination) — exactly one instance in your cluster processes the outbox at any time. If the assigned node goes down, the leader reassigns the daemon to another node within one heartbeat cycle (default: 15 seconds).
+The outbox worker runs as a [daemon](../concepts/leader-election/#daemon-coordination) — exactly one instance in your cluster processes the outbox at any time. If the assigned node goes down, the leader reassigns the daemon to another node within one heartbeat cycle (default: 15 seconds).
 
 This prevents duplicate delivery from concurrent workers processing the same group.
 
