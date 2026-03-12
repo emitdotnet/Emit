@@ -113,49 +113,19 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
 
-        // Aggregation pipeline to find the minimum sequence per group
-        // CRITICAL: GroupKey must be in the initial $match for shard routing
-        BsonDocument[] pipeline =
-        [
-            // Group by GroupKey and find minimum sequence
-            new BsonDocument("$group", new BsonDocument
-            {
-                { "_id", "$groupKey" },
-                { "minSequence", new BsonDocument("$min", "$sequence") }
-            }),
-            // Limit to N groups
-            new BsonDocument("$limit", limit)
-        ];
+        // Single-pass pipeline using the { groupKey, sequence } compound index.
+        // $sort is satisfied entirely from the index, $group + $first picks the
+        // lowest-sequence document per group without a second round trip.
+        var pipeline = new EmptyPipelineDefinition<OutboxEntry>()
+            .Sort(Builders<OutboxEntry>.Sort.Ascending(x => x.GroupKey).Ascending(x => x.Sequence))
+            .Group(x => x.GroupKey, g => new { Head = g.First() })
+            .Limit(limit)
+            .ReplaceRoot(x => x.Head);
 
-        var groupResults = await outboxCollection
-            .Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken)
+        return await outboxCollection
+            .Aggregate(pipeline, cancellationToken: cancellationToken)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (groupResults.Count == 0)
-        {
-            return [];
-        }
-
-        // Build filter to fetch the actual entries
-        // CRITICAL: GroupKey must be first for shard routing
-        var filters = groupResults.Select(doc =>
-        {
-            var groupKey = doc["_id"].AsString;
-            var minSequence = doc["minSequence"].ToInt64();
-            return Builders<OutboxEntry>.Filter.And(
-                Builders<OutboxEntry>.Filter.Eq(x => x.GroupKey, groupKey),
-                Builders<OutboxEntry>.Filter.Eq(x => x.Sequence, minSequence));
-        }).ToList();
-
-        var combinedFilter = Builders<OutboxEntry>.Filter.Or(filters);
-
-        var entries = await outboxCollection
-            .Find(combinedFilter)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return entries;
     }
 
     /// <inheritdoc/>

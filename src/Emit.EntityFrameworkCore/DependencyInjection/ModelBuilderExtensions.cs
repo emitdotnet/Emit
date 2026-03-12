@@ -167,6 +167,10 @@ public static class ModelBuilderExtensions
             .HasColumnName("expires_at")
             .HasColumnType("timestamp with time zone")
             .IsRequired();
+
+        // Index for LockCleanupWorker DELETE WHERE expires_at < clock_timestamp()
+        entity.HasIndex(e => e.ExpiresAt)
+            .HasDatabaseName("ix_locks_expires_at");
     }
 
     private static void ConfigureLeaderEntity(ModelBuilder modelBuilder)
@@ -221,6 +225,10 @@ public static class ModelBuilderExtensions
             .HasColumnName("last_seen_at")
             .HasColumnType("timestamp with time zone")
             .IsRequired();
+
+        // Index for RemoveExpiredNodesAsync DELETE WHERE last_seen_at < clock_timestamp() - @ttl
+        entity.HasIndex(e => e.LastSeenAt)
+            .HasDatabaseName("ix_nodes_last_seen_at");
     }
 
     private static void ConfigureDaemonAssignmentEntity(ModelBuilder modelBuilder)

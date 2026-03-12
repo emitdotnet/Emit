@@ -3,7 +3,7 @@ title: Mediator
 description: In-process request/response dispatching with the same middleware pipeline as the outbox.
 ---
 
-The mediator dispatches typed requests to their registered handlers in-process. It uses the same [middleware pipeline model](/concepts/pipeline-model/) as the rest of Emit, so tracing, metrics, observers, and custom middleware all work without extra wiring.
+The mediator dispatches typed requests to their registered handlers in-process. It uses the same [middleware pipeline model](../concepts/pipeline-model/) as the rest of Emit, so tracing, metrics, observers, and custom middleware all work without extra wiring.
 
 ## Registration
 
@@ -85,7 +85,7 @@ Sending to an unregistered request type throws `InvalidOperationException` at di
 
 ## Middleware
 
-The mediator supports the same [middleware levels](/concepts/pipeline-model/#middleware-levels) as the rest of Emit. Register mediator-wide middleware on `InboundPipeline`, or per-handler middleware using the two-argument `AddHandler` overload:
+The mediator supports the same [middleware levels](../concepts/pipeline-model/#middleware-levels) as the rest of Emit. Register mediator-wide middleware on `InboundPipeline`, or per-handler middleware using the two-argument `AddHandler` overload:
 
 ```csharp
 emit.AddMediator(mediator =>

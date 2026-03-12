@@ -360,12 +360,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "rate(emit_kafka_broker_tx_errors_total[1m])",
+          "expr": "sum by(broker_id)(rate(emit_kafka_broker_tx_errors_total[1m]))",
           "legendFormat": "errors {{broker_id}}"
         },
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "rate(emit_kafka_broker_request_timeouts_total[1m])",
+          "expr": "sum by(broker_id)(rate(emit_kafka_broker_request_timeouts_total[1m]))",
           "legendFormat": "timeouts {{broker_id}}"
         }
       ],
@@ -391,7 +391,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "rate(emit_kafka_broker_tx_bytes_total[1m])",
+          "expr": "sum by(broker_id)(rate(emit_kafka_broker_tx_bytes_total[1m]))",
           "legendFormat": "{{broker_id}}"
         }
       ],
@@ -417,7 +417,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "rate(emit_kafka_broker_tx_retries_total[1m])",
+          "expr": "sum by(broker_id)(rate(emit_kafka_broker_tx_retries_total[1m]))",
           "legendFormat": "{{broker_id}}"
         }
       ],

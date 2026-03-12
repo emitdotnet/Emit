@@ -38,16 +38,29 @@ internal sealed class MongoDbDistributedLockProvider : DistributedLockProviderBa
     {
         var ttlMs = (long)ttl.TotalMilliseconds;
 
-        // Atomic upsert: insert if key doesn't exist, or update if expired
-        // Uses $$NOW for server-side time to avoid clock skew
-        var filter = Builders<LockDocument>.Filter.And(
-            Builders<LockDocument>.Filter.Eq(x => x.Key, key),
-            Builders<LockDocument>.Filter.Where(x => x.ExpiresAt <= DateTime.UtcNow));
+        // Filter on key only — expiry logic lives entirely in the pipeline so that both
+        // the "should I acquire?" decision and the new expiresAt value use the same $$NOW.
+        // $expr is not permitted in upsert filter predicates (MongoDB restriction), which
+        // is why the condition is expressed as a $cond inside the update pipeline instead.
+        //
+        // Pipeline logic:
+        //   - If expiresAt is null (new document from upsert) or <= $$NOW (expired):
+        //       set lockId to ours and expiresAt to $$NOW + ttl  (acquire)
+        //   - Otherwise (active lock held by another):
+        //       preserve existing lockId and expiresAt             (do not acquire)
+        //
+        // null < any date in MongoDB's aggregation comparison, so a freshly upserted
+        // document (expiresAt: null) always satisfies the $lte condition.
+        var filter = Builders<LockDocument>.Filter.Eq(x => x.Key, key);
 
-        // Pipeline update uses $$NOW for server-side timestamps
         var pipeline = new EmptyPipelineDefinition<LockDocument>()
             .AppendStage<LockDocument, LockDocument, LockDocument>(
-                $"{{ $set: {{ lockId: UUID('{lockId}'), expiresAt: {{ $add: ['$$NOW', {ttlMs}] }} }} }}");
+                $$"""
+                { $set: {
+                    lockId:    { $cond: [{ $lte: ['$expiresAt', '$$NOW'] }, UUID('{{lockId}}'),       '$lockId'] },
+                    expiresAt: { $cond: [{ $lte: ['$expiresAt', '$$NOW'] }, { $add: ['$$NOW', {{ttlMs}}] }, '$expiresAt'] }
+                } }
+                """);
 
         var options = new FindOneAndUpdateOptions<LockDocument>
         {
@@ -67,7 +80,7 @@ internal sealed class MongoDbDistributedLockProvider : DistributedLockProviderBa
         }
         catch (MongoCommandException ex) when (ex.Code == 11000)
         {
-            // Duplicate key — another holder has the lock and it hasn't expired
+            // Concurrent upsert race on the same key; another holder just acquired it.
             return false;
         }
     }

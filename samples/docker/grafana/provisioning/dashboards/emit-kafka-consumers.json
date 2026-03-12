@@ -380,8 +380,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "sum by(consumer_group, component)(rate(emit_kafka_consume_deserialization_errors_total[1m]))",
-          "legendFormat": "{{consumer_group}} — {{component}}"
+          "expr": "sum by(consumer_group, topic, component, action)(rate(emit_kafka_consume_deserialization_errors_total[1m]))",
+          "legendFormat": "{{consumer_group}} / {{topic}} — {{component}} ({{action}})"
         }
       ],
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 }

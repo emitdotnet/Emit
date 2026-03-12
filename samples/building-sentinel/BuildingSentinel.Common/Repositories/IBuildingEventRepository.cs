@@ -7,6 +7,6 @@ using BuildingSentinel.Common.Domain;
 /// </summary>
 public interface IBuildingEventRepository
 {
-    /// <summary>Persists <paramref name="evt"/> to the underlying store within the caller's active transaction.</summary>
-    Task SaveAsync(BuildingEvent evt, CancellationToken cancellationToken = default);
+    /// <summary>Inserts <paramref name="evt"/> into the underlying store within the caller's active transaction.</summary>
+    Task InsertAsync(BuildingEvent evt, CancellationToken cancellationToken = default);
 }

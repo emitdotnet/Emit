@@ -48,17 +48,36 @@ internal sealed class MongoDbLeaderElectionPersistence : ILeaderElectionPersiste
             new FindOneAndUpdateOptions<NodeDocument> { IsUpsert = true },
             cancellationToken).ConfigureAwait(false);
 
-        // 2. Atomic CAS: acquire or renew leader lease
-        // Match if: this node is already leader OR the lease has expired
-        var leaderFilter = Builders<LeaderDocument>.Filter.And(
-            Builders<LeaderDocument>.Filter.Eq(x => x.Key, "leader"),
-            Builders<LeaderDocument>.Filter.Or(
-                Builders<LeaderDocument>.Filter.Eq(x => x.NodeId, request.NodeId),
-                Builders<LeaderDocument>.Filter.Where(x => x.ExpiresAt <= DateTime.UtcNow)));
+        // 2. Atomic CAS: acquire or renew leader lease.
+        // Filter on key only — the "who wins?" logic lives in the pipeline so that both
+        // the decision and the new expiresAt reference the same $$NOW (server clock).
+        // $expr is not permitted in upsert filter predicates (MongoDB restriction).
+        //
+        // Pipeline logic:
+        //   - If expiresAt is null (new document) or <= $$NOW (expired), OR nodeId already ours:
+        //       set nodeId to ours and expiresAt to $$NOW + lease  (acquire / renew)
+        //   - Otherwise (active lease held by another node):
+        //       preserve existing nodeId and expiresAt              (do not acquire)
+        //
+        // We then inspect result.NodeId to determine whether we hold leadership.
+        var leaderFilter = Builders<LeaderDocument>.Filter.Eq(x => x.Key, "leader");
 
         var leaderPipeline = new EmptyPipelineDefinition<LeaderDocument>()
             .AppendStage<LeaderDocument, LeaderDocument, LeaderDocument>(
-                $"{{ $set: {{ nodeId: UUID('{request.NodeId}'), expiresAt: {{ $add: ['$$NOW', {ttlMs}] }} }} }}");
+                $$"""
+                { $set: {
+                    nodeId: { $cond: [
+                        { $or: [{ $eq: ['$nodeId', UUID('{{request.NodeId}}')] }, { $lte: ['$expiresAt', '$$NOW'] }] },
+                        UUID('{{request.NodeId}}'),
+                        '$nodeId'
+                    ]},
+                    expiresAt: { $cond: [
+                        { $or: [{ $eq: ['$nodeId', UUID('{{request.NodeId}}')] }, { $lte: ['$expiresAt', '$$NOW'] }] },
+                        { $add: ['$$NOW', {{ttlMs}}] },
+                        '$expiresAt'
+                    ]}
+                } }
+                """);
 
         try
         {
@@ -72,18 +91,11 @@ internal sealed class MongoDbLeaderElectionPersistence : ILeaderElectionPersiste
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            if (result is not null && result.NodeId == request.NodeId)
-            {
-                return new HeartbeatResult(true, request.NodeId);
-            }
-
-            // We got a document back but the nodeId doesn't match — shouldn't happen with upsert
-            var leaderNodeId = result?.NodeId ?? Guid.Empty;
-            return new HeartbeatResult(false, leaderNodeId);
+            return new HeartbeatResult(result!.NodeId == request.NodeId, result.NodeId);
         }
         catch (MongoCommandException ex) when (ex.Code == 11000)
         {
-            // Duplicate key — another node holds the leader document and lease hasn't expired
+            // Concurrent upsert race creating the first leader document.
             var currentLeader = await leaderCollection.Find(
                 Builders<LeaderDocument>.Filter.Eq(x => x.Key, "leader"))
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
@@ -118,25 +130,27 @@ internal sealed class MongoDbLeaderElectionPersistence : ILeaderElectionPersiste
     {
         var cutoffMs = (long)nodeRegistrationTtl.TotalMilliseconds;
 
-        // Find expired nodes first so we can return their IDs
-        var cutoffPipeline = new EmptyPipelineDefinition<NodeDocument>()
-            .AppendStage<NodeDocument, NodeDocument, BsonDocument>(
-                $"{{ $match: {{ $expr: {{ $lt: ['$lastSeenAt', {{ $subtract: ['$$NOW', {cutoffMs}] }}] }} }} }}");
+        // $$NOW used in both find and delete so both operations reference the same server clock
+        var expiredFilter = new BsonDocumentFilterDefinition<NodeDocument>(
+            new BsonDocument("$expr",
+                new BsonDocument("$lt", new BsonArray
+                {
+                    "$lastSeenAt",
+                    new BsonDocument("$subtract", new BsonArray { "$$NOW", cutoffMs })
+                })));
 
-        var expiredNodes = await nodeCollection.Aggregate(cutoffPipeline)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var expiredNodeIds = await nodeCollection
+            .Find(expiredFilter)
+            .Project(x => x.NodeId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
-        if (expiredNodes is [])
+        if (expiredNodeIds.Count == 0)
         {
             return [];
         }
 
-        var expiredNodeIds = expiredNodes
-            .Select(d => d["_id"].AsGuid)
-            .ToList();
-
-        var deleteFilter = Builders<NodeDocument>.Filter.In(x => x.NodeId, expiredNodeIds);
-        await nodeCollection.DeleteManyAsync(deleteFilter, cancellationToken).ConfigureAwait(false);
+        await nodeCollection.DeleteManyAsync(expiredFilter, cancellationToken).ConfigureAwait(false);
 
         return expiredNodeIds;
     }
@@ -162,12 +176,10 @@ internal sealed class MongoDbLeaderElectionPersistence : ILeaderElectionPersiste
     public async Task<IReadOnlyList<Guid>> GetActiveNodeIdsAsync(
         CancellationToken cancellationToken)
     {
-        var projection = Builders<NodeDocument>.Projection.Include(x => x.NodeId);
-        var documents = await nodeCollection
+        return await nodeCollection
             .Find(Builders<NodeDocument>.Filter.Empty)
-            .Project<NodeDocument>(projection)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-
-        return documents.Select(d => d.NodeId).ToList();
+            .Project(x => x.NodeId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 }

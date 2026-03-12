@@ -1,7 +1,9 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Models;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,6 +53,19 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
         string key,
         string value,
         bool commit,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Persists a pre-built <see cref="OutboxEntry"/> directly via <see cref="IOutboxRepository"/>
+    /// without going through the producer pipeline. Derived classes handle the provider-specific
+    /// persistence mechanics (e.g., EF Core change tracker flush, MongoDB transaction).
+    /// </summary>
+    /// <param name="services">The host-level service provider. Creates a new scope internally.</param>
+    /// <param name="entry">The outbox entry to persist.</param>
+    /// <param name="ct">A cancellation token.</param>
+    protected abstract Task EnqueueDirectlyAsync(
+        IServiceProvider services,
+        OutboxEntry entry,
         CancellationToken ct = default);
 
     /// <inheritdoc />
@@ -206,6 +221,98 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             // Assert — the pending entry is delivered after the daemon starts.
             var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
             Assert.Equal("durable-msg", ctx.Message);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that entries written directly to the outbox repository across multiple group keys
+    /// in a deliberately interleaved order are each delivered in strict per-group sequence order.
+    /// The 8 entries span 3 groups (alpha ×3, beta ×3, gamma ×2) with per-group sequences spread
+    /// non-contiguously across the global sequence range (alpha→[1,5,8], beta→[3,4,7], gamma→[2,6]).
+    /// Cross-group delivery order is non-deterministic and not asserted.
+    /// </summary>
+    [Fact]
+    public async Task GivenInterleavedGroupEntries_WhenOutboxDaemonRuns_ThenEachGroupDeliveredInOrder()
+    {
+        const int totalMessages = 8;
+        var topic = $"test-outbox-groups-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var pollingInterval = TimeSpan.FromSeconds(1);
+        var sink = new MessageSink<string>();
+
+        // Arrange — build but do not start; enqueue directly before the daemon is running.
+        var host = BuildHost(sink, topic, groupId, pollingInterval);
+
+        // Enqueue in a deliberately interleaved order.
+        // Global sequences: alpha-0→1, gamma-0→2, beta-0→3, beta-1→4, alpha-1→5,
+        //                   gamma-1→6, beta-2→7, alpha-2→8.
+        // Per-group sequences: alpha→[1,5,8], beta→[3,4,7], gamma→[2,6].
+        (string messageKey, string messageValue)[] entries =
+        [
+            ("alpha", "alpha-0"),
+            ("gamma", "gamma-0"),
+            ("beta",  "beta-0"),
+            ("beta",  "beta-1"),
+            ("alpha", "alpha-1"),
+            ("gamma", "gamma-1"),
+            ("beta",  "beta-2"),
+            ("alpha", "alpha-2"),
+        ];
+
+        foreach (var (messageKey, messageValue) in entries)
+        {
+            var keyBytes = Encoding.UTF8.GetBytes(messageKey);
+            await EnqueueDirectlyAsync(host.Services, new OutboxEntry
+            {
+                SystemId = "kafka",
+                Destination = $"kafka://localhost/{topic}",
+                GroupKey = $"kafka:{topic}:{Convert.ToBase64String(keyBytes)}",
+                Body = Encoding.UTF8.GetBytes(messageValue),
+                EnqueuedAt = DateTime.UtcNow,
+                Properties = new Dictionary<string, string> { ["key"] = Convert.ToBase64String(keyBytes) },
+            });
+        }
+
+        // Act — start the daemon; it picks up all 8 pending entries.
+        await host.StartAsync();
+
+        try
+        {
+            // Collect all delivered messages.
+            var received = new List<string>(totalMessages);
+            for (var i = 0; i < totalMessages; i++)
+            {
+                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                received.Add(ctx.Message!);
+            }
+
+            // Assert — within each group, messages arrived in enqueue order.
+            // "alpha-0" before "alpha-1" before "alpha-2", and so on.
+            string[][] expectedGroups =
+            [
+                ["alpha-0", "alpha-1", "alpha-2"],
+                ["beta-0",  "beta-1",  "beta-2"],
+                ["gamma-0", "gamma-1"],
+            ];
+
+            foreach (var expected in expectedGroups)
+            {
+                var prefix = expected[0][..expected[0].LastIndexOf('-')];
+                var groupMessages = received
+                    .Where(m => m.StartsWith(prefix + "-", StringComparison.Ordinal))
+                    .ToList();
+
+                Assert.Equal(expected.Length, groupMessages.Count);
+                for (var i = 0; i < expected.Length; i++)
+                {
+                    Assert.Equal(expected[i], groupMessages[i]);
+                }
+            }
         }
         finally
         {

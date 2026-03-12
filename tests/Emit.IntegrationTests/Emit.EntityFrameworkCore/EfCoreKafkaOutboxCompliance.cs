@@ -7,6 +7,7 @@ using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
+using Emit.Models;
 using Emit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -165,5 +166,20 @@ public class EfCoreKafkaOutboxCompliance
             // Roll back without saving — the outbox entry remains only in the change tracker.
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc/>
+    protected override async Task EnqueueDirectlyAsync(
+        IServiceProvider services,
+        OutboxEntry entry,
+        CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+        var dbContext = sp.GetRequiredService<IntegrationTestDbContext>();
+        var repository = sp.GetRequiredService<IOutboxRepository>();
+
+        await repository.EnqueueAsync(entry, ct).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 }

@@ -95,41 +95,26 @@ internal sealed class EfCoreOutboxRepository<TDbContext> : IOutboxRepository
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // For each group, find the minimum sequence, then fetch those entries
-        var groupHeads = await dbContext.Set<OutboxEntry>()
-            .GroupBy(e => e.GroupKey)
-            .Select(g => new
-            {
-                GroupKey = g.Key,
-                MinSequence = g.Min(e => e.Sequence)
-            })
-            .OrderBy(g => g.MinSequence)
-            .Take(limit)
+        // DISTINCT ON (group_key) with the (group_key, sequence) index does an index skip scan —
+        // one probe per group, never visiting interior rows. The outer ORDER BY + LIMIT picks
+        // the globally oldest group heads without materializing the full table.
+        // Build SQL as a plain string to avoid EF1002 (no user input — table name is a
+        // compile-time constant, limit is validated > 0 above).
+        var sql = $"""
+            SELECT * FROM (
+                SELECT DISTINCT ON (group_key) *
+                FROM "{TableNames.Outbox}"
+                ORDER BY group_key, sequence
+            ) heads
+            ORDER BY sequence
+            LIMIT {limit}
+            """;
+
+        return await dbContext.Set<OutboxEntry>()
+            .FromSqlRaw(sql)
+            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (groupHeads.Count == 0)
-        {
-            return [];
-        }
-
-        // Build a list of (GroupKey, MinSequence) pairs to fetch
-        var headEntries = new List<OutboxEntry>();
-        foreach (var head in groupHeads)
-        {
-            var entry = await dbContext.Set<OutboxEntry>()
-                .FirstOrDefaultAsync(
-                    e => e.GroupKey == head.GroupKey && e.Sequence == head.MinSequence,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (entry is not null)
-            {
-                headEntries.Add(entry);
-            }
-        }
-
-        return headEntries;
     }
 
     /// <inheritdoc/>
