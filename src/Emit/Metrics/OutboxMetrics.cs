@@ -10,8 +10,6 @@ public sealed class OutboxMetrics
 {
     private readonly EmitMetricsEnrichment enrichment;
 
-    private Func<int>? activeGroupsCallback;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="OutboxMetrics"/> class.
     /// </summary>
@@ -41,10 +39,6 @@ public sealed class OutboxMetrics
 
         BatchEntries = meter.CreateHistogram<int>(
             "emit.outbox.worker.batch_entries", "{entry}", "Number of entries fetched per poll cycle.");
-
-        meter.CreateObservableGauge(
-            "emit.outbox.worker.active_groups", ObserveActiveGroups, "{group}",
-            "Number of groups being processed concurrently.");
 
         WorkerErrors = meter.CreateCounter<long>(
             "emit.outbox.worker.errors", "{error}", "Exceptions caught in the processing loop.");
@@ -104,17 +98,5 @@ public sealed class OutboxMetrics
     {
         var tags = enrichment.CreateTags();
         WorkerErrors.Add(1, tags);
-    }
-
-    internal void RegisterActiveGroupsCallback(Func<int> callback)
-    {
-        Volatile.Write(ref activeGroupsCallback, callback);
-    }
-
-    private Measurement<int> ObserveActiveGroups()
-    {
-        var value = Volatile.Read(ref activeGroupsCallback)?.Invoke() ?? 0;
-        var tags = enrichment.CreateTags();
-        return new Measurement<int>(value, tags);
     }
 }

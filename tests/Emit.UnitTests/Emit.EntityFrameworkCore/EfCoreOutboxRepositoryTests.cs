@@ -108,38 +108,7 @@ public class EfCoreOutboxRepositoryTests
 
     #endregion
 
-    #region GetGroupHeadsAsync Tests
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(-100)]
-    public async Task GivenZeroOrNegativeLimit_WhenGetGroupHeadsAsync_ThenThrowsArgumentOutOfRangeException(int limit)
-    {
-        // Arrange
-        var repository = CreateRepository();
-
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => repository.GetGroupHeadsAsync(limit));
-        Assert.Equal("limit", exception.ParamName);
-    }
-
-    #endregion
-
     #region GetBatchAsync Tests
-
-    [Fact]
-    public async Task GivenNullEligibleGroups_WhenGetBatchAsync_ThenThrowsArgumentNullException()
-    {
-        // Arrange
-        var repository = CreateRepository();
-
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ArgumentNullException>(
-            () => repository.GetBatchAsync(null!, 10));
-        Assert.Equal("eligibleGroups", exception.ParamName);
-    }
 
     [Theory]
     [InlineData(0)]
@@ -152,7 +121,7 @@ public class EfCoreOutboxRepositoryTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => repository.GetBatchAsync(["group1"], batchSize));
+            () => repository.GetBatchAsync(batchSize));
         Assert.Equal("batchSize", exception.ParamName);
     }
 

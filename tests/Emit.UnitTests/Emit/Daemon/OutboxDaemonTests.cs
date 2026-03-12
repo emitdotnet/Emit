@@ -19,8 +19,7 @@ public class OutboxDaemonTests
     private readonly OutboxOptions options = new()
     {
         PollingInterval = TimeSpan.FromMilliseconds(50),
-        BatchSize = 100,
-        MaxGroupsPerCycle = 1000
+        BatchSize = 100
     };
 
     [Fact]
@@ -38,7 +37,7 @@ public class OutboxDaemonTests
     {
         // Arrange
         mockRepository
-            .Setup(r => r.GetGroupHeadsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
         var daemon = CreateDaemon();
@@ -62,7 +61,7 @@ public class OutboxDaemonTests
     {
         // Arrange
         mockRepository
-            .Setup(r => r.GetGroupHeadsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
         var daemon = CreateDaemon();
@@ -92,11 +91,7 @@ public class OutboxDaemonTests
             .Returns(Task.CompletedTask);
 
         mockRepository
-            .Setup(r => r.GetGroupHeadsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([entry]);
-
-        mockRepository
-            .Setup(r => r.GetBatchAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([entry]);
 
         mockRepository
@@ -129,11 +124,7 @@ public class OutboxDaemonTests
             .ThrowsAsync(new InvalidOperationException("Delivery failed"));
 
         mockRepository
-            .Setup(r => r.GetGroupHeadsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([entry1]);
-
-        mockRepository
-            .Setup(r => r.GetBatchAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([entry1, entry2]);
 
         var daemon = CreateDaemon([mockProvider.Object]);
@@ -148,6 +139,39 @@ public class OutboxDaemonTests
         mockProvider.Verify(p => p.ProcessAsync(entry1, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         mockProvider.Verify(p => p.ProcessAsync(entry2, It.IsAny<CancellationToken>()), Times.Never);
         mockRepository.Verify(r => r.DeleteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GivenEntriesFromMultipleGroups_WhenDispatched_ThenBothGroupsProcessed()
+    {
+        // Arrange
+        var entry1 = CreateEntry("entry-1", "test-provider", "group-1", sequence: 1);
+        var entry2 = CreateEntry("entry-2", "test-provider", "group-2", sequence: 2);
+
+        mockProvider.Setup(p => p.SystemId).Returns("test-provider");
+        mockProvider
+            .Setup(p => p.ProcessAsync(It.IsAny<OutboxEntry>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        mockRepository
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([entry1, entry2]);
+
+        mockRepository
+            .Setup(r => r.DeleteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var daemon = CreateDaemon([mockProvider.Object]);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Act
+        await daemon.StartAsync(cts.Token);
+        await Task.Delay(300);
+        await daemon.StopAsync(CancellationToken.None);
+
+        // Assert — both entries from different groups are processed
+        mockProvider.Verify(p => p.ProcessAsync(entry1, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        mockProvider.Verify(p => p.ProcessAsync(entry2, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     private static OutboxEntry CreateEntry(

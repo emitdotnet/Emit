@@ -135,34 +135,6 @@ public sealed class OutboxMetricsTests
     }
 
     [Fact]
-    public void GivenActiveGroupsCallback_WhenObserved_ThenGaugeReportsCallbackValue()
-    {
-        // Arrange
-        var metrics = new OutboxMetrics(null, new EmitMetricsEnrichment());
-        var capturedValue = -1;
-
-        metrics.RegisterActiveGroupsCallback(() => 7);
-
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (instrument.Meter.Name == MeterNames.EmitOutbox && instrument.Name == "emit.outbox.worker.active_groups")
-                l.EnableMeasurementEvents(instrument);
-        };
-        listener.SetMeasurementEventCallback<int>((instrument, value, tags, _) =>
-        {
-            capturedValue = value;
-        });
-        listener.Start();
-
-        // Act
-        listener.RecordObservableInstruments();
-
-        // Assert
-        Assert.Equal(7, capturedValue);
-    }
-
-    [Fact]
     public void GivenEnrichmentTags_WhenRecording_ThenEnrichmentTagsAreAppended()
     {
         // Arrange

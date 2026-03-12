@@ -107,57 +107,18 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<OutboxEntry>> GetGroupHeadsAsync(
-        int limit,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
-
-        // Single-pass pipeline using the { groupKey, sequence } compound index.
-        // $sort is satisfied entirely from the index, $group + $first picks the
-        // lowest-sequence document per group without a second round trip.
-        var pipeline = new EmptyPipelineDefinition<OutboxEntry>()
-            .Sort(Builders<OutboxEntry>.Sort.Ascending(x => x.GroupKey).Ascending(x => x.Sequence))
-            .Group(x => x.GroupKey, g => new { Head = g.First() })
-            .Limit(limit)
-            .ReplaceRoot(x => x.Head);
-
-        return await outboxCollection
-            .Aggregate(pipeline, cancellationToken: cancellationToken)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
     public async Task<IReadOnlyList<OutboxEntry>> GetBatchAsync(
-        IEnumerable<string> eligibleGroups,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(eligibleGroups);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
 
-        var groupsList = eligibleGroups.ToList();
-        if (groupsList.Count == 0)
-        {
-            return [];
-        }
-
-        // CRITICAL: GroupKey filter must be first for shard routing
-        var filter = Builders<OutboxEntry>.Filter.In(x => x.GroupKey, groupsList);
-
-        var sort = Builders<OutboxEntry>.Sort
-            .Ascending(x => x.GroupKey)
-            .Ascending(x => x.Sequence);
-
-        var entries = await outboxCollection
-            .Find(filter)
-            .Sort(sort)
+        return await outboxCollection
+            .Find(Builders<OutboxEntry>.Filter.Empty)
+            .Sort(Builders<OutboxEntry>.Sort.Ascending(x => x.Sequence))
             .Limit(batchSize)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        return entries;
     }
 
     private static IClientSessionHandle GetSession(ITransactionContext? transaction)

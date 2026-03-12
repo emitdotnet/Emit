@@ -85,66 +85,22 @@ internal sealed class EfCoreOutboxRepository<TDbContext> : IOutboxRepository
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<OutboxEntry>> GetGroupHeadsAsync(
-        int limit,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
-
-        // Worker operation - create own DbContext via factory
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        // DISTINCT ON (group_key) with the (group_key, sequence) index does an index skip scan —
-        // one probe per group, never visiting interior rows. The outer ORDER BY + LIMIT picks
-        // the globally oldest group heads without materializing the full table.
-        // Build SQL as a plain string to avoid EF1002 (no user input — table name is a
-        // compile-time constant, limit is validated > 0 above).
-        var sql = $"""
-            SELECT * FROM (
-                SELECT DISTINCT ON (group_key) *
-                FROM "{TableNames.Outbox}"
-                ORDER BY group_key, sequence
-            ) heads
-            ORDER BY sequence
-            LIMIT {limit}
-            """;
-
-        return await dbContext.Set<OutboxEntry>()
-            .FromSqlRaw(sql)
-            .AsNoTracking()
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
     public async Task<IReadOnlyList<OutboxEntry>> GetBatchAsync(
-        IEnumerable<string> eligibleGroups,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(eligibleGroups);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
-
-        var groupsList = eligibleGroups.ToList();
-        if (groupsList.Count == 0)
-        {
-            return [];
-        }
 
         // Worker operation - create own DbContext via factory
         await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var entries = await dbContext.Set<OutboxEntry>()
-            .Where(e => groupsList.Contains(e.GroupKey))
-            .OrderBy(e => e.GroupKey)
-            .ThenBy(e => e.Sequence)
+        return await dbContext.Set<OutboxEntry>()
+            .OrderBy(e => e.Sequence)
             .Take(batchSize)
+            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        return entries;
     }
 
     private static Guid ConvertToGuid(object entryId)

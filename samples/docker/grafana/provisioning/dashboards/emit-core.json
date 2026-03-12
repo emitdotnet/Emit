@@ -141,7 +141,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Active Worker Groups",
+      "title": "Avg Batch Size",
       "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -166,7 +166,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
-          "expr": "sum(emit_outbox_worker_active_groups)",
+          "expr": "sum(rate(emit_outbox_worker_batch_entries_sum[5m])) / sum(rate(emit_outbox_worker_batch_entries_count[5m]))",
           "legendFormat": ""
         }
       ],
