@@ -76,7 +76,7 @@ public abstract class ValidationCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "valid:hello"));
 
             // Assert
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("valid:hello", ctx.Message);
         }
         finally
@@ -117,7 +117,7 @@ public abstract class ValidationCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "valid:sentinel"));
 
             // Assert — only the sentinel arrives; the invalid message was discarded.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("valid:sentinel", ctx.Message);
             Assert.Single(sink.ReceivedMessages);
         }
@@ -160,7 +160,7 @@ public abstract class ValidationCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "invalid-msg"));
 
             // Assert — invalid message arrives in the DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("invalid-msg", Encoding.UTF8.GetString(ctx.Message));
         }
         finally
@@ -222,7 +222,7 @@ public abstract class ValidationCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "validator-throws-payload"));
 
             // Assert — the OnError policy dead-letters the message (not a validation discard).
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("validator-throws-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers come from the error handling middleware (not validation middleware).

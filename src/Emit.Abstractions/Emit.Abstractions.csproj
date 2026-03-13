@@ -5,7 +5,7 @@
     <AssemblyName>Emit.Abstractions</AssemblyName>
     <PackageId>Emit.Abstractions</PackageId>
     <Description>Abstraction contracts for the Emit transactional outbox library. Contains interfaces, models, and base classes referenced by providers and persistence implementations.</Description>
-    <PackageTags>outbox;transactional;abstractions;messaging;reliability</PackageTags>
+    <PackageTags>emit;outbox;transactional;abstractions;messaging;reliability</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

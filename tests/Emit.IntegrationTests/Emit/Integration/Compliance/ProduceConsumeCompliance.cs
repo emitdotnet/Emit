@@ -49,7 +49,7 @@ public abstract class ProduceConsumeCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("my-key", "my-value"));
 
             // Assert
-            var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var context = await sink.WaitForMessageAsync();
             var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(context.TransportContext);
             Assert.Equal("my-key", kafkaContext.Key);
             Assert.Equal("my-value", context.Message);

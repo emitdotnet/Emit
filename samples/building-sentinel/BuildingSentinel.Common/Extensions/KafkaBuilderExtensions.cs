@@ -3,6 +3,7 @@ namespace BuildingSentinel.Common.Extensions;
 using BuildingSentinel.Common.Consumers;
 using BuildingSentinel.Common.Domain;
 using Emit.Abstractions;
+using Emit.FluentValidation;
 using Emit.Kafka.DependencyInjection;
 using Emit.Routing;
 
@@ -33,6 +34,8 @@ public static class KafkaBuilderExtensions
                 group.WorkerCount = 2;
                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
 
+                group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
+
                 group.AddRouter<string>(
                     "event-type-router",
                     ctx => ctx.Message.EventType,
@@ -55,6 +58,9 @@ public static class KafkaBuilderExtensions
             {
                 group.WorkerCount = 1;
                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
+
+                group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
+
                 group.AddConsumer<DeviceHeartbeatConsumer>();
 
                 group.OnError(e => e

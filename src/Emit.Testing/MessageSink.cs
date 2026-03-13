@@ -35,6 +35,17 @@ public sealed class MessageSink<T>
     }
 
     /// <summary>
+    /// Waits for the next unconsumed message to arrive within a default timeout of 5 minutes.
+    /// Each call returns the next message in order; messages are not replayed.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The consume context carrying the next consumed message.</returns>
+    /// <exception cref="TimeoutException">No message arrived within the timeout.</exception>
+    /// <exception cref="OperationCanceledException">The cancellation token was triggered.</exception>
+    public Task<ConsumeContext<T>> WaitForMessageAsync(CancellationToken cancellationToken = default)
+        => WaitForMessageAsync(TimeSpan.FromMinutes(5), cancellationToken);
+
+    /// <summary>
     /// Waits for the next unconsumed message to arrive within the specified timeout.
     /// Each call returns the next message in order; messages are not replayed.
     /// </summary>

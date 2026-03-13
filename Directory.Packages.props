@@ -28,6 +28,7 @@
     <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Json" Version="2.13.0" />
     <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Protobuf" Version="2.13.0" />
     <PackageVersion Include="MongoDB.Driver" Version="3.6.0" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
     <PackageVersion Include="OpenTelemetry" Version="1.15.0" />
 
     <!--

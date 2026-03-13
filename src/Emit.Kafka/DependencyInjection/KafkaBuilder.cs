@@ -522,6 +522,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var groupErrorPolicy = BuildErrorPolicy(groupBuilder.GroupErrorPolicyAction);
         var deserializationErrorAction = BuildDeserializationErrorAction(groupBuilder.DeserializationErrorAction);
         var validationModule = groupBuilder.Validation;
+        validationModule?.RegisterServices(services);
 
         // Extract retry config from error policy (retry is now a separate middleware concern)
         var retryConfig = ExtractRetryConfig(groupErrorPolicy);
@@ -592,6 +593,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     Func<Exception, ErrorAction>? errorEvaluator = groupErrorPolicy is not null
                         ? ex => StripRetryAction(groupErrorPolicy.Evaluate(ex))
                         : null;
+
+                    if (validationModule is { ValidationErrorAction: not null })
+                    {
+                        var validationErrorAction = validationModule.ValidationErrorAction;
+                        var innerEvaluator = errorEvaluator;
+                        errorEvaluator = ex => ex is MessageValidationException
+                            ? validationErrorAction
+                            : innerEvaluator is not null
+                                ? innerEvaluator(ex)
+                                : ErrorAction.Discard();
+                    }
 
                     var composer = new ConsumerPipelineComposer<TValue>
                     {

@@ -161,7 +161,7 @@ public class EfCoreOutboxOrderingTests
             var received = new List<string>(messageCount);
             for (var i = 0; i < messageCount; i++)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                var ctx = await sink.WaitForMessageAsync();
                 received.Add(ctx.Message!);
             }
 

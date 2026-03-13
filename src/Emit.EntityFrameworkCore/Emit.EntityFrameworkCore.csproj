@@ -5,7 +5,7 @@
     <AssemblyName>Emit.EntityFrameworkCore</AssemblyName>
     <PackageId>Emit.EntityFrameworkCore</PackageId>
     <Description>Entity Framework Core persistence provider for Emit. Stores outbox entries using Entity Framework Core with support for PostgreSQL via Npgsql.</Description>
-    <PackageTags>outbox;transactional;efcore;postgresql;messaging;reliability</PackageTags>
+    <PackageTags>emit;outbox;transactional;efcore;postgresql;messaging;reliability</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

@@ -6,7 +6,7 @@ Each sample is a self-contained project that demonstrates real-world usage of Em
 
 | Sample | What it demonstrates |
 |---|---|
-| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka router consumer, multiple consumer groups, auto-provisioning, dead-letter topic, health checks, OpenTelemetry metrics and tracing |
+| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka router consumer, multiple consumer groups, auto-provisioning, dead-letter topic, FluentValidation, health checks, OpenTelemetry metrics and tracing |
 | [distributed-locks](distributed-locks/) | Distributed locking with contention, lock TTL, dual persistence (MongoDB/PostgreSQL), OpenTelemetry lock metrics |
 
 ---
@@ -34,6 +34,9 @@ Consumes `building.events` and routes on the `eventType` field. Only `access.den
 
 **Kafka simple consumer — `building.watchdog`**
 Consumes every event regardless of type and upserts a heartbeat record per device (`last_seen_at`, `event_count`). Exposes a `/api/devices/status` endpoint that surfaces devices that have gone silent. The sharpest contrast with the router consumer — it never looks at `eventType`.
+
+**FluentValidation**
+Both consumer groups validate incoming `BuildingEvent` messages using `Emit.FluentValidation`. A `BuildingEventValidator` enforces that every event has a non-empty `DeviceId`, a non-empty `Location`, and a known `EventType`. Messages that fail validation are dead-lettered — open the `building.events.dlt` topic in Kafka UI to inspect rejected events. The simulator intentionally produces ~5% "device glitch" events with an empty `Location` to demonstrate validation failures in action.
 
 **Health checks**
 `/health` endpoint reports Kafka broker connectivity and database health (MongoDB or PostgreSQL depending on the startup project).

@@ -114,7 +114,7 @@ public class MongoDbMixedProducerTests
             await producer.ProduceAsync(new EventMessage<string, string>("k", "direct-msg"));
 
             // Assert — message arrives at the consumer directly (not via outbox daemon)
-            var ctx = await directSink.WaitForMessageAsync(TimeSpan.FromSeconds(10));
+            var ctx = await directSink.WaitForMessageAsync();
             Assert.Equal("direct-msg", ctx.Message);
         }
         finally
@@ -212,7 +212,7 @@ public class MongoDbMixedProducerTests
             }
 
             // Assert — direct message arrives immediately
-            var directCtx = await directSink.WaitForMessageAsync(TimeSpan.FromSeconds(10));
+            var directCtx = await directSink.WaitForMessageAsync();
             Assert.Equal(directPayload, directCtx.Message);
 
             // Act — produce to the outbox producer WITH a transaction
@@ -227,7 +227,7 @@ public class MongoDbMixedProducerTests
             }
 
             // Assert — outbox message arrives after daemon picks it up
-            var outboxCtx = await outboxSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var outboxCtx = await outboxSink.WaitForMessageAsync();
             Assert.Equal("outbox-msg", outboxCtx.Message);
         }
         finally

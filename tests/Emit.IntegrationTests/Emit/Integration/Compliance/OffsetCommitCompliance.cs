@@ -114,9 +114,9 @@ public abstract class OffsetCommitCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k2", "msg-2"));
             await producer.ProduceAsync(new EventMessage<string, string>("k3", "msg-3"));
 
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            await sink.WaitForMessageAsync();
+            await sink.WaitForMessageAsync();
+            await sink.WaitForMessageAsync();
 
             // WaitForCommitAsync blocks until OnOffsetsCommittedAsync fires, which happens
             // when the timer fires and consumer.Commit() succeeds. No Task.Delay needed —
@@ -154,7 +154,7 @@ public abstract class OffsetCommitCompliance
 
             // Assert — first message from the restarted consumer must be the sentinel.
             // If any original message is redelivered, it would arrive before the sentinel.
-            var ctx = await sink2.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink2.WaitForMessageAsync();
             Assert.Equal("sentinel", ctx.Message);
         }
         finally
@@ -202,9 +202,9 @@ public abstract class OffsetCommitCompliance
             // Wait until all three messages are written to the sink. At that point
             // ConsumeAsync has returned for each, and MarkAsProcessed will be called
             // in the immediately following step of the worker loop.
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            await sink.WaitForMessageAsync();
+            await sink.WaitForMessageAsync();
+            await sink.WaitForMessageAsync();
 
             // Allow the last MarkAsProcessed call to complete before initiating shutdown.
             await Task.Delay(TimeSpan.FromMilliseconds(100));
@@ -242,7 +242,7 @@ public abstract class OffsetCommitCompliance
             await producer2.ProduceAsync(new EventMessage<string, string>("k4", "sentinel"));
 
             // Assert — first message must be the sentinel, confirming no redelivery.
-            var ctx = await sink2.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink2.WaitForMessageAsync();
             Assert.Equal("sentinel", ctx.Message);
         }
         finally
@@ -328,7 +328,7 @@ public abstract class OffsetCommitCompliance
             var delivered = new HashSet<string>();
             while (delivered.Count < 3)
             {
-                var ctx = await sink2.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                var ctx = await sink2.WaitForMessageAsync();
                 delivered.Add(ctx.Message);
             }
 
@@ -390,7 +390,7 @@ public abstract class OffsetCommitCompliance
             // Wait until fast-1 appears in the sink. At this point slow-1 is still awaiting
             // the gate (head offset = 0 is in flight), so MarkAsProcessed(1) returned null —
             // the watermark did not advance and RecordCommittableOffset was not called.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("fast-1", ctx.Message);
 
             // Assert — no commit has occurred: the timer may have fired but pendingCommits is
@@ -443,7 +443,7 @@ public abstract class OffsetCommitCompliance
 
             // Assert — first message from the restarted consumer must be the sentinel.
             // slow-1 and fast-1 are past the committed watermark and will not be redelivered.
-            var ctx2 = await sink2.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx2 = await sink2.WaitForMessageAsync();
             Assert.Equal("sentinel", ctx2.Message);
         }
         finally

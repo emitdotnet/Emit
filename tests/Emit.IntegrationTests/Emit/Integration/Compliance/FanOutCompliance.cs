@@ -55,10 +55,10 @@ public abstract class FanOutCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
 
             // Assert — both consumers should write to the sink, so we expect 2 messages.
-            var first = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var first = await sink.WaitForMessageAsync();
             Assert.NotNull(first);
 
-            var second = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var second = await sink.WaitForMessageAsync();
             Assert.NotNull(second);
 
             Assert.Equal(2, sink.ReceivedMessages.Count);

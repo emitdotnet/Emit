@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\Emit.EntityFrameworkCore\Emit.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\Emit.Mediator\Emit.Mediator.csproj" />
     <ProjectReference Include="..\..\src\Emit.Testing\Emit.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Emit.FluentValidation\Emit.FluentValidation.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +35,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Moq" />
     <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

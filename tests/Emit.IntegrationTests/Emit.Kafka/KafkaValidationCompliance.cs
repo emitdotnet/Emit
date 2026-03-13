@@ -36,7 +36,8 @@ public class KafkaValidationCompliance(KafkaContainerFixture fixture)
                     group.Validate(
                         msg => msg.StartsWith("valid:", StringComparison.Ordinal)
                             ? MessageValidationResult.Success
-                            : MessageValidationResult.Fail("invalid"));
+                            : MessageValidationResult.Fail("invalid"),
+                        a => a.Discard());
                     group.OnError(e => e.Default(d => d.Discard()));
                     group.AddConsumer<SinkConsumer<string>>();
                 });
@@ -82,7 +83,8 @@ public class KafkaValidationCompliance(KafkaContainerFixture fixture)
                     group.Validate(
                         msg => msg.StartsWith("valid:", StringComparison.Ordinal)
                             ? MessageValidationResult.Success
-                            : MessageValidationResult.Fail("invalid"));
+                            : MessageValidationResult.Fail("invalid"),
+                        a => a.DeadLetter());
                     group.OnError(e => e.Default(d => d.DeadLetter()));
                     group.AddConsumer<SinkConsumer<string>>();
                 });
@@ -126,7 +128,8 @@ public class KafkaValidationCompliance(KafkaContainerFixture fixture)
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.Validate(
-                        (_, _) => throw new InvalidOperationException("Simulated validator exception."));
+                        (_, _) => throw new InvalidOperationException("Simulated validator exception."),
+                        a => a.Discard());
                     group.OnError(e => e.Default(d => d.DeadLetter()));
                     group.AddConsumer<SinkConsumer<string>>();
                 });

@@ -63,8 +63,8 @@ public abstract class PerConsumerMiddlewareCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
 
             // Assert — both consumers receive the message (fan-out = 2 sink entries).
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
-            await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            await sink.WaitForMessageAsync();
+            await sink.WaitForMessageAsync();
             Assert.Equal(2, sink.ReceivedMessages.Count);
 
             // Assert — per-consumer middleware fired exactly once (only for ConsumerWithMiddleware).

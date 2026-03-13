@@ -88,7 +88,7 @@ public abstract class RetryCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "retry-me"));
 
             // Assert — message eventually arrives after retries.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("retry-me", ctx.Message);
             Assert.True(counter.Count > 1, $"Expected more than 1 attempt but got {counter.Count}.");
         }
@@ -132,7 +132,7 @@ public abstract class RetryCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "always-failing"));
 
             // Assert — message arrived in the DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("always-failing", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers carry retry count and exception details.

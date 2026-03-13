@@ -18,3 +18,4 @@
 | `Emit.EntityFrameworkCore.HealthChecks/` | ASP.NET Core health check for EF Core / PostgreSQL connectivity | Add EF Core health checks to an application |
 | `Emit.Kafka.HealthChecks/` | ASP.NET Core health check for Kafka broker connectivity | Add Kafka health checks to an application |
 | `Emit.Testing/` | Test helpers: MessageSink and SinkConsumer for capturing messages in integration tests | Write integration or end-to-end tests that assert on consumed messages |
+| `Emit.FluentValidation/` | FluentValidation integration: adapter bridging IValidator<T> into the Emit validation pipeline | Register FluentValidation validators on consumer groups |

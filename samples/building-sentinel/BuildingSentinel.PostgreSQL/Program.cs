@@ -17,6 +17,8 @@ using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using BuildingSentinel.Common.Validation;
+using FluentValidation;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,6 +55,7 @@ builder.Services.AddScoped<IAlertRepository, EfAlertRepository>();
 builder.Services.AddScoped<IDeviceHeartbeatRepository, EfDeviceHeartbeatRepository>();
 builder.Services.AddScoped<ITransactionFactory, EfTransactionFactory>();
 builder.Services.AddHostedService<BuildingSimulatorService>();
+builder.Services.AddValidatorsFromAssemblyContaining<BuildingEventValidator>();
 
 // ── Emit ──────────────────────────────────────────────────────────────────────
 builder.Services.AddEmit(emit =>

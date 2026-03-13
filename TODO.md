@@ -12,10 +12,6 @@
 
 - **Evaluate stored functions vs inline SQL** — Explore the trade-offs of moving PostgreSQL queries (outbox group heads, CAS leader election, node cleanup, daemon assignment upserts) into database functions rather than embedding SQL strings in application code. Consider versioning, migration tooling, debuggability, and whether the performance characteristics change.
 
-## Consumer Middleware
-
-- **FluentValidation convenience layer** — The validation middleware is functional but requires users to implement `IMessageValidator<T>` manually. Add an optional `Emit.FluentValidation` package (or integration point) that bridges FluentValidation's `IValidator<T>` into the Emit validation pipeline so users can register FluentValidation validators directly.
-
 ## Kafka Startup Advisory
 
 - **Design a startup advisory system** — Design and implement a provider-agnostic advisory that runs at application startup, inspects the registered configuration, and logs structured recommendations to help users identify misconfiguration, missing best-practice settings, or potentially dangerous setups. The advisory should be a DI singleton driven by descriptor objects registered at build time (one per producer topic, one per consumer group), so it has access to the full topology without relying on generic type parameters or internal builder state. The Kafka advisory should eventually replace `StartupDiagnosticsLogger` for consumer groups and extend it to cover producers (e.g. warning when an outbox producer has not set `Acks.All`).

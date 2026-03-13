@@ -14,6 +14,7 @@
     <Project Path="src/Emit.Mediator/Emit.Mediator.csproj" />
     <Project Path="src/Emit.OpenTelemetry/Emit.OpenTelemetry.csproj" />
     <Project Path="src/Emit.Testing/Emit.Testing.csproj" />
+    <Project Path="src/Emit.FluentValidation/Emit.FluentValidation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Emit.UnitTests/Emit.UnitTests.csproj" />

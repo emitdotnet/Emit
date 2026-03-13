@@ -64,7 +64,7 @@ public abstract class CircuitBreakerCompliance
 
             // Act — Step 1: Produce a message that succeeds (circuit is closed)
             await producer.ProduceAsync(new EventMessage<string, string>("key-1", "success-1"));
-            var first = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var first = await sink.WaitForMessageAsync();
             Assert.Equal("success-1", first.Message);
 
             // Act — Step 2: Toggle consumer to throw, produce messages to trip the circuit breaker
@@ -89,7 +89,7 @@ public abstract class CircuitBreakerCompliance
             ConsumeContext<string> context;
             do
             {
-                context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                context = await sink.WaitForMessageAsync();
             }
             while (context.Message != "target");
 
@@ -167,7 +167,7 @@ public abstract class CircuitBreakerCompliance
             ConsumeContext<string> ctx;
             do
             {
-                ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                ctx = await sink.WaitForMessageAsync();
             }
             while (ctx.Message != "recovered");
 
@@ -239,11 +239,11 @@ public abstract class CircuitBreakerCompliance
             toggle.ShouldThrow = false;
             await producer.ProduceAsync(new EventMessage<string, string>("k3", "probe-after-one-failure"));
 
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             // Drain until we find the probe (earlier fail messages may have been retried successfully too).
             while (ctx.Message != "probe-after-one-failure")
             {
-                ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                ctx = await sink.WaitForMessageAsync();
             }
 
             Assert.Equal("probe-after-one-failure", ctx.Message);

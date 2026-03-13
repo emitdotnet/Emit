@@ -15,6 +15,8 @@ using Emit.Kafka.HealthChecks;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using BuildingSentinel.Common.Validation;
+using FluentValidation;
 using Scalar.AspNetCore;
 using global::MongoDB.Driver;
 
@@ -50,6 +52,7 @@ builder.Services.AddScoped<IAlertRepository, MongoAlertRepository>();
 builder.Services.AddScoped<IDeviceHeartbeatRepository, MongoDeviceHeartbeatRepository>();
 builder.Services.AddScoped<ITransactionFactory, MongoTransactionFactory>();
 builder.Services.AddHostedService<BuildingSimulatorService>();
+builder.Services.AddValidatorsFromAssemblyContaining<BuildingEventValidator>();
 
 // ── Emit ──────────────────────────────────────────────────────────────────────
 builder.Services.AddEmit(emit =>

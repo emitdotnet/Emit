@@ -174,10 +174,11 @@ public sealed class BuildingSimulatorService(
 
         BuildingEventRequest request = roll switch
         {
-            < 60 => GenerateNormalAccess(),
-            < 75 => GenerateAccessDenied(),
-            < 90 => GenerateMotion(),
-            _    => GenerateSuspectAttempt()
+            < 55 => GenerateNormalAccess(),
+            < 70 => GenerateAccessDenied(),
+            < 85 => GenerateMotion(),
+            < 95 => GenerateSuspectAttempt(),
+            _    => GenerateDeviceGlitch()
         };
 
         await PostEventAsync(request, ct).ConfigureAwait(false);
@@ -256,6 +257,21 @@ public sealed class BuildingSimulatorService(
             EventType: "access.denied",
             Location: location,
             Metadata: new Dictionary<string, string> { ["badgeId"] = SuspectBadge });
+    }
+
+    private BuildingEventRequest GenerateDeviceGlitch()
+    {
+        var device = Devices[_random.Next(Devices.Length)];
+
+        logger.LogWarning(
+            "[Simulator] Device glitch — {Device} sent an event with missing location (will fail validation)",
+            device);
+
+        return new BuildingEventRequest(
+            DeviceId: device,
+            EventType: "access.granted",
+            Location: "",
+            Metadata: new Dictionary<string, string> { ["glitch"] = "true" });
     }
 
     private async Task RunMorningRushAsync(CancellationToken ct)

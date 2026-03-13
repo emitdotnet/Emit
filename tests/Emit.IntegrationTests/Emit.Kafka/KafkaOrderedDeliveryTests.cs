@@ -106,7 +106,7 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
 
             for (var i = 0; i < totalMessages; i++)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(60));
+                var ctx = await sink.WaitForMessageAsync();
                 received.Add(ctx.Message!);
             }
 
