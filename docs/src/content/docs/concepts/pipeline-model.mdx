@@ -13,9 +13,9 @@ The inbound path has two distinct phases: **transport processing** followed by *
 
 When a message arrives from the broker, Emit handles deserialization and fan-out before any middleware runs:
 
-1. **Poll** — The consumer group reads raw bytes from the broker and distributes them across worker channels.
-2. **Deserialize** — Key and value are deserialized using the registered `IDeserializer<T>` / `IAsyncDeserializer<T>`. Deserialization errors are handled separately via `OnDeserializationError` on the consumer group — they never enter the consumer pipeline.
-3. **Fan-out** — For each consumer or router registered on the consumer group, Emit creates a fresh DI scope with its own `ConsumeContext<TValue>`. Each entry runs its pipeline independently.
+1. **Poll:** the consumer group reads raw bytes from the broker and distributes them across worker channels.
+2. **Deserialize:** key and value are deserialized using the registered `IDeserializer<T>` / `IAsyncDeserializer<T>`. Deserialization errors are handled separately via `OnDeserializationError` on the consumer group; they never enter the consumer pipeline.
+3. **Fan-out:** for each consumer or router registered on the consumer group, Emit creates a fresh DI scope with its own `ConsumeContext<TValue>`. Each entry runs its pipeline independently.
 
 ### Consumer pipeline
 
@@ -30,14 +30,15 @@ After fan-out, each consumer gets its own fully-composed pipeline. The pipeline 
 | **User middleware** | Your custom middleware, composed Global → Provider → Group | Only if registered |
 | **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
 | **Retry** | Re-executes the handler on failure with configurable backoff | Only if configured |
+| **Transactional** | Wraps the handler in a unit-of-work transaction; activates when the handler class has `[Transactional]` | Only if `[Transactional]` is used |
 | **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
 | **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |
 
 This ordering is intentional:
 
 - **Error handling** is outermost so it catches exceptions from every other layer.
-- **Validation** runs outside retry so validation failures are never retried.
-- **User middleware** runs inside tracing/metrics so your middleware is automatically observed.
+- **Validation** runs outside retry, so validation failures are never retried.
+- **User middleware** runs inside tracing/metrics, so your middleware is automatically observed.
 
 ### Fan-out behavior
 
@@ -45,7 +46,7 @@ When a consumer group has multiple consumers or routers, each one gets independe
 
 - A fresh `IServiceScope`
 - Its own context instances
-- Independent error handling — one consumer failing doesn't affect others
+- Independent error handling: one consumer failing doesn't affect others
 
 ### Content-based routing
 
@@ -55,7 +56,7 @@ Unmatched messages either discard silently (if configured via `WhenRouteUnmatche
 
 ## Outbound pipeline (producing)
 
-The outbound path is simpler — no fan-out, no deserialization. When you call `IEventProducer<TKey, TValue>.ProduceAsync()`, the message flows through a single pipeline:
+The outbound path is simpler: no fan-out, no deserialization. When you call `IEventProducer<TKey, TValue>.ProduceAsync()`, the message flows through a single pipeline:
 
 | Layer | What it does | Always present? |
 |---|---|---|
@@ -65,10 +66,10 @@ The outbound path is simpler — no fan-out, no deserialization. When you call `
 | **User middleware** | Your custom middleware, composed Global → Provider → Per-producer | Only if registered |
 | **Terminal** | Delivers the message to its destination | Yes |
 
-The terminal is selected at registration time:
+The terminal is selected at registration time. When outbox infrastructure is configured, the outbox terminal is the default; producers opt out with `UseDirect()`:
 
-- **`UseOutbox()`** — Enqueues to the database outbox inside the current transaction. A background worker delivers to the broker asynchronously.
-- **Direct mode** (default) — Serializes and produces to the broker immediately.
+- **Outbox** (default when outbox infrastructure is configured): enqueues to the database outbox within the current transaction scope. A background worker delivers to the broker asynchronously.
+- **Direct** (`p.UseDirect()`): serializes and produces to the broker immediately.
 
 ## Context objects
 
@@ -111,9 +112,9 @@ group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // one shared instance (
 group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);      // one instance per message
 ```
 
-**Singleton** (default) — One instance shared across all concurrent workers. Must be thread-safe and cannot hold per-message state.
+**Singleton** (default): one instance shared across all concurrent workers. Must be thread-safe and cannot hold per-message state.
 
-**Scoped** — A fresh instance for each message. Can safely hold per-message state in fields.
+**Scoped**: a fresh instance for each message. Can safely hold per-message state in fields.
 
 ## Built-in middleware
 

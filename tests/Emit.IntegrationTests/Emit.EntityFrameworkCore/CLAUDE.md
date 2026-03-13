@@ -16,6 +16,10 @@ PostgreSQL integration tests: EF Core compliance implementations and test DbCont
 | `EfCoreDaemonObserverCompliance.cs` | Inherits DaemonObserverCompliance; proves EF Core daemon observer event delivery | Debug or extend EF Core daemon observer tests |
 | `EfCoreOutboxOrderingTests.cs` | Sequence ordering guarantees for the EF Core outbox repository | Debug or extend outbox ordering tests |
 | `EfCoreLockCleanupTests.cs` | LockCleanupWorker behavior for EF Core expired lock rows | Debug or extend lock cleanup behavior |
+| `EfCoreTransactionalMiddlewareCompliance.cs` | Inherits TransactionalMiddlewareCompliance; proves [Transactional] middleware with EF Core + Kafka | Debug or extend EF Core transactional middleware tests |
+| `EfCoreUnitOfWorkCompliance.cs` | Inherits UnitOfWorkCompliance; proves IUnitOfWork with EF Core + Kafka | Debug or extend EF Core unit of work tests |
+| `EfCoreImplicitOutboxCompliance.cs` | Inherits ImplicitOutboxCompliance; proves EF Core implicit outbox (Tier 1) with SaveChangesAsync | Debug or extend EF Core implicit outbox tests |
+| `EfCoreProducerRoutingCompliance.cs` | Inherits ProducerRoutingCompliance; proves outbox-by-default and UseDirect() with EF Core + Kafka | Debug or extend EF Core producer routing tests |
 
 ## Subdirectories
 

@@ -74,6 +74,10 @@ When forwarding to the DLQ, the original message headers are preserved first, fo
 | `x-emit-route-key` | Matched route key (if using a router) |
 | `x-emit-retry-count` | Number of retry attempts before dead-lettering |
 
+## Transactional consumers and the DLQ
+
+When a consumer decorated with `[Transactional]` fails and the message is dead-lettered, the transaction for the final retry attempt is rolled back before the message is forwarded to the DLQ. Any business writes from that attempt are not persisted.
+
 ## Replaying DLQ messages
 
 There is no built-in replay mechanism, and that is intentional. A DLQ message means something went wrong that retries could not fix. Blindly replaying without understanding why is just rescheduling the same failure.

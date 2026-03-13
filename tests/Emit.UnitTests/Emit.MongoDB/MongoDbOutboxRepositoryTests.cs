@@ -84,6 +84,39 @@ public class MongoDbOutboxRepositoryTests
         Assert.Contains("transaction", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task GivenMongoDbOutboxRepository_WhenEnqueueWithoutTransaction_ThenThrowsInvalidOperationException()
+    {
+        // Arrange
+        var mockEmitContext = new Mock<IEmitContext>();
+        mockEmitContext.Setup(x => x.Transaction).Returns((ITransactionContext?)null);
+
+        var repository = CreateRepository(mockEmitContext.Object);
+        var entry = new OutboxEntry { GroupKey = "test", SystemId = "kafka", Destination = "kafka://localhost:9092/test-topic" };
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.EnqueueAsync(entry));
+        Assert.Contains("unit of work", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GivenMongoDbOutboxRepository_WhenEnqueueWithWrongTransactionType_ThenThrowsInvalidOperationException()
+    {
+        // Arrange
+        var wrongTransaction = new Mock<ITransactionContext>();
+        var mockEmitContext = new Mock<IEmitContext>();
+        mockEmitContext.Setup(x => x.Transaction).Returns(wrongTransaction.Object);
+
+        var repository = CreateRepository(mockEmitContext.Object);
+        var entry = new OutboxEntry { GroupKey = "test", SystemId = "kafka", Destination = "kafka://localhost:9092/test-topic" };
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.EnqueueAsync(entry));
+        Assert.Contains("type mismatch", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     #endregion
 
     #region DeleteAsync Tests

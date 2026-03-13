@@ -126,19 +126,16 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
         if (transaction is null)
         {
             throw new InvalidOperationException(
-                "No transaction context is available. " +
-                "A transactional outbox requires an active transaction.");
+                "No transaction context is available. The transactional outbox requires an active unit of work.");
         }
 
-        if (transaction is IMongoTransactionContext mongoTransaction)
+        if (transaction is MongoTransactionContext mongoTransaction)
         {
             return mongoTransaction.Session;
         }
 
         throw new InvalidOperationException(
-            $"Transaction context type mismatch. Expected {nameof(IMongoTransactionContext)} " +
-            $"but received {transaction.GetType().Name}. Ensure you are using MongoDB-compatible " +
-            "transactions created via BeginMongoTransactionAsync().");
+            $"Transaction context type mismatch. Expected a MongoDB-compatible transaction but received {transaction.GetType().Name}.");
     }
 
     private static ObjectId ConvertToObjectId(object entryId)

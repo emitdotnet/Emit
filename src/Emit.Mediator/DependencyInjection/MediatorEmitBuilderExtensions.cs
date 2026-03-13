@@ -8,6 +8,8 @@ using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Mediator.Metrics;
 using Emit.Mediator.Observability;
+using Emit.Middleware;
+using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -95,6 +97,9 @@ public static class MediatorEmitBuilderExtensions
         var globalInbound = builder.InboundPipeline;
         var mediatorInbound = mediatorBuilder.InboundPipeline;
 
+        // Capture outbox flag for pipeline composition
+        var outboxEnabled = builder.OutboxEnabled;
+
         // Factory-built singleton — typed pipelines composed when IServiceProvider available.
         // Each request type gets a typed dispatch delegate that creates MediatorContext<TRequest>
         // and invokes the typed pipeline with no runtime reflection.
@@ -105,9 +110,10 @@ public static class MediatorEmitBuilderExtensions
             foreach (var (requestType, invoker) in invokerMap)
             {
                 handlerPipelineMap.TryGetValue(requestType, out var handlerPipeline);
+                var handlerType = mediatorBuilder.Registrations[requestType].HandlerType;
                 var genericMethod = BuildDispatcherMethod.MakeGenericMethod(requestType);
                 var dispatcher = (Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>)
-                    genericMethod.Invoke(null, [sp, invoker, mediatorInbound, globalInbound, handlerPipeline])!;
+                    genericMethod.Invoke(null, [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, outboxEnabled, handlerType])!;
                 dispatchers[requestType] = dispatcher;
             }
 
@@ -129,14 +135,24 @@ public static class MediatorEmitBuilderExtensions
             object invoker,
             IMessagePipelineBuilder mediatorInbound,
             IMessagePipelineBuilder globalInbound,
-            IMessagePipelineBuilder? handlerPipeline)
+            IMessagePipelineBuilder? handlerPipeline,
+            bool outboxEnabled,
+            Type handlerType)
     {
         var typedInvoker = (IHandlerInvoker<MediatorContext<TRequest>>)invoker;
 
+        // Wrap handler invoker with transactional middleware when outbox is enabled
+        IMiddlewarePipeline<MediatorContext<TRequest>> terminal = typedInvoker;
+        if (outboxEnabled)
+        {
+            var transactionalMw = new TransactionalOutboxMiddleware<MediatorContext<TRequest>>(handlerType);
+            terminal = new MiddlewarePipeline<MediatorContext<TRequest>>(transactionalMw, terminal);
+        }
+
         // Pipeline layering: global → mediator → per-handler → terminal
         var pipeline = handlerPipeline is not null
-            ? handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, typedInvoker, globalInbound, mediatorInbound)
-            : mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, typedInvoker, globalInbound);
+            ? handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound, mediatorInbound)
+            : mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound);
 
         return (request, services, timeProvider, ct, responseFeature) =>
         {

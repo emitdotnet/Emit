@@ -179,7 +179,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
                 {
                     t.SetUtf8KeySerializer();
                     t.SetUtf8ValueSerializer();
-                    t.Producer(p => p.UseOutbox());
+                    t.Producer();
                 });
             });
         });

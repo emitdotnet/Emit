@@ -2,6 +2,7 @@ namespace Emit.MongoDB.Tests.DependencyInjection;
 
 using global::Emit.Abstractions;
 using global::Emit.DependencyInjection;
+using global::Emit.MongoDB;
 using global::Emit.MongoDB.Configuration;
 using global::Emit.MongoDB.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -143,5 +144,75 @@ public class MongoDbEmitBuilderExtensionsTests
                 });
             }));
         Assert.Contains("No outbox provider", exception.Message);
+    }
+
+    [Fact]
+    public void GivenMongoOutboxEnabled_WhenServicesBuilt_ThenIUnitOfWorkRegisteredAsScoped()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddMongoDb(mongo =>
+        {
+            mongo.Configure((_, _) => { });
+            mongo.UseOutbox();
+        });
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.NotNull(descriptor);
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void GivenMongoOutboxEnabled_WhenServicesBuilt_ThenIMongoSessionAccessorRegisteredAsScoped()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddMongoDb(mongo =>
+        {
+            mongo.Configure((_, _) => { });
+            mongo.UseOutbox();
+        });
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IMongoSessionAccessor));
+        Assert.NotNull(descriptor);
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkNotRegistered()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddMongoDb(mongo => mongo.Configure((_, _) => { }));
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.Null(descriptor);
+    }
+
+    [Fact]
+    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIMongoSessionAccessorNotRegistered()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddMongoDb(mongo => mongo.Configure((_, _) => { }));
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IMongoSessionAccessor));
+        Assert.Null(descriptor);
     }
 }

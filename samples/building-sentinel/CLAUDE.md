@@ -14,5 +14,5 @@ Smart building access and security hub sample. All business logic is shared; the
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
 | `BuildingSentinel.Common/` | Shared domain model, consumers, handlers, endpoints, repositories, and Kafka/mediator configuration | Understand application logic or modify shared behavior |
-| `BuildingSentinel.MongoDB/` | MongoDB startup project: Program.cs, MongoDB repository implementations, and transaction factory | Run the MongoDB variant or implement MongoDB-specific persistence |
-| `BuildingSentinel.PostgreSQL/` | PostgreSQL startup project: Program.cs, EF Core repository implementations, transaction factory, and DbContext | Run the PostgreSQL variant or implement EF Core-specific persistence |
+| `BuildingSentinel.MongoDB/` | MongoDB startup project: Program.cs and MongoDB repository implementations | Run the MongoDB variant or implement MongoDB-specific persistence |
+| `BuildingSentinel.PostgreSQL/` | PostgreSQL startup project: Program.cs, EF Core repository implementations, and DbContext | Run the PostgreSQL variant or implement EF Core-specific persistence |

@@ -101,6 +101,10 @@ services.AddEmit(emit =>
 
 `ValidateWithFluentValidation` resolves `IValidator<TMessage>` from the service provider for each message. If no validator is registered, you get a clear `InvalidOperationException` at runtime.
 
+## Validation and transactional handlers
+
+Validation runs before the handler invocation. If validation fails, the transactional middleware does not start a transaction; the handler is never invoked.
+
 ## Error Actions
 
 Every `Validate` call requires an error action that determines what happens to invalid messages:

@@ -17,7 +17,6 @@ Shared application logic for BuildingSentinel: domain, consumers, handlers, endp
 | `Domain/` | Domain records: BuildingEvent, AccessDenialAlert, DeviceHeartbeat | Understand the domain model or add new domain types |
 | `Endpoints/` | Minimal API endpoint registrations for building event submission | Add or modify API endpoints |
 | `Extensions/` | KafkaBuilderExtensions and MediatorBuilderExtensions for registering topics and handlers | Understand how Kafka and mediator are configured for the sample |
-| `Handlers/` | SubmitBuildingEventHandler: mediator handler that persists and enqueues events transactionally | Understand the transactional outbox pattern or modify command handling |
+| `Handlers/` | SubmitBuildingEventHandler: mediator handler that persists and enqueues events using the [Transactional] attribute for automatic transaction management | Understand the transactional outbox pattern or modify command handling |
 | `Repositories/` | Repository interfaces: IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Implement a new persistence backend or understand the repository contracts |
 | `Simulation/` | BuildingSimulatorService: background service that fires realistic events automatically after startup | Understand the automatic event generation or tune simulator behavior |
-| `Transactions/` | ITransactionFactory: abstraction for creating persistence-backend-specific transactions | Understand how transactions are created across MongoDB and PostgreSQL |

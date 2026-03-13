@@ -21,9 +21,9 @@ public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<T
     internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
 
     /// <summary>
-    /// Gets a value indicating whether this producer has opted into the transactional outbox.
+    /// Gets a value indicating whether this producer has opted out of the transactional outbox.
     /// </summary>
-    internal bool OutboxEnabled { get; private set; }
+    internal bool DirectEnabled { get; private set; }
 
     /// <summary>
     /// Creates a new producer builder.
@@ -33,21 +33,22 @@ public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<T
     }
 
     /// <summary>
-    /// Routes this producer through the transactional outbox. Messages produced within a
-    /// transaction are persisted to the outbox and delivered by the background worker after
-    /// the transaction commits.
+    /// Forces this producer to send messages directly to the broker, bypassing the outbox.
+    /// When outbox infrastructure is configured, producers default to outbox routing.
+    /// Call this method to opt out for producers where low-latency at-most-once delivery
+    /// is preferred over transactional guarantees.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Called more than once on the same producer.</exception>
-    public KafkaProducerBuilder<TKey, TValue> UseOutbox()
+    public KafkaProducerBuilder<TKey, TValue> UseDirect()
     {
-        if (OutboxEnabled)
+        if (DirectEnabled)
         {
             throw new InvalidOperationException(
-                $"{nameof(UseOutbox)} has already been called on this producer.");
+                $"{nameof(UseDirect)} has already been called on this producer.");
         }
 
-        OutboxEnabled = true;
+        DirectEnabled = true;
         return this;
     }
 

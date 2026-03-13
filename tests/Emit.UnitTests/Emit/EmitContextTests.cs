@@ -47,7 +47,7 @@ public class EmitContextTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             context.Transaction = secondTransaction.Object);
 
-        Assert.Contains("Cannot overwrite an active transaction", exception.Message);
+        Assert.Contains("A transaction is already active on this context", exception.Message);
     }
 
     [Fact]

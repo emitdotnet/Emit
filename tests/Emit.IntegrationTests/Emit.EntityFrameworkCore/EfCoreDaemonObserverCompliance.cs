@@ -116,7 +116,7 @@ public class EfCoreDaemonObserverCompliance
                 t.SetUtf8KeyDeserializer();
                 t.SetUtf8ValueDeserializer();
 
-                t.Producer(p => p.UseOutbox());
+                t.Producer();
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;

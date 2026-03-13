@@ -28,4 +28,5 @@ public class ConsumeContext<T> : MessageContext<T>
     /// Transaction context for transactional consumers. Set by transaction middleware.
     /// </summary>
     public ITransactionContext? Transaction { get; set; }
+
 }

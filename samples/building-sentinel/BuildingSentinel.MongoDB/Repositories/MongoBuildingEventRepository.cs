@@ -2,7 +2,6 @@ namespace BuildingSentinel.MongoDB.Repositories;
 
 using BuildingSentinel.Common.Domain;
 using BuildingSentinel.Common.Repositories;
-using Emit.Abstractions;
 using Emit.MongoDB;
 using Emit.MongoDB.Configuration;
 using global::MongoDB.Bson.Serialization.Attributes;
@@ -10,7 +9,7 @@ using global::MongoDB.Driver;
 
 internal sealed class MongoBuildingEventRepository(
     MongoDbContext context,
-    IEmitContext emitContext) : IBuildingEventRepository
+    IMongoSessionAccessor sessionAccessor) : IBuildingEventRepository
 {
     private readonly IMongoCollection<BuildingEventDocument> collection =
         context.Database.GetCollection<BuildingEventDocument>("building_events");
@@ -26,18 +25,13 @@ internal sealed class MongoBuildingEventRepository(
             Metadata = evt.Metadata?.ToDictionary(k => k.Key, v => v.Value)
         };
 
-        var session = GetSession();
+        var session = sessionAccessor.Session
+            ?? throw new InvalidOperationException(
+                "No active MongoDB session. Ensure a unit of work has been started " +
+                "(e.g., via [Transactional] attribute or IUnitOfWork.BeginAsync).");
+
         await collection.InsertOneAsync(session, doc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private global::MongoDB.Driver.IClientSessionHandle GetSession()
-    {
-        if (emitContext.Transaction is IMongoTransactionContext mongoTx)
-            return mongoTx.Session;
-
-        throw new InvalidOperationException(
-            "A MongoDB transaction context is required. Call BeginMongoTransactionAsync before saving.");
     }
 }
 

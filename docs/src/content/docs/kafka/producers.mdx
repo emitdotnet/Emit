@@ -38,33 +38,22 @@ var msg = new EventMessage<string, PizzaOrdered>(
 
 Headers are passed through to Kafka as-is. Emit also appends its own tracing headers when OpenTelemetry is enabled.
 
-## Outbox mode vs. direct mode
+## Outbox mode and direct mode
 
-Each producer independently chooses whether to use the outbox or write directly to Kafka. Call `UseOutbox()` on the producer builder to opt in:
+When outbox infrastructure is configured on a persistence provider (`UseOutbox()`), all producers route through the outbox by default. This ensures transactional guarantees for every message produced within a unit of work.
+
+To opt out a specific producer for low-latency, at-most-once delivery:
 
 ```csharp
-kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
-{
-    // ... serializers ...
-    topic.Producer(p => p.UseOutbox());  // outbox mode
-});
-
 kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
 {
-    // ... serializers ...
-    topic.Producer();  // direct mode
+    topic.Producer(p => p.UseDirect());
 });
 ```
 
-**Outbox mode** (`p.UseOutbox()`): `ProduceAsync` writes to the database outbox inside the current `IEmitContext.Transaction`. The background worker delivers to Kafka later. Your calling code must begin a transaction first.
+**Outbox mode** (default when outbox infrastructure is configured): `ProduceAsync` writes to the database outbox inside the current unit of work. The background worker delivers to Kafka later.
 
-**Direct mode** (no `UseOutbox()`): `ProduceAsync` calls the Kafka producer directly and waits for the broker acknowledgement before returning.
-
-Use the outbox when you need atomicity with your database writes. Use direct mode when you want simplicity and can tolerate the dual-write risk or don't have a database write to coordinate with.
-
-:::note
-`UseOutbox()` on the producer requires a persistence provider with its own `UseOutbox()` call (e.g. `mongo.UseOutbox()` or `ef.UseOutbox()`). If no persistence provider has enabled the outbox, calling `p.UseOutbox()` throws at registration time.
-:::
+**Direct mode** (`p.UseDirect()`): `ProduceAsync` calls the Kafka producer directly and waits for the broker acknowledgement before returning. Use this when you want low-latency and can tolerate the dual-write risk or don't have a database write to coordinate with.
 
 ## Per-producer middleware
 
@@ -75,7 +64,6 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 {
     topic.Producer(producer =>
     {
-        producer.UseOutbox();
         producer.Use<EnrichmentMiddleware>();
     });
 });

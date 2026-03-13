@@ -34,3 +34,8 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ValidationCompliance.cs` | Message validation: pass, fail (discard), and transient error (retry) | Add validation tests or debug validation outcomes |
 | `WorkerDistributionCompliance.cs` | ByKeyHash and RoundRobin distribution strategy correctness | Add distribution tests or debug worker assignment |
 | `WorkerPoolRebalanceRecoveryCompliance.cs` | Worker pool recovery after Kafka partition rebalance | Add rebalance recovery tests or debug partition reassignment |
+| `TransactionalMiddlewareCompliance.cs` | [Transactional] attribute middleware: commit delivery, throw rollback, non-transactional pass-through, retry isolation | Add transactional middleware tests or debug [Transactional] behavior |
+| `UnitOfWorkCompliance.cs` | IUnitOfWork explicit transaction API: begin/commit, begin/rollback, auto-rollback on dispose, ordering | Add unit of work tests or debug IUnitOfWork behavior |
+| `ImplicitOutboxCompliance.cs` | EF Core implicit outbox (Tier 1): produce+SaveChanges atomicity, no-save no delivery | Add implicit outbox tests or debug EF Core implicit tier |
+| `MongoSessionAccessorCompliance.cs` | IMongoSessionAccessor lifecycle: session populated after BeginAsync, cleared after dispose | Add MongoDB session accessor tests or debug IMongoSessionAccessor |
+| `ProducerRoutingCompliance.cs` | Producer routing: outbox-by-default, UseDirect() opt-out, mixed behavior | Add producer routing tests or debug outbox/direct routing |

@@ -37,9 +37,8 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
 
     /// <summary>
     /// Begins a transaction, produces a message to the outbox, and either commits or rolls back.
-    /// Provider-specific implementations resolve the appropriate transaction context
-    /// (e.g., <c>IMongoTransactionContext</c> or <c>IEfCoreTransactionContext</c>)
-    /// from the scoped service provider.
+    /// Provider-specific implementations resolve <see cref="IUnitOfWork"/> from the scoped service provider
+    /// and call <see cref="IUnitOfWork.BeginAsync"/> to start the transaction.
     /// </summary>
     /// <param name="services">The host-level service provider. Creates a new scope internally.</param>
     /// <param name="key">The message key.</param>

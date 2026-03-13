@@ -1,11 +1,9 @@
 using BuildingSentinel.Common.Endpoints;
 using BuildingSentinel.Common.Extensions;
 using BuildingSentinel.Common.Repositories;
-using BuildingSentinel.Common.Transactions;
 using BuildingSentinel.PostgreSQL;
 using BuildingSentinel.PostgreSQL.Repositories;
 using BuildingSentinel.Common.Simulation;
-using BuildingSentinel.PostgreSQL.Transactions;
 using Emit.DependencyInjection;
 using Emit.Mediator.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
@@ -53,7 +51,6 @@ builder.Services.AddDbContextFactory<SampleDbContext>(options =>
 builder.Services.AddScoped<IBuildingEventRepository, EfBuildingEventRepository>();
 builder.Services.AddScoped<IAlertRepository, EfAlertRepository>();
 builder.Services.AddScoped<IDeviceHeartbeatRepository, EfDeviceHeartbeatRepository>();
-builder.Services.AddScoped<ITransactionFactory, EfTransactionFactory>();
 builder.Services.AddHostedService<BuildingSimulatorService>();
 builder.Services.AddValidatorsFromAssemblyContaining<BuildingEventValidator>();
 

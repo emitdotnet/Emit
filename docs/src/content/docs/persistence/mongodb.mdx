@@ -34,7 +34,7 @@ builder.Services.AddEmit(emit =>
 
 `Configure` is required. You provide the `IMongoClient` and `IMongoDatabase`; Emit does not create or manage the connection.
 
-`UseOutbox()` and `UseDistributedLock()` are independent. Enable whichever you need. Calling `UseOutbox()` here provisions the outbox infrastructure (collections, background worker). Each producer must also call `UseOutbox()` individually to route messages through the outbox — see [Producers](../../kafka/producers/).
+`UseOutbox()` and `UseDistributedLock()` are independent. Enable whichever you need. Calling `UseOutbox()` here provisions the outbox infrastructure (collections, background worker) and registers `IUnitOfWork` and `IMongoSessionAccessor` as scoped services. When `UseOutbox()` is called, all producers route through the outbox by default; see [Producers](../../kafka/producers/) for how to opt out with `UseDirect()`.
 
 ## Collections
 
@@ -42,24 +42,46 @@ Emit creates and manages its own collections inside the database you provide. Yo
 
 ## Transactional outbox
 
-For the outbox to work correctly, your produce call and your business write must share a MongoDB session. Use `BeginMongoTransactionAsync` to start a session, wire it to `IEmitContext`, and commit:
+For the outbox to work correctly, your produce call and your business write must share a MongoDB session. Inject `IUnitOfWork` to manage the transaction lifecycle and `IMongoSessionAccessor` to access the active session for your driver operations.
 
 ```csharp
 public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
 {
-    await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
+    await using var tx = await unitOfWork.BeginAsync(ct);
 
-    await ordersCollection.InsertOneAsync(transaction.Session, new PizzaOrderDocument(request), cancellationToken: ct);
+    var session = sessionAccessor.Session;
+    await ordersCollection.InsertOneAsync(session, new PizzaOrderDocument(request), cancellationToken: ct);
 
     await producer.ProduceAsync(
         new EventMessage<string, PizzaOrdered>(request.PizzaId.ToString(), new PizzaOrdered(request)),
         ct);
 
-    await transaction.CommitAsync(ct);
+    await tx.CommitAsync(ct);
 }
 ```
 
 If anything throws before `CommitAsync`, `await using` aborts the transaction automatically.
+
+For consumers and handlers, use `[Transactional]` to let the pipeline manage the transaction automatically:
+
+```csharp
+[Transactional]
+public sealed class PizzaOrderedConsumer(
+    IMongoSessionAccessor sessionAccessor,
+    IEventProducer<string, PizzaOrdered> producer,
+    IMongoCollection<PizzaOrderDocument> orders) : IConsumer<PizzaOrdered>
+{
+    public async Task ConsumeAsync(ConsumeContext<PizzaOrdered> ctx, CancellationToken ct)
+    {
+        var session = sessionAccessor.Session!;
+        await orders.InsertOneAsync(session, new PizzaOrderDocument(ctx.Message), cancellationToken: ct);
+        await producer.ProduceAsync(..., ct);
+        // Transaction committed automatically by middleware.
+    }
+}
+```
+
+`IMongoSessionAccessor.Session` is `null` until `IUnitOfWork.BeginAsync()` (or the `[Transactional]` middleware) starts a transaction. The transaction returned by `IUnitOfWork.BeginAsync()` can be cast to `IMongoUnitOfWorkTransaction` if you need direct access to the `IClientSessionHandle`; prefer `IMongoSessionAccessor` for repository injection.
 
 :::caution
 MongoDB transactions require a **replica set** (or sharded cluster). A standalone `mongod` does not support multi-document transactions. For local development, run MongoDB as a single-node replica set.

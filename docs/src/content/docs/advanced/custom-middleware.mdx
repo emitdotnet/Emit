@@ -123,6 +123,8 @@ If you want the message to be treated as failed (triggering error policy), throw
 
 Middleware executes in the order it is registered, outermost to innermost. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your global middleware.
 
+The transactional middleware runs inside the retry loop, wrapping only the handler invocation. Custom per-consumer middleware registered at the same level runs outside the transaction unless it is registered after the transactional middleware in the pipeline.
+
 <Mermaid code={`
 flowchart LR
     A[Built-in\nTracing/Metrics] --> B[Global\nmiddleware]

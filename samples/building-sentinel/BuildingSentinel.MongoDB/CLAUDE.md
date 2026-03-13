@@ -15,4 +15,3 @@ MongoDB startup project for Building Sentinel. Wires up MongoDB persistence and 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
 | `Repositories/` | MongoDB implementations of IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Understand MongoDB query patterns or modify repository implementations |
-| `Transactions/` | MongoTransactionFactory implementing ITransactionFactory using MongoDB client sessions | Understand how MongoDB transactions are created |

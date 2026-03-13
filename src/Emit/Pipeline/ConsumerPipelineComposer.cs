@@ -6,6 +6,7 @@ using Emit.Abstractions.Observability;
 using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
 using Emit.Metrics;
+using Emit.Middleware;
 using Emit.Observability;
 using Emit.Pipeline.Modules;
 using Emit.Tracing;
@@ -77,6 +78,13 @@ public sealed class ConsumerPipelineComposer<TValue>
     public ICircuitBreakerNotifier? CircuitBreakerNotifier { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the transactional outbox is enabled. When <see langword="true"/>
+    /// and the consumer type is decorated with <see cref="TransactionalAttribute"/>, a
+    /// <see cref="TransactionalOutboxMiddleware{TContext}"/> is inserted inside the retry loop.
+    /// </summary>
+    public bool OutboxEnabled { get; init; }
+
+    /// <summary>
     /// Composes a complete consume pipeline for a single consumer or router entry.
     /// </summary>
     /// <param name="terminal">The innermost delegate that invokes the consumer handler.</param>
@@ -104,6 +112,13 @@ public sealed class ConsumerPipelineComposer<TValue>
         // === Build pipeline innermost → outermost ===
 
         // 1. terminal = handler/router (already provided)
+
+        // 1.5. Transactional middleware (wraps handler, inside retry loop)
+        if (OutboxEnabled && consumerType is not null)
+        {
+            var transactionalMw = new TransactionalOutboxMiddleware<ConsumeContext<TValue>>(consumerType);
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(transactionalMw, terminal);
+        }
 
         // 2. Per-entry middleware
         if (perEntryPipeline is not null)
