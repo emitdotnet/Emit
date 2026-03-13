@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests;
 
+using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Kafka;
 using global::Emit.Kafka.Metrics;
@@ -12,10 +13,13 @@ using ConfluentKafka = Confluent.Kafka;
 public class KafkaOutboxProviderTests
 {
     private readonly Mock<ILogger<KafkaOutboxProvider>> loggerMock;
+    private readonly Mock<INodeIdentity> nodeIdentityMock;
 
     public KafkaOutboxProviderTests()
     {
         loggerMock = new Mock<ILogger<KafkaOutboxProvider>>();
+        nodeIdentityMock = new Mock<INodeIdentity>();
+        nodeIdentityMock.Setup(n => n.NodeId).Returns(Guid.NewGuid());
     }
 
     private static OutboxEntry CreateValidEntry() =>
@@ -44,7 +48,7 @@ public class KafkaOutboxProviderTests
     {
         // Arrange & Act & Assert
         var exception = Assert.Throws<ArgumentNullException>(() =>
-            new KafkaOutboxProvider(null!, CreateKafkaMetrics(), loggerMock.Object));
+            new KafkaOutboxProvider(null!, CreateKafkaMetrics(), nodeIdentityMock.Object, loggerMock.Object));
         Assert.Equal("producer", exception.ParamName);
     }
 
@@ -56,7 +60,7 @@ public class KafkaOutboxProviderTests
 
         // Act & Assert
         var exception = Assert.Throws<ArgumentNullException>(() =>
-            new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), null!));
+            new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), nodeIdentityMock.Object, null!));
         Assert.Equal("logger", exception.ParamName);
     }
 
@@ -69,7 +73,7 @@ public class KafkaOutboxProviderTests
     {
         // Arrange
         var producerMock = new Mock<ConfluentKafka.IProducer<byte[], byte[]>>();
-        var provider = new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), loggerMock.Object);
+        var provider = new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), nodeIdentityMock.Object, loggerMock.Object);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
@@ -85,7 +89,7 @@ public class KafkaOutboxProviderTests
     {
         // Arrange
         var producerMock = new Mock<ConfluentKafka.IProducer<byte[], byte[]>>();
-        var provider = new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), loggerMock.Object);
+        var provider = new KafkaOutboxProvider(producerMock.Object, CreateKafkaMetrics(), nodeIdentityMock.Object, loggerMock.Object);
         var entry = new OutboxEntry
         {
             Id = Guid.NewGuid(),

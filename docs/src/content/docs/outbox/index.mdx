@@ -11,9 +11,11 @@ The transactional outbox solves the dual-write problem by ensuring that your bus
 
 2. **Background delivery** — A [daemon](../concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the broker. Your endpoint returns immediately after the commit.
 
-3. **Delete on success** — Once delivery succeeds, the entry is deleted. There are no intermediate status fields: entry present means pending, entry absent means delivered.
+3. **Node tracking** — Each entry records the `NodeId` of the node that enqueued it, set automatically from `INodeIdentity`. This lets you trace message provenance to the originating node.
 
-4. **Automatic retry** — If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
+4. **Delete on success** — Once delivery succeeds, the entry is deleted. There are no intermediate status fields: entry present means pending, entry absent means delivered.
+
+5. **Automatic retry** — If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
 
 ## Setup
 

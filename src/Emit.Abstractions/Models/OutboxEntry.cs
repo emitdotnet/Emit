@@ -74,6 +74,14 @@ public sealed class OutboxEntry
     public DateTime EnqueuedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the identifier of the node that enqueued this entry.
+    /// </summary>
+    /// <remarks>
+    /// Assigned automatically at enqueue time from <see cref="Emit.Abstractions.INodeIdentity.NodeId"/>.
+    /// </remarks>
+    public Guid NodeId { get; set; }
+
+    /// <summary>
     /// Gets or sets the serialized message value bytes.
     /// </summary>
     /// <remarks>

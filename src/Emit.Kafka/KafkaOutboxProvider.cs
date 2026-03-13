@@ -20,12 +20,14 @@ using ConfluentKafka = Confluent.Kafka;
 internal sealed class KafkaOutboxProvider(
     ConfluentKafka.IProducer<byte[], byte[]> producer,
     KafkaMetrics kafkaMetrics,
+    INodeIdentity nodeIdentity,
     ILogger<KafkaOutboxProvider> logger) : IOutboxProvider
 {
     private static readonly ActivitySource OutboxActivitySource = new("Emit.Outbox", "1.0.0");
 
     private readonly ConfluentKafka.IProducer<byte[], byte[]> producer = producer ?? throw new ArgumentNullException(nameof(producer));
     private readonly KafkaMetrics kafkaMetrics = kafkaMetrics ?? throw new ArgumentNullException(nameof(kafkaMetrics));
+    private readonly INodeIdentity nodeIdentity = nodeIdentity ?? throw new ArgumentNullException(nameof(nodeIdentity));
     private readonly ILogger<KafkaOutboxProvider> logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <inheritdoc/>
@@ -36,7 +38,7 @@ internal sealed class KafkaOutboxProvider(
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        using var processActivity = OutboxActivityHelper.StartProcessActivity(OutboxActivitySource, entry);
+        using var processActivity = OutboxActivityHelper.StartProcessActivity(OutboxActivitySource, entry, nodeIdentity.NodeId);
 
         // Extract topic from destination URI
         var topic = EmitEndpointAddress.GetEntityName(new Uri(entry.Destination));

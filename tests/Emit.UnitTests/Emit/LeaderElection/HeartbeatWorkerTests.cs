@@ -1,5 +1,6 @@
 namespace Emit.UnitTests.LeaderElection;
 
+using global::Emit.Abstractions;
 using global::Emit.Abstractions.Daemon;
 using global::Emit.Abstractions.LeaderElection;
 using global::Emit.Abstractions.Observability;
@@ -241,6 +242,20 @@ public class HeartbeatWorkerTests
     }
 
     [Fact]
+    public void GivenInjectedNodeIdentity_WhenNodeId_ThenMatchesInjectedValue()
+    {
+        // Arrange
+        var expectedNodeId = Guid.NewGuid();
+        var nodeIdentityMock = new Mock<INodeIdentity>();
+        nodeIdentityMock.Setup(n => n.NodeId).Returns(expectedNodeId);
+
+        var worker = CreateWorker(nodeIdentityMock.Object);
+
+        // Assert
+        Assert.Equal(expectedNodeId, worker.NodeId);
+    }
+
+    [Fact]
     public void GivenNewWorker_WhenIsLeader_ThenReturnsFalse()
     {
         // Arrange
@@ -260,7 +275,7 @@ public class HeartbeatWorkerTests
         Assert.True(worker.LeadershipToken.IsCancellationRequested);
     }
 
-    private HeartbeatWorker CreateWorker()
+    private HeartbeatWorker CreateWorker(INodeIdentity? nodeIdentity = null)
     {
         var invoker = new LeaderElectionObserverInvoker(
             [mockObserver.Object],
@@ -275,11 +290,19 @@ public class HeartbeatWorkerTests
             TimeProvider.System,
             NullLogger<DaemonCoordinator>.Instance);
 
+        if (nodeIdentity is null)
+        {
+            var nodeIdentityMock = new Mock<INodeIdentity>();
+            nodeIdentityMock.Setup(n => n.NodeId).Returns(Guid.NewGuid());
+            nodeIdentity = nodeIdentityMock.Object;
+        }
+
         return new HeartbeatWorker(
             mockPersistence.Object,
             daemonCoordinator,
             invoker,
             Options.Create(options),
+            nodeIdentity,
             NullLogger<HeartbeatWorker>.Instance);
     }
 }

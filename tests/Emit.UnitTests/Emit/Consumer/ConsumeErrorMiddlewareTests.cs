@@ -25,6 +25,7 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy,
             deadLetterSink,
             Metrics,
+            new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<string>>.Instance,
             "test-consumer",
             typeof(string),

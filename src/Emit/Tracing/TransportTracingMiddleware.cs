@@ -12,7 +12,8 @@ using Microsoft.Extensions.Options;
 /// consumer entry.
 /// </summary>
 internal sealed class TransportTracingMiddleware(
-    IOptions<EmitTracingOptions> options) : IMiddleware<TransportContext>
+    IOptions<EmitTracingOptions> options,
+    INodeIdentity nodeIdentity) : IMiddleware<TransportContext>
 {
     private readonly EmitTracingOptions options = options.Value;
 
@@ -44,12 +45,13 @@ internal sealed class TransportTracingMiddleware(
 
         // Create parent "emit.receive" Activity
         using var activity = EmitActivitySources.Consumer.StartActivity(
-            "emit.receive",
+            ActivityNames.Receive,
             ActivityKind.Consumer,
             parentContext);
 
         if (activity is not null)
         {
+            activity.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
             activity.SetTag(ActivityTagNames.MessagingSystem,
                 EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "emit");
             activity.SetTag(ActivityTagNames.MessagingOperation, "receive");

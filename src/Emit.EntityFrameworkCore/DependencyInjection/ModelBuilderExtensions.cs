@@ -89,6 +89,10 @@ public static class ModelBuilderExtensions
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
+        entity.Property(e => e.NodeId)
+            .HasColumnName("node_id")
+            .IsRequired();
+
         // Body - nullable binary blob (null for tombstones)
         entity.Property(e => e.Body)
             .HasColumnName("body");

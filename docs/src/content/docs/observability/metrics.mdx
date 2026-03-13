@@ -5,6 +5,10 @@ description: All OpenTelemetry metric instruments emitted by Emit, organized by 
 
 Emit emits metrics through six OpenTelemetry meters. All meters are registered via `AddEmitInstrumentation`.
 
+## Enrichment tags
+
+`emit.node.id` is automatically included as a static tag on all metrics. It identifies the node that emitted the metric and is set once at startup from `INodeIdentity`.
+
 ## Setup
 
 ```csharp
