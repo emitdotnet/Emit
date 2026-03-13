@@ -95,7 +95,7 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             await ProduceTransactionallyAsync(host.Services, "k", "hello", commit: true);
 
             // Assert — message arrives at the consumer.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("hello", ctx.Message);
         }
         finally
@@ -134,7 +134,7 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             await ProduceTransactionallyAsync(host.Services, "k", "sentinel", commit: true);
 
             // Assert — first message is the sentinel (the rolled-back entry was never delivered).
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("sentinel", ctx.Message);
 
             // Wait two more cycles and confirm no additional messages arrive.
@@ -177,7 +177,7 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             var received = new List<string>(messageCount);
             for (var i = 0; i < messageCount; i++)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                var ctx = await sink.WaitForMessageAsync();
                 received.Add(ctx.Message!);
             }
 
@@ -219,7 +219,7 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
         try
         {
             // Assert — the pending entry is delivered after the daemon starts.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("durable-msg", ctx.Message);
         }
         finally
@@ -287,7 +287,7 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             var received = new List<string>(totalMessages);
             for (var i = 0; i < totalMessages; i++)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                var ctx = await sink.WaitForMessageAsync();
                 received.Add(ctx.Message!);
             }
 

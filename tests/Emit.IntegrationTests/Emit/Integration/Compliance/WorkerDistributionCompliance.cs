@@ -71,7 +71,7 @@ public abstract class WorkerDistributionCompliance
             var received = new List<string>(MessageCount);
             for (var i = 0; i < MessageCount; i++)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                var ctx = await sink.WaitForMessageAsync();
                 received.Add(ctx.Message!);
             }
 

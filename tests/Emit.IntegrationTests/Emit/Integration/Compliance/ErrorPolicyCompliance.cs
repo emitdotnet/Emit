@@ -73,7 +73,7 @@ public abstract class ErrorPolicyCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k1", "matching-exception"));
 
             // Assert — message arrives in the DLQ because the When<ArgumentException> clause matched.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("matching-exception", Encoding.UTF8.GetString(ctx.Message));
         }
         finally
@@ -209,7 +209,7 @@ public abstract class ErrorPolicyCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k3", "matching-predicate"));
 
             // Assert — the matching message arrives in the DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("matching-predicate", Encoding.UTF8.GetString(ctx.Message));
         }
         finally

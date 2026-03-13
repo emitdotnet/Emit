@@ -55,7 +55,7 @@ public abstract class FilterCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "pass:hello"));
 
             // Assert
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("pass:hello", ctx.Message);
         }
         finally
@@ -96,7 +96,7 @@ public abstract class FilterCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "pass:sentinel"));
 
             // Assert — only the sentinel arrives; the "skip:" message was blocked.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("pass:sentinel", ctx.Message);
             Assert.Single(sink.ReceivedMessages);
         }

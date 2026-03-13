@@ -97,7 +97,7 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
             rawProducer.Flush(TimeSpan.FromSeconds(5));
 
             // Assert — message arrived in the DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("deserialization-error-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers identify the deserialization error.

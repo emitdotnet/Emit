@@ -1,6 +1,7 @@
 namespace Emit.UnitTests.Consumer;
 
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
@@ -47,7 +48,7 @@ public sealed class ValidationMiddlewareTests
     {
         // Arrange
         var module = new ValidationModule<string>();
-        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success));
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
         var middleware = CreateMiddleware(module);
         var nextCalled = false;
 
@@ -63,7 +64,7 @@ public sealed class ValidationMiddlewareTests
     {
         // Arrange
         var module = new ValidationModule<string>();
-        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")));
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")), a => a.Discard());
         var middleware = CreateMiddleware(module);
 
         // Act & Assert
@@ -77,7 +78,7 @@ public sealed class ValidationMiddlewareTests
     {
         // Arrange
         var module = new ValidationModule<string>();
-        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")));
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.Discard());
         var middleware = CreateMiddleware(module);
         var nextCalled = false;
 
@@ -101,7 +102,7 @@ public sealed class ValidationMiddlewareTests
         // Arrange
         var module = new ValidationModule<string>();
         module.Configure((_, _) =>
-            throw new TimeoutException("database unavailable"));
+            throw new TimeoutException("database unavailable"), a => a.Discard());
         var middleware = CreateMiddleware(module);
 
         // Act & Assert
@@ -115,7 +116,7 @@ public sealed class ValidationMiddlewareTests
         // Arrange
         var module = new ValidationModule<string>();
         module.Configure((_, _) => Task.FromResult(
-            MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])));
+            MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])), a => a.Discard());
         var middleware = CreateMiddleware(module);
 
         // Act & Assert
@@ -138,7 +139,7 @@ public sealed class ValidationMiddlewareTests
             delegateCalled = true;
             Assert.Equal("test-message", msg);
             return Task.FromResult(MessageValidationResult.Success);
-        });
+        }, a => a.Discard());
         var middleware = CreateMiddleware(module);
 
         // Act
@@ -157,7 +158,7 @@ public sealed class ValidationMiddlewareTests
         var sp = services.BuildServiceProvider();
 
         var module = new ValidationModule<string>();
-        module.Configure<StubValidator>();
+        module.Configure<StubValidator>(a => a.Discard());
         var middleware = CreateMiddleware(module);
         var context = CreateContext(sp);
 
@@ -167,6 +168,67 @@ public sealed class ValidationMiddlewareTests
         // Assert — validator was resolved and invoked (StubValidator always returns Success)
         var validator = sp.GetRequiredService<StubValidator>();
         Assert.True(validator.WasCalled);
+    }
+
+    [Fact]
+    public void GivenConfigureWithDiscard_WhenConfigured_ThenValidationErrorActionIsDiscard()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+
+        // Act
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
+
+        // Assert
+        Assert.NotNull(module.ValidationErrorAction);
+        Assert.IsType<ErrorAction.DiscardAction>(module.ValidationErrorAction);
+    }
+
+    [Fact]
+    public void GivenConfigureWithDeadLetter_WhenConfigured_ThenValidationErrorActionIsDeadLetter()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+
+        // Act
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.DeadLetter());
+
+        // Assert
+        Assert.NotNull(module.ValidationErrorAction);
+        Assert.IsType<ErrorAction.DeadLetterAction>(module.ValidationErrorAction);
+    }
+
+    [Fact]
+    public void GivenClassBasedValidator_WhenRegisterServices_ThenValidatorTypeRegistered()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+        module.Configure<StubValidator>(a => a.Discard());
+        var services = new ServiceCollection();
+
+        // Act
+        module.RegisterServices(services);
+        var sp = services.BuildServiceProvider();
+
+        // Assert
+        var validator = sp.GetService<StubValidator>();
+        Assert.NotNull(validator);
+    }
+
+    [Fact]
+    public void GivenDelegateValidator_WhenRegisterServices_ThenNoServiceRegistered()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
+        var services = new ServiceCollection();
+        var countBefore = services.Count;
+
+        // Act
+        module.RegisterServices(services);
+
+        // Assert
+        Assert.Equal(countBefore, services.Count);
     }
 
     // ── Test infrastructure ──

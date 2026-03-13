@@ -89,7 +89,7 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
                 [new(CorrelationIdHeaderKey, correlationId)]);
 
             // Assert — message arrives at the consumer.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("header-test-payload", ctx.Message);
 
             // Assert — the custom header is present in the consumer pipeline context.

@@ -5,7 +5,7 @@
     <AssemblyName>Emit</AssemblyName>
     <PackageId>Emit</PackageId>
     <Description>Transactional outbox pattern library for .NET. Provides reliable message delivery by persisting operations in an outbox within your database transaction.</Description>
-    <PackageTags>outbox;transactional;kafka;messaging;reliability</PackageTags>
+    <PackageTags>emit;outbox;transactional;kafka;messaging;reliability</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

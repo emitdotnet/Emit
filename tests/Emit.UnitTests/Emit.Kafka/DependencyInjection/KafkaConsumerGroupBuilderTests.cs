@@ -524,7 +524,7 @@ public sealed class KafkaConsumerGroupBuilderTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate<TestValidator>();
+        builder.Validate<TestValidator>(a => a.Discard());
 
         // Assert
         Assert.NotNull(builder.Validation);
@@ -538,7 +538,7 @@ public sealed class KafkaConsumerGroupBuilderTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate((_, _) => Task.FromResult(MessageValidationResult.Success));
+        builder.Validate((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
 
         // Assert
         Assert.NotNull(builder.Validation);
@@ -552,7 +552,7 @@ public sealed class KafkaConsumerGroupBuilderTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Validate(_ => MessageValidationResult.Success);
+        builder.Validate(_ => MessageValidationResult.Success, a => a.Discard());
 
         // Assert
         Assert.NotNull(builder.Validation);
@@ -566,7 +566,7 @@ public sealed class KafkaConsumerGroupBuilderTests
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        var result = builder.Validate<TestValidator>();
+        var result = builder.Validate<TestValidator>(a => a.Discard());
 
         // Assert
         Assert.Same(builder, result);
@@ -577,11 +577,11 @@ public sealed class KafkaConsumerGroupBuilderTests
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
-        builder.Validate<TestValidator>();
+        builder.Validate<TestValidator>(a => a.Discard());
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(
-            () => builder.Validate<TestValidator>());
+            () => builder.Validate<TestValidator>(a => a.Discard()));
         Assert.Contains("already been called", ex.Message);
     }
 
@@ -593,7 +593,7 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(
-            () => builder.Validate((Func<string, CancellationToken, Task<MessageValidationResult>>)null!));
+            () => builder.Validate((Func<string, CancellationToken, Task<MessageValidationResult>>)null!, a => a.Discard()));
     }
 
     [Fact]
@@ -604,7 +604,7 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(
-            () => builder.Validate((Func<string, MessageValidationResult>)null!));
+            () => builder.Validate((Func<string, MessageValidationResult>)null!, a => a.Discard()));
     }
 
     [Fact]

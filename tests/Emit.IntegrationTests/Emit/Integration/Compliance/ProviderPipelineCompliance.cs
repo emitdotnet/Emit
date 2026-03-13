@@ -58,7 +58,7 @@ public abstract class ProviderPipelineCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "kafka-pipeline-test"));
 
             // Assert — consumer received the message and Kafka-level middleware fired.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("kafka-pipeline-test", ctx.Message);
             Assert.True(counter.Count > 0,
                 $"Expected Kafka-level inbound middleware to be invoked at least once, but count was {counter.Count}.");

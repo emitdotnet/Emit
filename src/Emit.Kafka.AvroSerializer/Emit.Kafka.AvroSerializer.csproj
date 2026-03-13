@@ -5,7 +5,7 @@
     <AssemblyName>Emit.Kafka.AvroSerializer</AssemblyName>
     <PackageId>Emit.Kafka.AvroSerializer</PackageId>
     <Description>Avro serializer/deserializer extensions for Emit.Kafka. Adds convenience methods for schema-registry-backed Avro serialization.</Description>
-    <PackageTags>outbox;transactional;kafka;avro;schema-registry;serialization</PackageTags>
+    <PackageTags>emit;outbox;transactional;kafka;avro;schema-registry;serialization</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

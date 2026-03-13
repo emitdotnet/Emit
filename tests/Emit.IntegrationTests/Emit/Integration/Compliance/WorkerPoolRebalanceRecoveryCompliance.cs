@@ -111,7 +111,7 @@ public abstract class WorkerPoolRebalanceRecoveryCompliance
             var found = new HashSet<string>();
             while (found.Count < 2)
             {
-                var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(60));
+                var ctx = await sink.WaitForMessageAsync();
                 if (ctx.Message is "recover-1" or "recover-2")
                 {
                     found.Add(ctx.Message);

@@ -93,7 +93,7 @@ public class KafkaDlqMisconfigurationTests(KafkaContainerFixture fixture)
             rawProducer.Flush(TimeSpan.FromSeconds(5));
 
             // Assert — the pipeline does not crash; the second message (valid key) is consumed normally.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("valid-after-discard", ctx.Message);
         }
         finally

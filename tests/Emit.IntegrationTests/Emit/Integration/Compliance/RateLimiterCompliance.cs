@@ -80,7 +80,7 @@ public abstract class RateLimiterCompliance
             // Collect all messages.
             for (var i = 0; i < messageCount; i++)
             {
-                await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                await sink.WaitForMessageAsync();
             }
 
             sw.Stop();

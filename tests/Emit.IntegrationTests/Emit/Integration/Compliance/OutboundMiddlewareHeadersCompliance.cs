@@ -84,7 +84,7 @@ public abstract class OutboundMiddlewareHeadersCompliance
             await ProduceAsync(host.Services, message, useOutbox);
 
             // Assert — consumer received the message.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("payload", ctx.Message);
 
             var headers = ctx.Headers;

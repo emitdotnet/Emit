@@ -67,7 +67,7 @@ public abstract class GlobalPipelineCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
 
             // Assert — consumer received the message and middleware fired.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("hello", ctx.Message);
             Assert.True(counter.Count > 0, $"Expected inbound middleware to be invoked at least once, but count was {counter.Count}.");
         }
@@ -110,7 +110,7 @@ public abstract class GlobalPipelineCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
 
             // Assert — consumer received the message and outbound middleware fired.
-            var ctx = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await sink.WaitForMessageAsync();
             Assert.Equal("hello", ctx.Message);
             Assert.True(counter.Count > 0, $"Expected outbound middleware to be invoked at least once, but count was {counter.Count}.");
         }

@@ -88,7 +88,7 @@ public abstract class ExternalMessageCompliance
             await ProduceExternalMessageAsync(topic, "external-key", "external-value");
 
             // Assert — message received correctly
-            var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var context = await sink.WaitForMessageAsync();
             var kafkaContext = Assert.IsType<KafkaTransportContext<string>>(context.TransportContext);
             Assert.Equal("external-key", kafkaContext.Key);
             Assert.Equal("external-value", context.Message);

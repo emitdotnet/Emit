@@ -5,7 +5,7 @@
     <AssemblyName>Emit.Kafka</AssemblyName>
     <PackageId>Emit.Kafka</PackageId>
     <Description>Kafka outbox provider for Emit. Enables reliable Kafka message production through the transactional outbox pattern.</Description>
-    <PackageTags>outbox;transactional;kafka;messaging;reliability</PackageTags>
+    <PackageTags>emit;outbox;transactional;kafka;messaging;reliability</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

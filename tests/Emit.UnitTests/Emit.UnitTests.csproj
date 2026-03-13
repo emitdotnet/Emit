@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Emit.Kafka.HealthChecks\Emit.Kafka.HealthChecks.csproj" />
     <ProjectReference Include="..\..\src\Emit.MongoDB.HealthChecks\Emit.MongoDB.HealthChecks.csproj" />
     <ProjectReference Include="..\..\src\Emit.EntityFrameworkCore.HealthChecks\Emit.EntityFrameworkCore.HealthChecks.csproj" />
+    <ProjectReference Include="..\..\src\Emit.FluentValidation\Emit.FluentValidation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

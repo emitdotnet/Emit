@@ -11,9 +11,14 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../src/Emit/Emit.csproj" />
+    <ProjectReference Include="../../../src/Emit.FluentValidation/Emit.FluentValidation.csproj" />
     <ProjectReference Include="../../../src/Emit.Mediator/Emit.Mediator.csproj" />
     <ProjectReference Include="../../../src/Emit.Kafka/Emit.Kafka.csproj" />
     <ProjectReference Include="../../../src/Emit.Kafka.JsonSerializer/Emit.Kafka.JsonSerializer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
   </ItemGroup>
 
 </Project>

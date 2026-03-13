@@ -92,6 +92,7 @@ export default defineConfig({
           items: [
             { label: 'Custom Middleware', link: '/advanced/custom-middleware/' },
             { label: 'Testing', link: '/advanced/testing/' },
+            { label: 'Validation', link: '/advanced/validation/' },
             { label: 'Feature Collection', link: '/advanced/feature-collection/' },
             { label: 'Configuration Reference', link: '/advanced/configuration/' },
           ],

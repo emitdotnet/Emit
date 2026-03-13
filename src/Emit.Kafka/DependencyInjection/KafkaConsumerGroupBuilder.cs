@@ -16,7 +16,7 @@ using ConfluentKafka = Confluent.Kafka;
 /// </summary>
 /// <typeparam name="TKey">The message key type.</typeparam>
 /// <typeparam name="TValue">The message value type.</typeparam>
-public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IInboundPipelineConfigurable
+public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConfigurable<TValue>
 {
     private readonly List<Type> consumerTypes = [];
     private readonly HashSet<Type> registeredConsumerTypes = [];
@@ -112,9 +112,6 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IInboundPipelineCo
     internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
 
     // ── Worker pool configuration ──
-
-    // NOTE: IConsumerGroupConfigurable<TValue> and IInboundConfigurable<TValue> were removed.
-    // Concrete builder types ARE the API surface — no interface forwarding needed.
 
     /// <summary>Number of processing tasks in the worker pool.</summary>
     public int WorkerCount { get; set; } = 1;
@@ -217,53 +214,64 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IInboundPipelineCo
 
     /// <summary>
     /// Registers a class-based message validator that is resolved from the service provider
-    /// for each message. Validation failures throw <see cref="MessageValidationException"/>
-    /// and are handled by the error policy configured via <see cref="OnError"/>.
+    /// for each message. Validation failures throw <see cref="MessageValidationException"/>;
+    /// the <paramref name="configureAction"/> determines whether to dead-letter or discard them.
     /// </summary>
     /// <typeparam name="TValidator">The validator type.</typeparam>
+    /// <param name="configureAction">Configures the terminal action for validation failures.</param>
     /// <returns>This builder for continued chaining.</returns>
     /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
-    public KafkaConsumerGroupBuilder<TKey, TValue> Validate<TValidator>()
+    public KafkaConsumerGroupBuilder<TKey, TValue> Validate<TValidator>(Action<ErrorActionBuilder> configureAction)
         where TValidator : class, IMessageValidator<TValue>
     {
+        ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
         var module = new ValidationModule<TValue>();
-        module.Configure<TValidator>();
+        module.Configure<TValidator>(configureAction);
         Validation = module;
         return this;
     }
 
     /// <summary>
     /// Registers an inline async delegate validator. Validation failures throw
-    /// <see cref="MessageValidationException"/> and are handled by the error policy.
+    /// <see cref="MessageValidationException"/>; the <paramref name="configureAction"/>
+    /// determines whether to dead-letter or discard them.
     /// </summary>
     /// <param name="validator">The async validation delegate.</param>
+    /// <param name="configureAction">Configures the terminal action for validation failures.</param>
     /// <returns>This builder for continued chaining.</returns>
     /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> Validate(
-        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator)
+        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator,
+        Action<ErrorActionBuilder> configureAction)
     {
         ArgumentNullException.ThrowIfNull(validator);
+        ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
         var module = new ValidationModule<TValue>();
-        module.Configure(validator);
+        module.Configure(validator, configureAction);
         Validation = module;
         return this;
     }
 
     /// <summary>
     /// Registers an inline synchronous delegate validator. Validation failures throw
-    /// <see cref="MessageValidationException"/> and are handled by the error policy.
+    /// <see cref="MessageValidationException"/>; the <paramref name="configureAction"/>
+    /// determines whether to dead-letter or discard them.
     /// </summary>
     /// <param name="validator">The synchronous validation delegate.</param>
+    /// <param name="configureAction">Configures the terminal action for validation failures.</param>
     /// <returns>This builder for continued chaining.</returns>
     /// <exception cref="InvalidOperationException">Validate has already been called.</exception>
     public KafkaConsumerGroupBuilder<TKey, TValue> Validate(
-        Func<TValue, MessageValidationResult> validator)
+        Func<TValue, MessageValidationResult> validator,
+        Action<ErrorActionBuilder> configureAction)
     {
         ArgumentNullException.ThrowIfNull(validator);
+        ArgumentNullException.ThrowIfNull(configureAction);
+        EnsureValidateNotAlreadyCalled();
         var module = new ValidationModule<TValue>();
-        module.Configure(validator);
+        module.Configure(validator, configureAction);
         Validation = module;
         return this;
     }
@@ -441,6 +449,24 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IInboundPipelineCo
     {
         consumerConfig.ApplyTo(config);
     }
+
+    // ── Explicit interface implementations ──
+
+    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.OnError(Action<ErrorPolicyBuilder> configure) => OnError(configure);
+
+    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate<TValidator>(Action<ErrorActionBuilder> configureAction) => Validate<TValidator>(configureAction);
+
+    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate(
+        Func<TValue, CancellationToken, Task<MessageValidationResult>> validator,
+        Action<ErrorActionBuilder> configureAction) => Validate(validator, configureAction);
+
+    IConsumerGroupConfigurable<TValue> IConsumerGroupConfigurable<TValue>.Validate(
+        Func<TValue, MessageValidationResult> validator,
+        Action<ErrorActionBuilder> configureAction) => Validate(validator, configureAction);
+
+    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Use<TMiddleware>(MiddlewareLifetime lifetime) => Use<TMiddleware>(lifetime);
+
+    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Filter<TFilter>() => Filter<TFilter>();
 
     private void EnsureValidateNotAlreadyCalled()
     {

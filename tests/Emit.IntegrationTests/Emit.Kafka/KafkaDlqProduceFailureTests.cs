@@ -81,7 +81,7 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
             // Act — produce a message that succeeds first, to confirm the consumer is running.
             failToggle.ShouldFail = false;
             await producer.ProduceAsync(new EventMessage<string, string>("k1", "before-dlq-failure"));
-            var first = await successSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var first = await successSink.WaitForMessageAsync();
             Assert.Equal("before-dlq-failure", first.Message);
 
             // Act — delete the DLQ topic so any DLQ produce attempt will fail.
@@ -103,7 +103,7 @@ public class KafkaDlqProduceFailureTests(KafkaContainerFixture fixture)
             ConsumeContext<string> ctx;
             do
             {
-                ctx = await successSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+                ctx = await successSink.WaitForMessageAsync();
             }
             while (ctx.Message != "after-dlq-failure");
 

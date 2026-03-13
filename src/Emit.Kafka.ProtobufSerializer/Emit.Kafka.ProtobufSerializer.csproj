@@ -5,7 +5,7 @@
     <AssemblyName>Emit.Kafka.ProtobufSerializer</AssemblyName>
     <PackageId>Emit.Kafka.ProtobufSerializer</PackageId>
     <Description>Protobuf serializer/deserializer extensions for Emit.Kafka. Adds convenience methods for schema-registry-backed Protobuf serialization.</Description>
-    <PackageTags>outbox;transactional;kafka;protobuf;schema-registry;serialization</PackageTags>
+    <PackageTags>emit;outbox;transactional;kafka;protobuf;schema-registry;serialization</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

@@ -5,7 +5,7 @@
     <AssemblyName>Emit.Mediator</AssemblyName>
     <PackageId>Emit.Mediator</PackageId>
     <Description>In-process mediator pattern for the Emit library. Provides request-response dispatching through IRequestHandler with a unified middleware pipeline.</Description>
-    <PackageTags>mediator;cqrs;request-response;messaging</PackageTags>
+    <PackageTags>emit;mediator;cqrs;request-response;messaging</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

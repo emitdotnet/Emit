@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Emit.FluentValidation</RootNamespace>
+    <AssemblyName>Emit.FluentValidation</AssemblyName>
+    <PackageId>Emit.FluentValidation</PackageId>
+    <Description>FluentValidation integration for Emit. Bridges FluentValidation validators into the Emit consumer validation pipeline.</Description>
+    <PackageTags>emit;fluentvalidation;validation;messaging</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Emit.Abstractions\Emit.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Emit.UnitTests" />
+    <InternalsVisibleTo Include="Emit.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

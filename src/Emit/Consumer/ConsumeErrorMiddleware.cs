@@ -111,14 +111,30 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             headers.Add(new(DeadLetterHeaders.ConsumerType, consumerType.FullName ?? consumerType.Name));
         }
 
-        // Create DLQ publish activity
+        // Resume the original trace from message headers so the DLQ span is part of the consume trace
+        ActivityContext parentContext = default;
+        var transportHeaders = context.TransportContext.Headers;
+        if (transportHeaders is { Count: > 0 })
+        {
+            var traceParent = transportHeaders.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
+            var traceState = transportHeaders.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
+
+            if (!string.IsNullOrEmpty(traceParent))
+            {
+                ActivityContext.TryParse(traceParent, traceState, out parentContext);
+            }
+        }
+
+        // Create DLQ publish activity — child of the original trace when headers are present
         var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress);
         using var dlqActivity = EmitActivitySources.Consumer.StartActivity(
             ActivityNames.DlqPublish,
-            ActivityKind.Producer);
+            ActivityKind.Producer,
+            parentContext);
         dlqActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
         dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
-        dlqActivity?.SetTag(ActivityTagNames.MessagingSystem, "emit");
+        dlqActivity?.SetTag(ActivityTagNames.MessagingSystem,
+            EmitEndpointAddress.GetScheme(deadLetterSink.DestinationAddress) ?? "emit");
         dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);
 
         try

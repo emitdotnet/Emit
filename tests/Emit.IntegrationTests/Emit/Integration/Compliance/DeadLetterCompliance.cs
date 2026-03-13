@@ -70,7 +70,7 @@ public abstract class DeadLetterCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "failing-message"));
 
             // Assert — message arrived in the DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("failing-message", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — diagnostic headers are present and contain the exception details.
@@ -146,7 +146,7 @@ public abstract class DeadLetterCompliance
             await producer.ProduceAsync(new EventMessage<string, string>(sourceKey, "dlq-key-test-payload"));
 
             // Assert — message arrives in DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("dlq-key-test-payload", Encoding.UTF8.GetString(ctx.Message));
 
             // Assert — the DLQ message key bytes match the UTF-8 encoding of the source key.
@@ -208,7 +208,7 @@ public abstract class DeadLetterCompliance
             await producer.ProduceAsync(new EventMessage<string, string>("k", "header-test-payload"));
 
             // Assert — message arrived in DLQ.
-            var ctx = await dlqSink.WaitForMessageAsync(TimeSpan.FromSeconds(30));
+            var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("header-test-payload", Encoding.UTF8.GetString(ctx.Message));
 
             var headers = ctx.Headers;
