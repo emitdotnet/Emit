@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 /// <summary>
 /// EF Core implementation of transaction context.
 /// </summary>
-internal sealed class EfCoreTransactionContext : IEfCoreTransactionContext
+internal sealed class EfCoreTransactionContext : Abstractions.ITransactionContext
 {
     private readonly IDbContextTransaction contextTransaction;
 

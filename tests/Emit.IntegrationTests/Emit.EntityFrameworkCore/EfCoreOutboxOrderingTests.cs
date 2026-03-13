@@ -135,7 +135,7 @@ public class EfCoreOutboxOrderingTests
                             t.SetUtf8KeyDeserializer();
                             t.SetUtf8ValueDeserializer();
 
-                            t.Producer(p => p.UseOutbox());
+                            t.Producer();
                             t.ConsumerGroup(groupId, group =>
                             {
                                 group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
@@ -182,11 +182,11 @@ public class EfCoreOutboxOrderingTests
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
 
-        var emitContext = sp.GetRequiredService<IEmitContext>();
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
         var dbContext = sp.GetRequiredService<IntegrationTestDbContext>();
         var producer = sp.GetRequiredService<IEventProducer<string, string>>();
 
-        await using var transaction = await emitContext.BeginTransactionAsync(dbContext)
+        await using var transaction = await unitOfWork.BeginAsync()
             .ConfigureAwait(false);
 
         await producer.ProduceAsync(new EventMessage<string, string>(key, value))

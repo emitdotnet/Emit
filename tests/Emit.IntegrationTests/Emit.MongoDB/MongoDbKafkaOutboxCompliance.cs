@@ -84,7 +84,7 @@ public class MongoDbKafkaOutboxCompliance
                 t.SetUtf8KeyDeserializer();
                 t.SetUtf8ValueDeserializer();
 
-                t.Producer(p => p.UseOutbox());
+                t.Producer();
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
@@ -105,10 +105,10 @@ public class MongoDbKafkaOutboxCompliance
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
 
-        var emitContext = sp.GetRequiredService<IEmitContext>();
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
         var producer = sp.GetRequiredService<IEventProducer<string, string>>();
 
-        await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct)
+        await using var transaction = await unitOfWork.BeginAsync(ct)
             .ConfigureAwait(false);
 
         await producer.ProduceAsync(new EventMessage<string, string>(key, value), ct)
@@ -132,12 +132,11 @@ public class MongoDbKafkaOutboxCompliance
     {
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
-        var emitContext = sp.GetRequiredService<IEmitContext>();
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
         var repository = sp.GetRequiredService<IOutboxRepository>();
 
         // MongoDB EnqueueAsync requires an active transaction.
-        await using var transaction = await emitContext
-            .BeginMongoTransactionAsync(mongoClient, cancellationToken: ct)
+        await using var transaction = await unitOfWork.BeginAsync(ct)
             .ConfigureAwait(false);
 
         await repository.EnqueueAsync(entry, ct).ConfigureAwait(false);

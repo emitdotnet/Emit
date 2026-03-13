@@ -10,12 +10,12 @@ This guide walks you through producing and consuming your first message with the
 ## Prerequisites
 
 - **.NET 10+**
-- **Kafka** — running locally on `localhost:9092`
-- **Schema Registry** — running locally on `localhost:8081` (for JSON Schema serialization)
-- **MongoDB** — running locally on `localhost:27017` (for the outbox and distributed locking)
+- **Kafka**: running locally on `localhost:9092`
+- **Schema Registry**: running locally on `localhost:8081` (for JSON Schema serialization)
+- **MongoDB**: running locally on `localhost:27017` (for the outbox and distributed locking)
 
 :::tip[Skip the outbox]
-If you only want direct Kafka integration without the outbox, skip the MongoDB setup and omit `UseOutbox()` on both the persistence provider and the producer. Messages will go straight to Kafka.
+If you only want direct Kafka integration without the outbox, skip the MongoDB setup and call `UseDirect()` on the producer. Messages will go straight to Kafka.
 :::
 
 <Steps>
@@ -96,7 +96,7 @@ If you only want direct Kafka integration without the outbox, skip the MongoDB s
                topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
                topic.SetJsonSchemaValueDeserializer();
 
-               topic.Producer(p => p.UseOutbox());
+               topic.Producer();
 
                topic.ConsumerGroup("pizza-kitchen", group =>
                {
@@ -132,55 +132,83 @@ If you only want direct Kafka integration without the outbox, skip the MongoDB s
 
 5. **Produce a message inside a transaction**
 
-   The outbox guarantees atomicity: either both the order document and the outbox entry are persisted, or neither is. Inject `IEmitContext` to start a transaction that spans your business write and the outbox write.
+   When outbox infrastructure is enabled, `ProduceAsync` writes to the outbox instead of directly to Kafka. Commit your business data and the outbox entry together using one of three approaches depending on your persistence backend and context.
+
+   **EF Core (implicit):** call `SaveChangesAsync` and both your entity and the outbox entry flush in the same implicit database transaction.
 
    ```csharp title="PlacePizzaOrderEndpoint.cs"
    app.MapPost("/orders", async (
        PlacePizzaOrderRequest request,
-       IEmitContext emitContext,
-       IMongoClient mongoClient,
+       MyDbContext dbContext,
+       IEventProducer<string, PizzaOrdered> producer,
+       CancellationToken ct) =>
+   {
+       var pizza = new PizzaOrdered(
+           Guid.NewGuid(), request.CustomerId,
+           request.Toppings, request.DeliveryAddress);
+
+       dbContext.PizzaOrders.Add(pizza);
+       await producer.ProduceAsync(
+           new EventMessage<string, PizzaOrdered>(pizza.PizzaId.ToString(), pizza), ct);
+       await dbContext.SaveChangesAsync(ct);
+
+       return Results.Accepted();
+   });
+   ```
+
+   **MongoDB (IUnitOfWork):** MongoDB requires an explicit unit of work to share the session between your business write and the outbox write.
+
+   ```csharp title="PlacePizzaOrderEndpoint.cs"
+   app.MapPost("/orders", async (
+       PlacePizzaOrderRequest request,
+       IUnitOfWork unitOfWork,
+       IMongoSessionAccessor sessionAccessor,
        IMongoDatabase database,
        IEventProducer<string, PizzaOrdered> producer,
        CancellationToken ct) =>
    {
        var pizza = new PizzaOrdered(
-           Guid.NewGuid(),
-           request.CustomerId,
-           request.Toppings,
-           request.DeliveryAddress);
+           Guid.NewGuid(), request.CustomerId,
+           request.Toppings, request.DeliveryAddress);
 
-       // Begin a MongoDB transaction and wire it to emitContext.
-       // await using ensures rollback if anything throws.
-       await using var transaction =
-           await emitContext.BeginMongoTransactionAsync(mongoClient, cancellationToken: ct);
-
-       // Write your business data using the transactional session.
-       var orders = database.GetCollection<PizzaOrdered>("orders");
-       await orders.InsertOneAsync(transaction.Session, pizza, cancellationToken: ct);
-
-       // ProduceAsync writes the outbox entry inside the same session.
+       await using var tx = await unitOfWork.BeginAsync(ct);
+       var session = sessionAccessor.Session!;
+       await database.GetCollection<PizzaOrdered>("orders")
+           .InsertOneAsync(session, pizza, cancellationToken: ct);
        await producer.ProduceAsync(
-           new EventMessage<string, PizzaOrdered>(pizza.PizzaId.ToString(), pizza),
-           ct);
-
-       // Both writes (the order document and the outbox entry) commit together.
-       await transaction.CommitAsync(ct);
+           new EventMessage<string, PizzaOrdered>(pizza.PizzaId.ToString(), pizza), ct);
+       await tx.CommitAsync(ct);
 
        return Results.Accepted();
    });
+   ```
+
+   **Consumers and handlers (`[Transactional]`):** if the produce happens inside a Kafka consumer or mediator handler, skip the manual ceremony entirely.
+
+   ```csharp title="PizzaOrderedConsumer.cs"
+   [Transactional]
+   public sealed class PizzaOrderedConsumer(
+       IEventProducer<string, PizzaConfirmed> producer) : IConsumer<PizzaOrdered>
+   {
+       public async Task ConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken ct)
+       {
+           await producer.ProduceAsync(..., ct);
+           // Transaction is managed automatically by the middleware.
+       }
+   }
    ```
 
 </Steps>
 
 ## What just happened
 
-When you call `producer.ProduceAsync()` inside a transaction, Emit doesn't send the message to Kafka immediately. Instead, three things happen:
+When `ProduceAsync` is called with outbox infrastructure enabled, Emit doesn't send the message to Kafka immediately. Instead, three things happen:
 
-1. **Atomic write** — The outbox entry is written to MongoDB inside the same transaction as your business data. If either write fails, neither is persisted.
+1. **Atomic write:** The outbox entry is written to the database inside the same transaction as your business data. If either write fails, neither is persisted.
 
-2. **Background delivery** — A background worker polls the outbox, picks up pending entries, and publishes them to Kafka. Your endpoint returns immediately after `CommitAsync` completes.
+2. **Background delivery:** A background worker polls the outbox, picks up pending entries, and publishes them to Kafka. Your endpoint returns immediately after the commit.
 
-3. **Crash recovery** — If the process crashes between the commit and delivery, the worker picks up the pending entry on restart. No messages are lost and no duplicates are introduced.
+3. **Crash recovery:** If the process crashes between the commit and delivery, the worker picks up the pending entry on restart. No messages are lost and no duplicates are introduced.
 
 :::tip[Serialization alternatives]
 This quickstart uses JSON Schema serialization via `Emit.Kafka.JsonSerializer`. Emit also ships Avro and Protobuf serializer packages, or you can plug in any `ISerializer<T>` / `IDeserializer<T>` implementation. See [Serialization](../../kafka/serialization/) for all options.

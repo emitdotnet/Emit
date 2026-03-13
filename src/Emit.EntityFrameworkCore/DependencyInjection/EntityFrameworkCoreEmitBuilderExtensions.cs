@@ -129,6 +129,13 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
         // Register as SCOPED (not singleton) to use user's scoped DbContext
         builder.Services.AddScoped<EfCoreOutboxRepository<TDbContext>>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<EfCoreOutboxRepository<TDbContext>>());
+
+        builder.Services.AddScoped<IUnitOfWork>(sp =>
+        {
+            var dbContext = sp.GetRequiredService<TDbContext>();
+            var emitContext = sp.GetRequiredService<IEmitContext>();
+            return new EfCoreUnitOfWork<TDbContext>(dbContext, emitContext);
+        });
     }
 
     private static void RegisterDistributedLockServices<TDbContext>(EmitBuilder builder)

@@ -8,6 +8,7 @@ namespace Emit.Abstractions;
 public abstract class MessageContext
 {
     private Dictionary<Type, object>? payloads;
+    private IServiceProvider services = null!;
 
     /// <summary>
     /// Cancellation token for this processing operation.
@@ -17,7 +18,11 @@ public abstract class MessageContext
     /// <summary>
     /// Scoped service provider for this processing operation.
     /// </summary>
-    public required IServiceProvider Services { get; init; }
+    public required IServiceProvider Services
+    {
+        get => services;
+        init => services = value;
+    }
 
     /// <summary>
     /// Feature collection for optional, pattern-specific capabilities.
@@ -72,6 +77,15 @@ public abstract class MessageContext
         ArgumentNullException.ThrowIfNull(payload);
         payloads ??= [];
         payloads[typeof(T)] = payload;
+    }
+
+    /// <summary>
+    /// Replaces the service provider on this context. Used by the retry middleware
+    /// to give each attempt fresh scoped services.
+    /// </summary>
+    internal void WithServices(IServiceProvider services)
+    {
+        this.services = services;
     }
 }
 

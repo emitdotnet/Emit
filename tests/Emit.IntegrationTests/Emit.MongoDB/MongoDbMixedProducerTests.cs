@@ -13,9 +13,9 @@ using Microsoft.Extensions.Hosting;
 using Xunit;
 
 /// <summary>
-/// Verifies that when outbox is enabled at the persistence level, producers that do not
-/// call <c>UseOutbox()</c> send messages directly to Kafka (bypassing the outbox), while
-/// producers that call <c>UseOutbox()</c> route through the transactional outbox.
+/// Verifies that when outbox is enabled at the persistence level, producers that call
+/// <c>UseDirect()</c> send messages directly to Kafka (bypassing the outbox), while
+/// producers that do not opt out route through the transactional outbox by default.
 /// </summary>
 [Trait("Category", "Integration")]
 public class MongoDbMixedProducerTests
@@ -50,7 +50,7 @@ public class MongoDbMixedProducerTests
     }
 
     /// <summary>
-    /// A producer without <c>UseOutbox()</c> sends directly to Kafka even when outbox
+    /// A producer with <c>UseDirect()</c> sends directly to Kafka even when outbox
     /// is enabled at the persistence level. No transaction is required.
     /// </summary>
     [Fact]
@@ -84,7 +84,7 @@ public class MongoDbMixedProducerTests
                         });
                         kafka.AutoProvision();
 
-                        // Direct producer — no UseOutbox()
+                        // Direct producer — UseDirect() opts out of the outbox
                         kafka.Topic<string, string>(directTopic, t =>
                         {
                             t.SetUtf8KeySerializer();
@@ -92,7 +92,7 @@ public class MongoDbMixedProducerTests
                             t.SetUtf8KeyDeserializer();
                             t.SetUtf8ValueDeserializer();
 
-                            t.Producer();
+                            t.Producer(p => p.UseDirect());
                             t.ConsumerGroup($"group-{Guid.NewGuid():N}", group =>
                             {
                                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
@@ -125,9 +125,9 @@ public class MongoDbMixedProducerTests
     }
 
     /// <summary>
-    /// With two producers on separate topics — one with <c>UseOutbox()</c> and one without —
-    /// the direct producer sends immediately while the outbox producer delivers via the daemon
-    /// after the transaction commits.
+    /// With two producers on separate topics — one using the default outbox routing and one
+    /// with <c>UseDirect()</c> — the direct producer sends immediately while the outbox producer
+    /// delivers via the daemon after the transaction commits.
     /// </summary>
     [Fact]
     public async Task GivenMixedProducers_WhenProducing_ThenEachUsesCorrectDeliveryPath()
@@ -163,7 +163,7 @@ public class MongoDbMixedProducerTests
                         });
                         kafka.AutoProvision();
 
-                        // Outbox producer
+                        // Outbox producer — default routing when outbox infra is configured
                         kafka.Topic<string, string>(outboxTopic, t =>
                         {
                             t.SetUtf8KeySerializer();
@@ -171,7 +171,7 @@ public class MongoDbMixedProducerTests
                             t.SetUtf8KeyDeserializer();
                             t.SetUtf8ValueDeserializer();
 
-                            t.Producer(p => p.UseOutbox());
+                            t.Producer();
                             t.ConsumerGroup($"group-{Guid.NewGuid():N}", group =>
                             {
                                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
@@ -187,7 +187,7 @@ public class MongoDbMixedProducerTests
                             t.SetByteArrayKeyDeserializer();
                             t.SetByteArrayValueDeserializer();
 
-                            t.Producer();
+                            t.Producer(p => p.UseDirect());
                             t.ConsumerGroup($"group-{Guid.NewGuid():N}", group =>
                             {
                                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
@@ -218,10 +218,10 @@ public class MongoDbMixedProducerTests
             // Act — produce to the outbox producer WITH a transaction
             using (var scope = host.Services.CreateScope())
             {
-                var emitContext = scope.ServiceProvider.GetRequiredService<IEmitContext>();
+                var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var outboxProducer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
 
-                await using var transaction = await emitContext.BeginMongoTransactionAsync(mongoClient);
+                await using var transaction = await unitOfWork.BeginAsync();
                 await outboxProducer.ProduceAsync(new EventMessage<string, string>("k", "outbox-msg"));
                 await transaction.CommitAsync();
             }

@@ -6,50 +6,50 @@ using Xunit;
 public class KafkaProducerBuilderTests
 {
     [Fact]
-    public void GivenNewProducerBuilder_WhenCreated_ThenOutboxEnabledIsFalse()
+    public void GivenProducerBuilder_WhenNewlyCreated_ThenDirectEnabledFalse()
     {
         // Arrange & Act
         var builder = new KafkaProducerBuilder<string, string>();
 
         // Assert
-        Assert.False(builder.OutboxEnabled);
+        Assert.False(builder.DirectEnabled);
     }
 
     [Fact]
-    public void GivenUseOutbox_WhenCalled_ThenOutboxEnabledIsTrue()
+    public void GivenProducerBuilder_WhenUseDirectCalled_ThenDirectEnabledTrue()
     {
         // Arrange
         var builder = new KafkaProducerBuilder<string, string>();
 
         // Act
-        builder.UseOutbox();
+        builder.UseDirect();
 
         // Assert
-        Assert.True(builder.OutboxEnabled);
+        Assert.True(builder.DirectEnabled);
     }
 
     [Fact]
-    public void GivenUseOutbox_WhenCalled_ThenReturnsSameBuilderForChaining()
+    public void GivenUseDirect_WhenCalled_ThenReturnsSameBuilderForChaining()
     {
         // Arrange
         var builder = new KafkaProducerBuilder<string, string>();
 
         // Act
-        var result = builder.UseOutbox();
+        var result = builder.UseDirect();
 
         // Assert
         Assert.Same(builder, result);
     }
 
     [Fact]
-    public void GivenUseOutboxCalledTwice_WhenCalled_ThenThrowsInvalidOperationException()
+    public void GivenProducerBuilder_WhenUseDirectCalledTwice_ThenThrowsInvalidOperationException()
     {
         // Arrange
         var builder = new KafkaProducerBuilder<string, string>();
-        builder.UseOutbox();
+        builder.UseDirect();
 
         // Act & Assert
-        var exception = Assert.Throws<InvalidOperationException>(() => builder.UseOutbox());
-        Assert.Contains(nameof(KafkaProducerBuilder<string, string>.UseOutbox), exception.Message);
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.UseDirect());
+        Assert.Contains(nameof(KafkaProducerBuilder<string, string>.UseDirect), exception.Message);
     }
 }

@@ -6,6 +6,7 @@ using Emit.Abstractions.Pipeline;
 using Emit.Metrics;
 using Emit.Pipeline.Modules;
 using Emit.Tracing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -46,6 +47,7 @@ internal sealed class RetryMiddleware<TMessage>(
     {
         Exception lastException = originalException;
         var retryStart = Stopwatch.GetTimestamp();
+        var originalServices = context.Services;
 
         // Capture parent Activity context for retry attempts
         var parentContext = Activity.Current?.Context ?? default;
@@ -60,6 +62,10 @@ internal sealed class RetryMiddleware<TMessage>(
 
             // Set retry attempt on context for downstream middleware
             context.RetryAttempt = attempt + 1;
+
+            // Create a child scope so each retry gets fresh scoped services
+            await using var retryScope = originalServices.CreateAsyncScope();
+            context.WithServices(retryScope.ServiceProvider);
 
             // Create Activity for this retry attempt
             using var retryActivity = ConsumerActivitySource.StartActivity(
@@ -79,6 +85,8 @@ internal sealed class RetryMiddleware<TMessage>(
                     "Retry {Attempt}/{MaxAttempts} succeeded for message {MessageId}",
                     attempt + 1, config.MaxAttempts, context.MessageId);
 
+                context.WithServices(originalServices);
+
                 var retryElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
                 emitMetrics.RecordRetryAttempts(attempt + 1, "success");
                 emitMetrics.RecordRetryDuration(retryElapsed, "success");
@@ -86,6 +94,7 @@ internal sealed class RetryMiddleware<TMessage>(
             }
             catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
             {
+                context.WithServices(originalServices);
                 retryActivity?.SetStatus(ActivityStatusCode.Error, "Operation cancelled");
                 throw;
             }
@@ -99,6 +108,9 @@ internal sealed class RetryMiddleware<TMessage>(
                     attempt + 1, config.MaxAttempts, context.MessageId);
             }
         }
+
+        // Restore original services so ConsumeErrorMiddleware doesn't see a disposed scope
+        context.WithServices(originalServices);
 
         var exhaustedElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
         emitMetrics.RecordRetryAttempts(config.MaxAttempts, "exhausted");

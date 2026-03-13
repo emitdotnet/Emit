@@ -167,4 +167,41 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
         Assert.Contains(services, d =>
             d.ImplementationInstance is PersistenceProviderMarker { ProviderName: "EntityFrameworkCore" });
     }
+
+    [Fact]
+    public void GivenEfCoreOutboxEnabled_WhenServicesBuilt_ThenIUnitOfWorkRegisteredAsScoped()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        RegisterDbContext(services);
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddEntityFrameworkCore<TestDbContext>(ef =>
+        {
+            ef.UseNpgsql();
+            ef.UseOutbox();
+        });
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.NotNull(descriptor);
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void GivenEfCoreOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkNotRegistered()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        RegisterDbContext(services);
+        var builder = new EmitBuilder(services);
+
+        // Act
+        builder.AddEntityFrameworkCore<TestDbContext>(ef => ef.UseNpgsql());
+
+        // Assert
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.Null(descriptor);
+    }
 }

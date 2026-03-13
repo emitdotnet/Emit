@@ -17,8 +17,9 @@ internal sealed class EmitContext : IEmitContext
             if (transaction is not null && value is not null && !ReferenceEquals(transaction, value))
             {
                 throw new InvalidOperationException(
-                    "Cannot overwrite an active transaction. " +
-                    "Commit or rollback the existing transaction before setting a new one.");
+                    $"A transaction is already active on this context. " +
+                    $"If the handler is decorated with [{nameof(TransactionalAttribute)}], " +
+                    $"remove the manual {nameof(IUnitOfWork)}.{nameof(IUnitOfWork.BeginAsync)} call.");
             }
             transaction = value;
         }

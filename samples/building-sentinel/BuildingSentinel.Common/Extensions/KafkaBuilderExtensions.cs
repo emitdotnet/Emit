@@ -26,7 +26,7 @@ public static class KafkaBuilderExtensions
             topic.SetUtf8KeyDeserializer();
             topic.SetJsonSchemaValueDeserializer<string, BuildingEvent>();
 
-            topic.Producer(p => p.UseOutbox());
+            topic.Producer();
 
             // Consumer group 1: routes on event type, only handles access.denied
             topic.ConsumerGroup("building.classifier", group =>

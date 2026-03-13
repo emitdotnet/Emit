@@ -112,18 +112,41 @@ For DLQ assertions, register a second sink on the DLQ topic.
 
 ## Testing outbox behavior
 
-The outbox adds a database write to the mix. Make sure the producer under test calls `UseOutbox()`:
+The outbox adds a database write to the mix. Use real containers (Testcontainers) rather than in-memory fakes; the outbox behavior depends on database-level atomicity that in-memory implementations cannot replicate.
+
+**Testing with `IUnitOfWork`:**
 
 ```csharp
-topic.Producer(p => p.UseOutbox());
+using var scope = host.Services.CreateScope();
+var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+
+await using var tx = await uow.BeginAsync();
+await producer.ProduceAsync(new EventMessage<string, string>("key", "value"));
+await tx.CommitAsync();
+
+var msg = await sink.WaitForMessageAsync();
+Assert.Equal("value", msg.Message);
 ```
 
-Integration tests for the outbox should:
+**Testing EF Core implicit approach:**
 
-1. Begin a transaction
-2. Call `ProduceAsync`
-3. Commit
-4. Wait for the outbox worker to deliver
-5. Assert on `MessageSink`
+```csharp
+using var scope = host.Services.CreateScope();
+var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+var dbContext = scope.ServiceProvider.GetRequiredService<MyDbContext>();
 
-Use real containers (Testcontainers) rather than in-memory fakes for this; the outbox behavior depends on database-level atomicity that in-memory implementations cannot replicate.
+await producer.ProduceAsync(new EventMessage<string, string>("key", "value"));
+await dbContext.SaveChangesAsync();
+
+var msg = await sink.WaitForMessageAsync();
+Assert.Equal("value", msg.Message);
+```
+
+**Testing a `[Transactional]` consumer:** produce to the input topic and assert on the output sink. The consumer handles transaction management automatically.
+
+```csharp
+await producer.ProduceAsync(new EventMessage<string, string>("key", "trigger"));
+var msg = await outputSink.WaitForMessageAsync();
+Assert.Equal("expected-output", msg.Message);
+```

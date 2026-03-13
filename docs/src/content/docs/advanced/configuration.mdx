@@ -7,7 +7,7 @@ All configuration in Emit is validated at startup via `IValidateOptions<T>`. Mis
 
 ## Outbox options
 
-Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persistence provider. These options control the background worker that delivers outbox entries to the broker. Individual producers opt into the outbox separately via `topic.Producer(p => p.UseOutbox())`.
+Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persistence provider. These options control the background worker that delivers outbox entries to the broker. All producers route through the outbox by default when outbox infrastructure is configured; use `topic.Producer(p => p.UseDirect())` to opt out.
 
 | Option | Default | Description |
 |---|---|---|
@@ -27,6 +27,12 @@ Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persiste
 | `SaslUsername` / `SaslPassword` | SASL credentials |
 | `SslCaLocation` | Path to the CA certificate file |
 
+## Producer routing options
+
+| Method | Description |
+|---|---|
+| `UseDirect()` | Forces the producer to send messages directly to the broker, bypassing the outbox. Only meaningful when outbox infrastructure is configured. |
+
 ## Kafka producer options
 
 `ConfigureProducer` maps to Confluent.Kafka's `ProducerConfig`. Common options:
@@ -37,6 +43,12 @@ Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persiste
 | `EnableIdempotence` | `false` | Prevents duplicate messages on retry |
 | `CompressionType` | `None` | `Gzip`, `Snappy`, `Lz4`, or `Zstd` |
 | `Linger` | `0` | Batching delay before sending |
+
+## Consumer and handler options
+
+| Attribute / Method | Description |
+|---|---|
+| `[Transactional]` | When applied to a consumer or mediator handler class, the pipeline automatically wraps the handler invocation in a transactional unit of work. The transaction is committed on success and rolled back on failure or unhandled exception. |
 
 ## Kafka consumer group options
 

@@ -156,6 +156,16 @@ public static class MongoDbEmitBuilderExtensions
 
         builder.Services.AddScoped<MongoDbOutboxRepository>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<MongoDbOutboxRepository>());
+
+        builder.Services.AddScoped<MongoSessionHolder>();
+        builder.Services.AddScoped<IMongoSessionAccessor>(sp => sp.GetRequiredService<MongoSessionHolder>());
+        builder.Services.AddScoped<IUnitOfWork>(sp =>
+        {
+            var mongoContext = sp.GetRequiredService<MongoDbContext>();
+            var emitContext = sp.GetRequiredService<IEmitContext>();
+            var sessionHolder = sp.GetRequiredService<MongoSessionHolder>();
+            return new MongoUnitOfWork(mongoContext, emitContext, sessionHolder);
+        });
     }
 
     private static void RegisterDistributedLockServices(EmitBuilder builder)

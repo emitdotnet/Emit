@@ -218,6 +218,23 @@ group.CommitInterval = TimeSpan.FromSeconds(5);  // default
 
 Commits happen in the background on this interval. You do not call commit manually.
 
+## Transactional consumers
+
+Decorate your consumer class with `[Transactional]` to have the pipeline automatically wrap each invocation in a unit-of-work transaction. All outbox entries produced within the handler are committed atomically with any business data writes. Each retry attempt gets a fresh transaction.
+
+```csharp
+[Transactional]
+public sealed class PizzaOrderedConsumer(
+    IEventProducer<string, PizzaOrdered> producer) : IConsumer<PizzaOrdered>
+{
+    public async Task ConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken ct)
+    {
+        await producer.ProduceAsync(..., ct);
+        // Transaction committed automatically on success, rolled back on failure.
+    }
+}
+```
+
 ## Per-consumer middleware
 
 Register middleware that wraps only a specific consumer:

@@ -81,7 +81,7 @@ public class KafkaOutboundMiddlewareHeadersCompliance
 
                 t.Producer(p =>
                 {
-                    if (useOutbox) p.UseOutbox();
+                    if (!useOutbox) p.UseDirect();
                 });
                 t.ConsumerGroup(groupId, group =>
                 {
@@ -104,9 +104,9 @@ public class KafkaOutboundMiddlewareHeadersCompliance
 
         if (useOutbox)
         {
-            var emitContext = sp.GetRequiredService<IEmitContext>();
-            await using var transaction = await emitContext
-                .BeginMongoTransactionAsync(mongoClient, cancellationToken: cancellationToken)
+            var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
+            await using var transaction = await unitOfWork
+                .BeginAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             await producer.ProduceAsync(message, cancellationToken).ConfigureAwait(false);

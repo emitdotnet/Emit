@@ -1,10 +1,8 @@
 using BuildingSentinel.Common.Endpoints;
 using BuildingSentinel.Common.Extensions;
 using BuildingSentinel.Common.Repositories;
-using BuildingSentinel.Common.Transactions;
 using BuildingSentinel.MongoDB.Repositories;
 using BuildingSentinel.Common.Simulation;
-using BuildingSentinel.MongoDB.Transactions;
 using Emit.DependencyInjection;
 using Emit.Mediator.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
@@ -50,7 +48,6 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
 builder.Services.AddScoped<IBuildingEventRepository, MongoBuildingEventRepository>();
 builder.Services.AddScoped<IAlertRepository, MongoAlertRepository>();
 builder.Services.AddScoped<IDeviceHeartbeatRepository, MongoDeviceHeartbeatRepository>();
-builder.Services.AddScoped<ITransactionFactory, MongoTransactionFactory>();
 builder.Services.AddHostedService<BuildingSimulatorService>();
 builder.Services.AddValidatorsFromAssemblyContaining<BuildingEventValidator>();
 

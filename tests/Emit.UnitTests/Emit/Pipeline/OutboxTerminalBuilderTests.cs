@@ -19,9 +19,6 @@ public sealed class OutboxTerminalBuilderTests
         var mockNodeIdentity = new Mock<INodeIdentity>();
         mockNodeIdentity.Setup(n => n.NodeId).Returns(expectedNodeId);
 
-        var mockTransaction = new Mock<ITransactionContext>();
-        var emitContext = new EmitContext { Transaction = mockTransaction.Object };
-
         OutboxEntry? capturedEntry = null;
         mockRepository
             .Setup(r => r.EnqueueAsync(It.IsAny<OutboxEntry>(), It.IsAny<CancellationToken>()))
@@ -30,7 +27,6 @@ public sealed class OutboxTerminalBuilderTests
 
         var services = new ServiceCollection()
             .AddSingleton(mockRepository.Object)
-            .AddSingleton<IEmitContext>(emitContext)
             .AddSingleton(mockNodeIdentity.Object)
             .BuildServiceProvider();
 
@@ -59,14 +55,15 @@ public sealed class OutboxTerminalBuilderTests
     }
 
     [Fact]
-    public async Task GivenOutboxTerminal_WhenNoTransaction_ThenThrowsInvalidOperationException()
+    public async Task GivenNullTransaction_WhenOutboxTerminalInvoked_ThenDoesNotThrow()
     {
         // Arrange
-        var emitContext = new EmitContext();
+        mockRepository
+            .Setup(r => r.EnqueueAsync(It.IsAny<OutboxEntry>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var services = new ServiceCollection()
             .AddSingleton(mockRepository.Object)
-            .AddSingleton<IEmitContext>(emitContext)
             .AddSingleton(new Mock<INodeIdentity>().Object)
             .BuildServiceProvider();
 
@@ -86,7 +83,12 @@ public sealed class OutboxTerminalBuilderTests
             Services = services
         };
 
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline.InvokeAsync(context));
+        // Act
+        await pipeline.InvokeAsync(context);
+
+        // Assert
+        mockRepository.Verify(
+            r => r.EnqueueAsync(It.IsAny<OutboxEntry>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

@@ -18,7 +18,7 @@ builder.Services.AddEmit(emit =>
 });
 ```
 
-`AddMediator` is an extension on `EmitBuilder`. You can call it alongside `AddKafka` or on its own — the two are independent.
+`AddMediator` is an extension on `EmitBuilder`. You can call it alongside `AddKafka` or on its own; the two are independent.
 
 ## Requests
 
@@ -138,7 +138,26 @@ Register observers on the mediator builder:
 mediator.AddObserver<AuditObserver>();
 ```
 
-Observer exceptions are swallowed and logged — a failing observer never interrupts the handler.
+Observer exceptions are swallowed and logged; a failing observer never interrupts the handler.
+
+## Transactional handlers
+
+Mediator handlers can participate in the transactional outbox by decorating the handler class with `[Transactional]`:
+
+```csharp
+[Transactional]
+public sealed class CreateOrderHandler(
+    IEventProducer<string, OrderCreated> producer,
+    MyDbContext db) : IRequestHandler<CreateOrderCommand>
+{
+    public async Task HandleAsync(CreateOrderCommand cmd, CancellationToken ct)
+    {
+        db.Orders.Add(cmd.Order);
+        await producer.ProduceAsync(..., ct);
+        // SaveChanges and transaction commit handled by middleware.
+    }
+}
+```
 
 ## One handler per request type
 

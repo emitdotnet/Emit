@@ -49,6 +49,8 @@ Backoff strategies:
 | Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt with ±20% jitter; capped at `maxDelay` (default 5 min) |
 | None | `Backoff.None` | No delay between retries |
 
+When a consumer is decorated with `[Transactional]`, each retry attempt starts a fresh transaction. If the first attempt fails and the retry succeeds, only the successful attempt's writes are committed.
+
 The current attempt number is available directly on `ConsumeContext<T>`:
 
 ```csharp

@@ -21,6 +21,7 @@ Emit is split into focused packages so you only take what you need.
 | `Emit.Kafka.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.Kafka.HealthChecks.svg)](https://www.nuget.org/packages/Emit.Kafka.HealthChecks/) | ASP.NET Core health check for Kafka broker connectivity |
 | `Emit.MongoDB.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.MongoDB.HealthChecks.svg)](https://www.nuget.org/packages/Emit.MongoDB.HealthChecks/) | ASP.NET Core health check for MongoDB connectivity |
 | `Emit.EntityFrameworkCore.HealthChecks` | [![NuGet](https://img.shields.io/nuget/v/Emit.EntityFrameworkCore.HealthChecks.svg)](https://www.nuget.org/packages/Emit.EntityFrameworkCore.HealthChecks/) | ASP.NET Core health check for PostgreSQL connectivity |
+| `Emit.FluentValidation` | [![NuGet](https://img.shields.io/nuget/v/Emit.FluentValidation.svg)](https://www.nuget.org/packages/Emit.FluentValidation/) | FluentValidation integration for consumer validation |
 | `Emit.Testing` | [![NuGet](https://img.shields.io/nuget/v/Emit.Testing.svg)](https://www.nuget.org/packages/Emit.Testing/) | Test utilities: `MessageSink<T>`, `SinkConsumer<T>` |
 
 For a typical Kafka + MongoDB setup:
@@ -58,7 +59,7 @@ builder.Services.AddEmit(emit =>
 
         kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
         {
-            topic.Producer(p => p.UseOutbox());
+            topic.Producer();
 
             topic.ConsumerGroup("pizza-kitchen", group =>
             {
@@ -71,7 +72,7 @@ builder.Services.AddEmit(emit =>
 
 `AddEmit` returns your `IServiceCollection`, so it chains normally with the rest of your registration.
 
-The outbox is a two-level opt-in. First, call `UseOutbox()` on your persistence provider to provision the infrastructure (outbox table/collection, background worker). Then, call `UseOutbox()` on each producer that should use the outbox. Producers without `UseOutbox()` write directly to the broker, even when the outbox infrastructure is enabled. You can mix outbox and direct producers on the same Kafka registration.
+Call `UseOutbox()` on your persistence provider to enable the transactional outbox infrastructure (outbox table/collection, background worker). When outbox infrastructure is enabled, all producers route through the outbox by default, guaranteeing exactly-once delivery. To opt out a specific producer for low-latency at-most-once delivery, call `UseDirect()` on that producer. You can mix outbox and direct producers on the same Kafka registration.
 
 `UseDistributedLock()` is also opt-in. You can use Emit purely as a Kafka integration layer without pulling in any persistence package at all.
 

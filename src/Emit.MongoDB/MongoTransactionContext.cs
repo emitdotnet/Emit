@@ -5,7 +5,7 @@ using global::MongoDB.Driver;
 /// <summary>
 /// MongoDB implementation of transaction context.
 /// </summary>
-internal sealed class MongoTransactionContext : IMongoTransactionContext
+internal sealed class MongoTransactionContext : Abstractions.ITransactionContext
 {
     /// <inheritdoc/>
     public required IClientSessionHandle Session { get; init; }

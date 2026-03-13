@@ -39,12 +39,6 @@ public static class OutboxTerminalBuilder
         public async Task InvokeAsync(SendContext<TValue> context)
         {
             var repository = context.Services.GetRequiredService<IOutboxRepository>();
-            var emitContext = context.Services.GetRequiredService<IEmitContext>();
-
-            if (emitContext.Transaction is null)
-            {
-                throw new InvalidOperationException("No transaction context is available.");
-            }
 
             var entry = await createEntry(context, context.CancellationToken).ConfigureAwait(false);
 
