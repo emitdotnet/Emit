@@ -120,10 +120,9 @@ public static class ModelBuilderExtensions
                 v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, JsonSerializerOptions.Default) ?? new Dictionary<string, string>(),
                 propertiesComparer);
 
-        // Indexes
-        entity.HasIndex(e => new { e.GroupKey, e.Sequence })
-            .IsUnique()
-            .HasDatabaseName("ix_outbox_group_key_sequence");
+        // Index for ORDER BY sequence LIMIT N in outbox polling
+        entity.HasIndex(e => e.Sequence)
+            .HasDatabaseName("ix_outbox_sequence");
     }
 
     private static string SerializeHeaders(List<KeyValuePair<string, byte[]>> headers)

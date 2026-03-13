@@ -27,7 +27,6 @@ emit.AddMongoDb(mongo =>
          {
              options.PollingInterval = TimeSpan.FromSeconds(5);  // default
              options.BatchSize = 100;                            // default
-             options.MaxGroupsPerCycle = 1000;                   // default
          });
 });
 
@@ -51,9 +50,8 @@ emit.AddKafka(kafka =>
 
 | Option | Default | Description |
 |---|---|---|
-| `PollingInterval` | 5 seconds | How long the worker waits between poll cycles |
-| `BatchSize` | 100 | Maximum entries processed per cycle across all groups |
-| `MaxGroupsPerCycle` | 1000 | Maximum distinct groups evaluated per cycle |
+| `PollingInterval` | 5 seconds | Minimum time between poll cycles; next poll starts immediately if the previous batch took longer |
+| `BatchSize` | 100 | Maximum entries fetched per poll cycle, ordered by sequence (FIFO) |
 
 See [Installation](../getting-started/installation/) for the full setup.
 

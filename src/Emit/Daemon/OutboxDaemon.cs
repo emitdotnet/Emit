@@ -1,6 +1,5 @@
 namespace Emit.Daemon;
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
@@ -22,8 +21,6 @@ internal sealed class OutboxDaemon : IDaemonAgent
     private readonly OutboxMetrics outboxMetrics;
     private readonly OutboxOptions outboxOptions;
     private readonly ILogger<OutboxDaemon> logger;
-
-    private readonly ConcurrentDictionary<string, byte> activeGroups = new();
 
     private Task? processingTask;
     private CancellationTokenSource? stoppingCts;
@@ -52,8 +49,6 @@ internal sealed class OutboxDaemon : IDaemonAgent
         this.outboxMetrics = outboxMetrics;
         this.outboxOptions = outboxOptions.Value;
         this.logger = logger;
-
-        outboxMetrics.RegisterActiveGroupsCallback(() => activeGroups.Count);
     }
 
     /// <inheritdoc />
@@ -97,14 +92,10 @@ internal sealed class OutboxDaemon : IDaemonAgent
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            var start = Stopwatch.GetTimestamp();
             try
             {
-                var processedFull = await DispatchGroupsAsync(cancellationToken).ConfigureAwait(false);
-
-                if (!processedFull)
-                {
-                    await Task.Delay(outboxOptions.PollingInterval, cancellationToken).ConfigureAwait(false);
-                }
+                await DispatchBatchAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -114,72 +105,47 @@ internal sealed class OutboxDaemon : IDaemonAgent
             {
                 outboxMetrics.RecordWorkerError();
                 logger.LogError(ex, "Error in outbox processing loop");
-                await Task.Delay(outboxOptions.PollingInterval, cancellationToken).ConfigureAwait(false);
+            }
+
+            var remaining = outboxOptions.PollingInterval - Stopwatch.GetElapsedTime(start);
+            if (remaining > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
         }
     }
 
-    private async Task<bool> DispatchGroupsAsync(CancellationToken cancellationToken)
+    private async Task DispatchBatchAsync(CancellationToken cancellationToken)
     {
-        var groupHeads = await outboxRepository.GetGroupHeadsAsync(
-            outboxOptions.MaxGroupsPerCycle,
-            cancellationToken).ConfigureAwait(false);
-
-        if (groupHeads is [])
-        {
-            outboxMetrics.RecordPollCycle(hasEntries: false);
-            return false;
-        }
-
-        List<string> eligibleGroups = [];
-        foreach (var head in groupHeads)
-        {
-            if (activeGroups.ContainsKey(head.GroupKey))
-            {
-                continue;
-            }
-
-            eligibleGroups.Add(head.GroupKey);
-        }
-
-        if (eligibleGroups is [])
-        {
-            outboxMetrics.RecordPollCycle(hasEntries: false);
-            return false;
-        }
-
         var entries = await outboxRepository.GetBatchAsync(
-            eligibleGroups,
             outboxOptions.BatchSize,
             cancellationToken).ConfigureAwait(false);
 
         if (entries is [])
         {
             outboxMetrics.RecordPollCycle(hasEntries: false);
-            return false;
+            return;
         }
 
         outboxMetrics.RecordPollCycle(hasEntries: true);
         outboxMetrics.RecordBatchEntries(entries.Count);
 
-        logger.LogInformation(
-            "Dispatching batch of {EntryCount} entries from {GroupCount} groups",
-            entries.Count, eligibleGroups.Count);
-
         var partitionedEntries = entries.GroupBy(e => e.GroupKey);
+        var tasks = new List<Task>();
 
         foreach (var group in partitionedEntries)
         {
             var groupKey = group.Key;
-
-            if (!activeGroups.TryAdd(groupKey, 0))
-            {
-                continue;
-            }
-
             var groupEntries = group.OrderBy(e => e.Sequence).ToList();
 
-            _ = Task.Run(async () =>
+            tasks.Add(Task.Run(async () =>
             {
                 try
                 {
@@ -189,14 +155,10 @@ internal sealed class OutboxDaemon : IDaemonAgent
                 {
                     logger.LogError(ex, "Unhandled error processing group {GroupKey}", groupKey);
                 }
-                finally
-                {
-                    activeGroups.TryRemove(groupKey, out _);
-                }
-            }, cancellationToken);
+            }, cancellationToken));
         }
 
-        return entries.Count >= outboxOptions.BatchSize;
+        await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private async Task ProcessGroupAsync(

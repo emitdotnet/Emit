@@ -125,14 +125,10 @@ public static class MongoDbEmitBuilderExtensions
     {
         if (outboxEnabled)
         {
-            context.OutboxCollection!.Indexes.CreateMany(
-            [
+            context.OutboxCollection!.Indexes.CreateOne(
                 new CreateIndexModel<OutboxEntry>(
-                    Builders<OutboxEntry>.IndexKeys
-                        .Ascending(x => x.GroupKey)
-                        .Ascending(x => x.Sequence),
-                    new CreateIndexOptions { Unique = true, Name = "groupKey_sequence_unique" })
-            ]);
+                    Builders<OutboxEntry>.IndexKeys.Ascending(x => x.Sequence),
+                    new CreateIndexOptions { Name = "sequence" }));
         }
 
         if (distributedLockEnabled)

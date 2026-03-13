@@ -62,7 +62,6 @@ Outbox entry lifecycle and worker health.
 | `emit.outbox.critical_time` | Histogram (s) | `system` | End-to-end latency from enqueue to delivery |
 | `emit.outbox.worker.poll_cycles` | Counter | `has_entries` | Worker poll cycles |
 | `emit.outbox.worker.batch_entries` | Histogram | — | Entries per poll cycle |
-| `emit.outbox.worker.active_groups` | Gauge | — | Concurrent group processing count |
 | `emit.outbox.worker.errors` | Counter | — | Worker-level errors |
 
 `emit.outbox.critical_time` is particularly useful for alerting: it measures the total delay from when a message was produced to when it was delivered to the broker.

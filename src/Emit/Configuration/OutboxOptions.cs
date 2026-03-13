@@ -19,8 +19,4 @@ public sealed class OutboxOptions
     /// </summary>
     public int BatchSize { get; set; } = 100;
 
-    /// <summary>
-    /// Gets or sets the maximum number of group heads to query per polling cycle.
-    /// </summary>
-    public int MaxGroupsPerCycle { get; set; } = 1000;
 }

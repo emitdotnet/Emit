@@ -44,37 +44,17 @@ public interface IOutboxRepository
     Task DeleteAsync(object entryId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the head entry (first entry) for each distinct group.
+    /// Gets the next batch of pending entries ordered by sequence.
     /// </summary>
-    /// <param name="limit">Maximum number of group heads to return.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A list of entries, one per distinct group, ordered by sequence within each group.</returns>
-    /// <remarks>
-    /// This method is used by the worker to evaluate which groups have pending work.
-    /// Each returned entry is the first entry in its group, ordered by sequence.
-    /// </remarks>
-    Task<IReadOnlyList<OutboxEntry>> GetGroupHeadsAsync(int limit, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets a batch of entries from the specified eligible groups.
-    /// </summary>
-    /// <param name="eligibleGroups">The group keys that are eligible for processing.</param>
     /// <param name="batchSize">Maximum number of entries to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A list of entries ordered by group key and sequence.</returns>
+    /// <returns>A list of the oldest pending entries ordered by sequence ascending.</returns>
     /// <remarks>
-    /// <para>
-    /// This method fetches entries only from groups that have been determined eligible
-    /// by evaluating their group heads.
-    /// </para>
-    /// <para>
-    /// The entries are ordered by <c>GroupKey</c>, then by <c>Sequence</c> within each group.
-    /// This allows the worker to partition by group and process each group's entries
-    /// strictly in sequence order.
-    /// </para>
+    /// Entries are returned in global sequence order (FIFO). The caller is responsible
+    /// for grouping entries by <see cref="OutboxEntry.GroupKey"/> and processing each
+    /// group's entries strictly in sequence order.
     /// </remarks>
     Task<IReadOnlyList<OutboxEntry>> GetBatchAsync(
-        IEnumerable<string> eligibleGroups,
         int batchSize,
         CancellationToken cancellationToken = default);
 }

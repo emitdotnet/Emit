@@ -26,15 +26,6 @@ internal sealed class OutboxOptionsValidator : IValidateOptions<OutboxOptions>
             failures.Add($"{nameof(options.BatchSize)} must be at most {ValidationConstants.MaxBatchSize}.");
         }
 
-        if (options.MaxGroupsPerCycle <= 0)
-        {
-            failures.Add($"{nameof(options.MaxGroupsPerCycle)} must be greater than 0.");
-        }
-        else if (options.MaxGroupsPerCycle > ValidationConstants.MaxGroupsPerCycle)
-        {
-            failures.Add($"{nameof(options.MaxGroupsPerCycle)} must be at most {ValidationConstants.MaxGroupsPerCycle}.");
-        }
-
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
