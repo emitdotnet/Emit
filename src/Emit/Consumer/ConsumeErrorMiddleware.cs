@@ -18,6 +18,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
     Func<Exception, ErrorAction>? evaluatePolicy,
     IDeadLetterSink? deadLetterSink,
     EmitMetrics emitMetrics,
+    INodeIdentity nodeIdentity,
     ILogger<ConsumeErrorMiddleware<TMessage>> logger,
     string identifier,
     Type? consumerType,
@@ -113,8 +114,9 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         // Create DLQ publish activity
         var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress);
         using var dlqActivity = EmitActivitySources.Consumer.StartActivity(
-            "emit.dlq.publish",
+            ActivityNames.DlqPublish,
             ActivityKind.Producer);
+        dlqActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
         dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
         dlqActivity?.SetTag(ActivityTagNames.MessagingSystem, "emit");
         dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);

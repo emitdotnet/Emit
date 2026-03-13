@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 internal sealed class ConsumeTracingMiddleware<TMessage>(
     IOptions<EmitTracingOptions> options,
     ActivityEnricherInvoker enricherInvoker,
+    INodeIdentity nodeIdentity,
     string consumerIdentifier,
     Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
 {
@@ -63,7 +64,7 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
 
         // Create Activity for consume operation (or DLQ replay)
         using var activity = EmitActivitySources.Consumer.StartActivity(
-            isDlqReplay ? "emit.dlq.replay" : "emit.consume",
+            isDlqReplay ? ActivityNames.DlqReplay : ActivityNames.Consume,
             ActivityKind.Consumer,
             parentContext);
 
@@ -73,6 +74,8 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
+
+        activity.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
 
         // Add standard tags — derive messaging.system from URI scheme
         activity.SetTag(ActivityTagNames.MessagingSystem,

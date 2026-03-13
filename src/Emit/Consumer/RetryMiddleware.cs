@@ -10,13 +10,14 @@ using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Consume-pipeline middleware that retries message processing on failure.
-/// Creates an <c>emit.consume.retry</c> Activity per retry attempt. On exhaustion,
+/// Creates an Activity per retry attempt. On exhaustion,
 /// rethrows the last exception for <c>ConsumeErrorMiddleware</c> to handle.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class RetryMiddleware<TMessage>(
     RetryConfig config,
     EmitMetrics emitMetrics,
+    INodeIdentity nodeIdentity,
     ILogger<RetryMiddleware<TMessage>> logger) : IMiddleware<ConsumeContext<TMessage>>
 {
     private static readonly ActivitySource ConsumerActivitySource = EmitActivitySources.Consumer;
@@ -62,12 +63,13 @@ internal sealed class RetryMiddleware<TMessage>(
 
             // Create Activity for this retry attempt
             using var retryActivity = ConsumerActivitySource.StartActivity(
-                "emit.consume.retry",
+                ActivityNames.ConsumeRetry,
                 ActivityKind.Consumer,
                 parentContext);
 
-            retryActivity?.SetTag("messaging.retry.attempt", attempt + 1);
-            retryActivity?.SetTag("messaging.retry.max_attempts", config.MaxAttempts);
+            retryActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
+            retryActivity?.SetTag(ActivityTagNames.MessagingRetryAttempt, attempt + 1);
+            retryActivity?.SetTag(ActivityTagNames.MessagingRetryMaxAttempts, config.MaxAttempts);
 
             try
             {

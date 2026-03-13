@@ -1,5 +1,6 @@
 namespace Emit.LeaderElection;
 
+using Emit.Abstractions;
 using Emit.Abstractions.LeaderElection;
 using Emit.Configuration;
 using Emit.Daemon;
@@ -29,12 +30,14 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
         DaemonCoordinator daemonCoordinator,
         LeaderElectionObserverInvoker observerInvoker,
         IOptions<LeaderElectionOptions> options,
+        INodeIdentity nodeIdentity,
         ILogger<HeartbeatWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(daemonCoordinator);
         ArgumentNullException.ThrowIfNull(observerInvoker);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(nodeIdentity);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.persistence = persistence;
@@ -43,7 +46,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
         this.options = options.Value;
         this.logger = logger;
 
-        NodeId = Guid.NewGuid();
+        NodeId = nodeIdentity.NodeId;
     }
 
     /// <inheritdoc />

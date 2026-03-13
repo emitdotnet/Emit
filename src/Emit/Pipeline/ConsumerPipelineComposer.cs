@@ -115,6 +115,7 @@ public sealed class ConsumerPipelineComposer<TValue>
             var retryMw = new RetryMiddleware<TValue>(
                 RetryConfig,
                 Services.GetRequiredService<EmitMetrics>(),
+                Services.GetRequiredService<INodeIdentity>(),
                 LoggerFactory.CreateLogger<RetryMiddleware<TValue>>());
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(retryMw, terminal);
         }
@@ -146,6 +147,7 @@ public sealed class ConsumerPipelineComposer<TValue>
             var tracingMw = new ConsumeTracingMiddleware<TValue>(
                 Services.GetRequiredService<IOptions<EmitTracingOptions>>(),
                 Services.GetRequiredService<ActivityEnricherInvoker>(),
+                Services.GetRequiredService<INodeIdentity>(),
                 identifier,
                 consumerType);
             pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(tracingMw, pipeline);
@@ -165,6 +167,7 @@ public sealed class ConsumerPipelineComposer<TValue>
                 ErrorPolicy,
                 Services.GetService<IDeadLetterSink>(),
                 Services.GetRequiredService<EmitMetrics>(),
+                Services.GetRequiredService<INodeIdentity>(),
                 LoggerFactory.CreateLogger<ConsumeErrorMiddleware<TValue>>(),
                 identifier,
                 consumerType,

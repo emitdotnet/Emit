@@ -7,7 +7,9 @@ When you deploy multiple instances of your application, background work like out
 
 ## Leader election
 
-Emit uses a heartbeat-based lease model to elect a single leader across all instances. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap operation. The database itself provides the consistency guarantee — no external consensus service is needed.
+Emit uses a heartbeat-based lease model to elect a single leader across all instances. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap operation. The database itself provides the consistency guarantee; no external consensus service is needed.
+
+Each node is identified by a stable `Guid` generated once at startup and exposed through `INodeIdentity`. The heartbeat worker, metrics, and activity traces all use this same identity. Inject `INodeIdentity` if you need to read the current node's ID; register a custom implementation before `AddEmit` to control the value.
 
 | Concept | Description |
 |---|---|

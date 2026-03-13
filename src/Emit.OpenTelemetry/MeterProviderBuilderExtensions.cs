@@ -1,5 +1,6 @@
 namespace Emit.OpenTelemetry;
 
+using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
 using global::OpenTelemetry.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -76,13 +77,17 @@ public static class MeterProviderBuilderExtensions
 
         var tags = options.GetTags();
 
-        if (tags.Length > 0)
+        builder.ConfigureServices(services =>
         {
-            builder.ConfigureServices(services =>
+            services.AddSingleton(sp =>
             {
-                services.AddSingleton(new EmitMetricsEnrichment(tags));
+                var nodeIdentity = sp.GetRequiredService<INodeIdentity>();
+                var allTags = new KeyValuePair<string, object?>[tags.Length + 1];
+                allTags[0] = new("emit.node.id", nodeIdentity.NodeId.ToString());
+                tags.Span.CopyTo(allTags.AsSpan(1));
+                return new EmitMetricsEnrichment(allTags);
             });
-        }
+        });
 
         return builder;
     }

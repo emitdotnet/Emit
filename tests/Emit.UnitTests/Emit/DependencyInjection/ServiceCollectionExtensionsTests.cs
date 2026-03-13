@@ -1,6 +1,7 @@
 namespace Emit.UnitTests.DependencyInjection;
 
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.Metrics;
 using global::Emit.DependencyInjection;
 using global::Emit.Kafka.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,6 +71,52 @@ public class ServiceCollectionExtensionsTests
         // Assert
         Assert.IsType<EmitContext>(iEmitContext);
         Assert.Same(emitContext, iEmitContext);
+    }
+
+    [Fact]
+    public void GivenAddEmit_WhenResolvingINodeIdentity_ThenReturnsSingleton()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddEmit(builder =>
+        {
+            builder.AddKafka(kafka =>
+            {
+                kafka.ConfigureClient(_ => { });
+            });
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var first = provider.GetRequiredService<INodeIdentity>();
+        var second = provider.GetRequiredService<INodeIdentity>();
+
+        // Assert
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void GivenAddEmit_WhenResolvingEmitMetricsEnrichment_ThenContainsNodeIdTag()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddEmit(builder =>
+        {
+            builder.AddKafka(kafka =>
+            {
+                kafka.ConfigureClient(_ => { });
+            });
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var enrichment = provider.GetRequiredService<EmitMetricsEnrichment>();
+
+        // Assert
+        var tagKeys = enrichment.Tags.ToArray().Select(t => t.Key).ToList();
+        Assert.Contains("emit.node.id", tagKeys);
     }
 
 }

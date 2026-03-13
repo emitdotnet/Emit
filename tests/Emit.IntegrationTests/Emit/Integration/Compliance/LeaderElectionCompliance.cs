@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
 using Emit.Abstractions.Observability;
@@ -9,6 +10,7 @@ using Emit.LeaderElection;
 using Emit.Observability;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using Xunit;
 
 /// <summary>
@@ -391,6 +393,7 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
             daemonCoordinator,
             invoker,
             Options.Create(options),
+            Mock.Of<INodeIdentity>(n => n.NodeId == Guid.NewGuid()),
             NullLogger<HeartbeatWorker>.Instance);
 
         return new TestNode(worker, observer);

@@ -58,9 +58,14 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IRandomProvider, DefaultRandomProvider>();
+        services.TryAddSingleton<INodeIdentity, NodeIdentityService>();
 
-        // Register metrics infrastructure
-        services.TryAddSingleton(new EmitMetricsEnrichment());
+        // Register metrics infrastructure (enrichment always includes emit.node.id)
+        services.TryAddSingleton(sp =>
+        {
+            var nodeIdentity = sp.GetRequiredService<INodeIdentity>();
+            return new EmitMetricsEnrichment(new KeyValuePair<string, object?>[] { new("emit.node.id", nodeIdentity.NodeId.ToString()) });
+        });
         services.TryAddSingleton(sp => new LockMetrics(
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));

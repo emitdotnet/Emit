@@ -77,6 +77,10 @@ internal static class BsonConfiguration
                     .SetIdGenerator(ObjectIdGenerator.Instance)
                     .SetSerializer(new ObjectSerializer(ObjectSerializer.DefaultAllowedTypes));
 
+                // Ensure Guid fields use standard representation
+                cm.MapMember(x => x.NodeId)
+                    .SetSerializer(new GuidSerializer(GuidRepresentation.Standard));
+
                 // Ensure DateTime fields are stored as UTC
                 cm.MapMember(x => x.EnqueuedAt)
                     .SetSerializer(CreateUtcDateTimeSerializer());

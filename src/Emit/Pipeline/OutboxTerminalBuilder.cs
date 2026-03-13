@@ -49,6 +49,7 @@ public static class OutboxTerminalBuilder
             var entry = await createEntry(context, context.CancellationToken).ConfigureAwait(false);
 
             entry.EnqueuedAt = context.Timestamp.UtcDateTime;
+            entry.NodeId = context.Services.GetRequiredService<INodeIdentity>().NodeId;
 
             await repository.EnqueueAsync(entry, context.CancellationToken).ConfigureAwait(false);
 

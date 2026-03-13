@@ -45,31 +45,33 @@ public static class OutboxActivityHelper
     /// </summary>
     /// <param name="activitySource">The <see cref="ActivitySource"/> used to create the activity.</param>
     /// <param name="entry">The outbox entry whose trace context is restored as the parent.</param>
-    /// <param name="name">The activity name. Defaults to <c>emit.outbox.process</c>.</param>
+    /// <param name="nodeId">The node identifier to tag on the activity.</param>
+    /// <param name="name">The activity name. Defaults to <see cref="ActivityNames.OutboxProcess"/>.</param>
     /// <returns>
     /// The started <see cref="Activity"/>, or <see langword="null"/> if the source is not enabled
     /// or no listener is active.
     /// </returns>
-    public static Activity? StartProcessActivity(ActivitySource activitySource, OutboxEntry entry, string name = "emit.outbox.process")
+    public static Activity? StartProcessActivity(ActivitySource activitySource, OutboxEntry entry, Guid nodeId, string name = ActivityNames.OutboxProcess)
     {
         var parentContext = RestoreContext(entry);
         var activity = activitySource.StartActivity(name, ActivityKind.Internal, parentContext);
 
         if (activity is not null)
         {
-            activity.SetTag("emit.sequence", entry.Sequence);
-            activity.SetTag("emit.group.key", entry.GroupKey);
+            activity.SetTag(ActivityTagNames.NodeId, nodeId.ToString());
+            activity.SetTag(ActivityTagNames.Sequence, entry.Sequence);
+            activity.SetTag(ActivityTagNames.GroupKey, entry.GroupKey);
 
-            activity.SetTag("messaging.destination.name", entry.Destination);
+            activity.SetTag(ActivityTagNames.MessagingDestinationName, entry.Destination);
 
             if (entry.Properties.TryGetValue("valueType", out var valueType))
             {
-                activity.SetTag("emit.message.type", valueType);
+                activity.SetTag(ActivityTagNames.MessageType, valueType);
             }
 
             if (entry.Properties.TryGetValue("keyType", out var keyType))
             {
-                activity.SetTag("emit.key.type", keyType);
+                activity.SetTag(ActivityTagNames.KeyType, keyType);
             }
         }
 

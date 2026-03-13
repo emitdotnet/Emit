@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 internal sealed class ProduceTracingMiddleware<TMessage>(
     IOptions<EmitTracingOptions> options,
     ActivityEnricherInvoker enricherInvoker,
+    INodeIdentity nodeIdentity,
     ILogger<ProduceTracingMiddleware<TMessage>> logger) : IMiddleware<SendContext<TMessage>>
 {
     private readonly EmitTracingOptions options = options.Value;
@@ -40,7 +41,7 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
         // Create Activity for outbound operation
         using var activity = EmitActivitySources.Outbox.StartActivity(
-            "emit.produce",
+            ActivityNames.Produce,
             ActivityKind.Producer);
 
         if (activity is null)
@@ -49,6 +50,8 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
+
+        activity.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
 
         // Add standard tags — derive messaging.system from URI scheme
         activity.SetTag(ActivityTagNames.MessagingSystem,

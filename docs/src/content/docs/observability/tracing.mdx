@@ -114,7 +114,9 @@ emit.ConfigureTracing(tracing =>
 });
 ```
 
-Enrichers are invoked after Emit sets its own standard tags. `EnrichmentContext.Phase` tells you which pipeline stage created the span:
+Enrichers are invoked after Emit sets its own standard tags. Every Emit activity includes `emit.node.id` as a standard tag identifying the node that created the span; it is set from `INodeIdentity` and does not need to be added manually.
+
+`EnrichmentContext.Phase` tells you which pipeline stage created the span:
 
 | Phase | When |
 |---|---|
