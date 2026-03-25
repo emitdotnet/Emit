@@ -7,6 +7,7 @@ using Emit.Configuration;
 using Emit.Metrics;
 using Emit.Models;
 using Emit.Observability;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,7 +16,7 @@ using Microsoft.Extensions.Options;
 /// </summary>
 internal sealed class OutboxDaemon : IDaemonAgent
 {
-    private readonly IOutboxRepository outboxRepository;
+    private readonly IServiceScopeFactory scopeFactory;
     private readonly Dictionary<string, IOutboxProvider> providers;
     private readonly OutboxObserverInvoker observerInvoker;
     private readonly OutboxMetrics outboxMetrics;
@@ -29,21 +30,21 @@ internal sealed class OutboxDaemon : IDaemonAgent
     public string DaemonId => "emit:outbox";
 
     public OutboxDaemon(
-        IOutboxRepository outboxRepository,
+        IServiceScopeFactory scopeFactory,
         IEnumerable<IOutboxProvider> providers,
         OutboxObserverInvoker observerInvoker,
         OutboxMetrics outboxMetrics,
         IOptions<OutboxOptions> outboxOptions,
         ILogger<OutboxDaemon> logger)
     {
-        ArgumentNullException.ThrowIfNull(outboxRepository);
+        ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(observerInvoker);
         ArgumentNullException.ThrowIfNull(outboxMetrics);
         ArgumentNullException.ThrowIfNull(outboxOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
-        this.outboxRepository = outboxRepository;
+        this.scopeFactory = scopeFactory;
         this.providers = providers.ToDictionary(p => p.SystemId);
         this.observerInvoker = observerInvoker;
         this.outboxMetrics = outboxMetrics;
@@ -124,6 +125,9 @@ internal sealed class OutboxDaemon : IDaemonAgent
 
     private async Task DispatchBatchAsync(CancellationToken cancellationToken)
     {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
+
         var entries = await outboxRepository.GetBatchAsync(
             outboxOptions.BatchSize,
             cancellationToken).ConfigureAwait(false);
@@ -149,7 +153,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
             {
                 try
                 {
-                    await ProcessGroupAsync(groupKey, groupEntries, cancellationToken).ConfigureAwait(false);
+                    await ProcessGroupAsync(outboxRepository, groupKey, groupEntries, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -162,6 +166,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
     }
 
     private async Task ProcessGroupAsync(
+        IOutboxRepository outboxRepository,
         string groupKey,
         List<OutboxEntry> entries,
         CancellationToken cancellationToken)
@@ -173,7 +178,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
                 break;
             }
 
-            var success = await ProcessEntryAsync(entry, cancellationToken).ConfigureAwait(false);
+            var success = await ProcessEntryAsync(outboxRepository, entry, cancellationToken).ConfigureAwait(false);
 
             if (!success)
             {
@@ -185,7 +190,7 @@ internal sealed class OutboxDaemon : IDaemonAgent
         }
     }
 
-    private async Task<bool> ProcessEntryAsync(OutboxEntry entry, CancellationToken cancellationToken)
+    private async Task<bool> ProcessEntryAsync(IOutboxRepository outboxRepository, OutboxEntry entry, CancellationToken cancellationToken)
     {
         if (!providers.TryGetValue(entry.SystemId, out var provider))
         {
