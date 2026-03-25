@@ -91,6 +91,118 @@ public sealed class KafkaProducerConfigTests
     }
 
     [Fact]
+    public void GivenMessageTimeoutSet_WhenApplyTo_ThenProducerConfigMessageTimeoutMsIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { MessageTimeout = TimeSpan.FromMinutes(5) };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(300000, config.MessageTimeoutMs);
+    }
+
+    [Fact]
+    public void GivenRequestTimeoutSet_WhenApplyTo_ThenProducerConfigRequestTimeoutMsIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { RequestTimeout = TimeSpan.FromSeconds(30) };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(30000, config.RequestTimeoutMs);
+    }
+
+    [Fact]
+    public void GivenTransactionTimeoutSet_WhenApplyTo_ThenProducerConfigTransactionTimeoutMsIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { TransactionTimeout = TimeSpan.FromMinutes(1) };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(60000, config.TransactionTimeoutMs);
+    }
+
+    [Fact]
+    public void GivenTransactionalIdSet_WhenApplyTo_ThenProducerConfigTransactionalIdIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { TransactionalId = "my-txn-id" };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal("my-txn-id", config.TransactionalId);
+    }
+
+    [Fact]
+    public void GivenQueueBufferingMaxMessagesSet_WhenApplyTo_ThenProducerConfigQueueBufferingMaxMessagesIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { QueueBufferingMaxMessages = 100000 };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(100000, config.QueueBufferingMaxMessages);
+    }
+
+    [Fact]
+    public void GivenQueueBufferingMaxKbytesSet_WhenApplyTo_ThenProducerConfigQueueBufferingMaxKbytesIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { QueueBufferingMaxKbytes = 1048576 };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(1048576, config.QueueBufferingMaxKbytes);
+    }
+
+    [Fact]
+    public void GivenPartitionerSet_WhenApplyTo_ThenProducerConfigPartitionerIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { Partitioner = ConfluentKafka.Partitioner.Murmur2Random };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(ConfluentKafka.Partitioner.Murmur2Random, config.Partitioner);
+    }
+
+    [Fact]
+    public void GivenMessageSendMaxRetriesSet_WhenApplyTo_ThenProducerConfigMessageSendMaxRetriesIsSet()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerConfig { MessageSendMaxRetries = 3 };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(3, config.MessageSendMaxRetries);
+    }
+
+    [Fact]
     public void GivenNoPropertiesSet_WhenApplyTo_ThenProducerConfigUnchanged()
     {
         // Arrange
@@ -120,7 +232,15 @@ public sealed class KafkaProducerConfigTests
             BatchSize = 65536,
             EnableIdempotence = true,
             CompressionType = ConfluentKafka.CompressionType.Snappy,
-            BatchNumMessages = 10000
+            BatchNumMessages = 10000,
+            MessageTimeout = TimeSpan.FromMinutes(5),
+            RequestTimeout = TimeSpan.FromSeconds(30),
+            TransactionTimeout = TimeSpan.FromMinutes(1),
+            TransactionalId = "my-txn-id",
+            QueueBufferingMaxMessages = 100000,
+            QueueBufferingMaxKbytes = 1048576,
+            Partitioner = ConfluentKafka.Partitioner.Murmur2Random,
+            MessageSendMaxRetries = 3
         };
         var config = new ConfluentKafka.ProducerConfig();
 
@@ -134,5 +254,13 @@ public sealed class KafkaProducerConfigTests
         Assert.True(config.EnableIdempotence);
         Assert.Equal(ConfluentKafka.CompressionType.Snappy, config.CompressionType);
         Assert.Equal(10000, config.BatchNumMessages);
+        Assert.Equal(300000, config.MessageTimeoutMs);
+        Assert.Equal(30000, config.RequestTimeoutMs);
+        Assert.Equal(60000, config.TransactionTimeoutMs);
+        Assert.Equal("my-txn-id", config.TransactionalId);
+        Assert.Equal(100000, config.QueueBufferingMaxMessages);
+        Assert.Equal(1048576, config.QueueBufferingMaxKbytes);
+        Assert.Equal(ConfluentKafka.Partitioner.Murmur2Random, config.Partitioner);
+        Assert.Equal(3, config.MessageSendMaxRetries);
     }
 }

@@ -7,6 +7,7 @@ using global::Emit.Daemon;
 using global::Emit.Metrics;
 using global::Emit.Models;
 using global::Emit.Observability;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -193,6 +194,13 @@ public class OutboxDaemonTests
 
     private OutboxDaemon CreateDaemon(IEnumerable<IOutboxProvider>? providers = null)
     {
+        var mockScope = new Mock<IServiceScope>();
+        mockScope.Setup(s => s.ServiceProvider.GetService(typeof(IOutboxRepository)))
+            .Returns(mockRepository.Object);
+
+        var mockScopeFactory = new Mock<IServiceScopeFactory>();
+        mockScopeFactory.Setup(f => f.CreateScope()).Returns(mockScope.Object);
+
         var metrics = new OutboxMetrics(null, new EmitMetricsEnrichment());
         var observerInvoker = new OutboxObserverInvoker(
             [],
@@ -200,7 +208,7 @@ public class OutboxDaemonTests
             NullLogger<OutboxObserverInvoker>.Instance);
 
         return new OutboxDaemon(
-            mockRepository.Object,
+            mockScopeFactory.Object,
             providers ?? [],
             observerInvoker,
             metrics,

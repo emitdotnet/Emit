@@ -185,6 +185,90 @@ public sealed class KafkaSchemaRegistryConfigTests
     }
 
     [Fact]
+    public void GivenBearerAuthTokenSet_WhenApplyTo_ThenConfigBearerAuthTokenIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthToken = "my-token" };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal("my-token", target.BearerAuthToken);
+    }
+
+    [Fact]
+    public void GivenBearerAuthClientIdSet_WhenApplyTo_ThenConfigBearerAuthClientIdIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthClientId = "client-id" };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal("client-id", target.BearerAuthClientId);
+    }
+
+    [Fact]
+    public void GivenBearerAuthClientSecretSet_WhenApplyTo_ThenConfigBearerAuthClientSecretIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthClientSecret = "client-secret" };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal("client-secret", target.BearerAuthClientSecret);
+    }
+
+    [Fact]
+    public void GivenBearerAuthCredentialsSourceSet_WhenApplyTo_ThenConfigBearerAuthCredentialsSourceIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthCredentialsSource = ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal(ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer, target.BearerAuthCredentialsSource);
+    }
+
+    [Fact]
+    public void GivenBearerAuthTokenEndpointUrlSet_WhenApplyTo_ThenConfigBearerAuthTokenEndpointUrlIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthTokenEndpointUrl = "https://auth.example.com/token" };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal("https://auth.example.com/token", target.BearerAuthTokenEndpointUrl);
+    }
+
+    [Fact]
+    public void GivenBearerAuthScopeSet_WhenApplyTo_ThenConfigBearerAuthScopeIsSet()
+    {
+        // Arrange
+        var config = new KafkaSchemaRegistryConfig { BearerAuthScope = "schema-registry" };
+        var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
+
+        // Act
+        config.ApplyTo(target);
+
+        // Assert
+        Assert.Equal("schema-registry", target.BearerAuthScope);
+    }
+
+    [Fact]
     public void GivenNoPropertiesSet_WhenApplyTo_ThenConfigUnchanged()
     {
         // Arrange
@@ -222,7 +306,13 @@ public sealed class KafkaSchemaRegistryConfigTests
             SslKeystorePassword = "secret",
             EnableSslCertificateVerification = true,
             BasicAuthCredentialsSource = ConfluentSchemaRegistry.AuthCredentialsSource.UserInfo,
-            BasicAuthUserInfo = "user:pass"
+            BasicAuthUserInfo = "user:pass",
+            BearerAuthToken = "my-token",
+            BearerAuthClientId = "client-id",
+            BearerAuthClientSecret = "client-secret",
+            BearerAuthCredentialsSource = ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer,
+            BearerAuthTokenEndpointUrl = "https://auth.example.com/token",
+            BearerAuthScope = "schema-registry"
         };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
@@ -244,5 +334,11 @@ public sealed class KafkaSchemaRegistryConfigTests
         Assert.True(target.EnableSslCertificateVerification);
         Assert.Equal(ConfluentSchemaRegistry.AuthCredentialsSource.UserInfo, target.BasicAuthCredentialsSource);
         Assert.Equal("user:pass", target.BasicAuthUserInfo);
+        Assert.Equal("my-token", target.BearerAuthToken);
+        Assert.Equal("client-id", target.BearerAuthClientId);
+        Assert.Equal("client-secret", target.BearerAuthClientSecret);
+        Assert.Equal(ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer, target.BearerAuthCredentialsSource);
+        Assert.Equal("https://auth.example.com/token", target.BearerAuthTokenEndpointUrl);
+        Assert.Equal("schema-registry", target.BearerAuthScope);
     }
 }

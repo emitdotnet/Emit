@@ -19,6 +19,12 @@ public sealed class KafkaClientConfig
     /// </summary>
     public string? ClientId { get; set; }
 
+    /// <summary>
+    /// A rack identifier for this client. This can be any string value which indicates where this client
+    /// is physically located. It corresponds with the broker config <c>broker.rack</c>.
+    /// </summary>
+    public string? ClientRack { get; set; }
+
     // ── Security ──
 
     /// <summary>
@@ -28,7 +34,7 @@ public sealed class KafkaClientConfig
 
     /// <summary>
     /// SASL mechanism to use for authentication.
-    /// Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512.
+    /// Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.
     /// </summary>
     public ConfluentKafka.SaslMechanism? SaslMechanism { get; set; }
 
@@ -41,6 +47,38 @@ public sealed class KafkaClientConfig
     /// SASL password for use with the PLAIN and SASL-SCRAM-.. mechanism.
     /// </summary>
     public string? SaslPassword { get; set; }
+
+    /// <summary>
+    /// Set to <see cref="ConfluentKafka.SaslOauthbearerMethod.Oidc"/> to use the OIDC token provider,
+    /// or <see cref="ConfluentKafka.SaslOauthbearerMethod.Default"/> for the default callback-based provider.
+    /// </summary>
+    public ConfluentKafka.SaslOauthbearerMethod? SaslOauthbearerMethod { get; set; }
+
+    /// <summary>
+    /// Public identifier for the application, used as the client_id for retrieving OAUTHBEARER tokens via OIDC.
+    /// </summary>
+    public string? SaslOauthbearerClientId { get; set; }
+
+    /// <summary>
+    /// Client secret for the application, used to retrieve OAUTHBEARER tokens via OIDC.
+    /// </summary>
+    public string? SaslOauthbearerClientSecret { get; set; }
+
+    /// <summary>
+    /// OAuth/OIDC issuer token endpoint URL used to retrieve OAUTHBEARER tokens.
+    /// </summary>
+    public string? SaslOauthbearerTokenEndpointUrl { get; set; }
+
+    /// <summary>
+    /// Client use this to specify the scope of the access request to the broker.
+    /// </summary>
+    public string? SaslOauthbearerScope { get; set; }
+
+    /// <summary>
+    /// Allow additional information to be provided to the broker in the SASL/OAUTHBEARER
+    /// initial client response as comma-separated <c>key=value</c> pairs.
+    /// </summary>
+    public string? SaslOauthbearerExtensions { get; set; }
 
     /// <summary>
     /// File or directory path to CA certificate(s) for verifying the broker's key.
@@ -64,6 +102,20 @@ public sealed class KafkaClientConfig
     /// </summary>
     public string? SslKeyPassword { get; set; }
 
+    /// <summary>
+    /// Endpoint identification algorithm to validate broker hostname using broker certificate.
+    /// Set to <see cref="ConfluentKafka.SslEndpointIdentificationAlgorithm.Https"/> to verify that the broker
+    /// hostname matches the CN or SAN in the broker's certificate.
+    /// Set to <see cref="ConfluentKafka.SslEndpointIdentificationAlgorithm.None"/> to disable hostname verification.
+    /// </summary>
+    public ConfluentKafka.SslEndpointIdentificationAlgorithm? SslEndpointIdentificationAlgorithm { get; set; }
+
+    /// <summary>
+    /// Enable or disable SSL server certificate verification.
+    /// Disabling verification is insecure and should only be used for development/testing.
+    /// </summary>
+    public bool? EnableSslCertificateVerification { get; set; }
+
     // ── Timeouts ──
 
     /// <summary>
@@ -75,6 +127,12 @@ public sealed class KafkaClientConfig
     public TimeSpan? SocketTimeout { get; set; }
 
     /// <summary>
+    /// Maximum time allowed for broker connection setup (TCP connection + SSL/SASL handshake).
+    /// If the connection to the broker is not fully functional after this timeout the connection will be closed and retried.
+    /// </summary>
+    public TimeSpan? SocketConnectionSetupTimeout { get; set; }
+
+    /// <summary>
     /// Close broker connections after the specified time of inactivity. Disable with <see cref="TimeSpan.Zero"/>.
     /// </summary>
     public TimeSpan? ConnectionsMaxIdle { get; set; }
@@ -83,6 +141,13 @@ public sealed class KafkaClientConfig
     /// Metadata cache max age.
     /// </summary>
     public TimeSpan? MetadataMaxAge { get; set; }
+
+    /// <summary>
+    /// Period of time at which topic and broker metadata is refreshed in order to proactively discover
+    /// any new brokers, topics, partitions, or partition leader changes. Use <c>TimeSpan.FromMilliseconds(-1)</c>
+    /// to disable the intervalled refresh (not recommended). The refresh is triggered when a metadata request fails.
+    /// </summary>
+    public TimeSpan? TopicMetadataRefreshInterval { get; set; }
 
     /// <summary>
     /// The initial time to wait before reconnecting to a broker after the connection has been closed.
@@ -96,6 +161,17 @@ public sealed class KafkaClientConfig
     /// The maximum time to wait before reconnecting to a broker after the connection has been closed.
     /// </summary>
     public TimeSpan? ReconnectBackoffMax { get; set; }
+
+    /// <summary>
+    /// The backoff time before retrying a protocol request. Increases exponentially
+    /// until <see cref="RetryBackoffMax"/> is reached, with +/- 20% jitter.
+    /// </summary>
+    public TimeSpan? RetryBackoff { get; set; }
+
+    /// <summary>
+    /// The maximum backoff time before retrying a protocol request.
+    /// </summary>
+    public TimeSpan? RetryBackoffMax { get; set; }
 
     /// <summary>
     /// librdkafka statistics emit interval. The granularity is 1000ms.
@@ -119,27 +195,84 @@ public sealed class KafkaClientConfig
     public int? MessageMaxBytes { get; set; }
 
     /// <summary>
+    /// Maximum Kafka protocol response message size. This serves as a safety precaution to avoid memory
+    /// exhaustion in case of protocol hickups. This value must be at least <c>fetch.max.bytes</c> + 512.
+    /// </summary>
+    public int? ReceiveMessageMaxBytes { get; set; }
+
+    /// <summary>
+    /// Maximum number of in-flight requests per broker connection.
+    /// This is a generic property applied at the connection level.
+    /// A higher value can increase throughput but may reduce ordering guarantees.
+    /// </summary>
+    public int? MaxInFlightRequestsPerConnection { get; set; }
+
+    /// <summary>
+    /// Allowed broker IP address families: any, IPv4, or IPv6.
+    /// </summary>
+    public ConfluentKafka.BrokerAddressFamily? BrokerAddressFamily { get; set; }
+
+    /// <summary>
+    /// Allow automatic topic creation on the broker when subscribing to or assigning non-existent topics.
+    /// The broker must also be configured with <c>auto.create.topics.enable=true</c> for this to take effect.
+    /// This configuration is only used by the consumer, not the admin client.
+    /// </summary>
+    public bool? AllowAutoCreateTopics { get; set; }
+
+    /// <summary>
+    /// A comma-separated list of debug contexts to enable.
+    /// Use <c>"all"</c> to enable everything. Useful for troubleshooting.
+    /// Example: <c>"broker,topic,msg"</c>.
+    /// </summary>
+    public string? Debug { get; set; }
+
+    /// <summary>
     /// Applies non-null settings onto a <see cref="ConfluentKafka.ClientConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ClientConfig config)
     {
+        // Connection
         if (BootstrapServers is not null) config.BootstrapServers = BootstrapServers;
         if (ClientId is not null) config.ClientId = ClientId;
+        if (ClientRack is not null) config.ClientRack = ClientRack;
+
+        // Security
         if (SecurityProtocol.HasValue) config.SecurityProtocol = SecurityProtocol.Value;
         if (SaslMechanism.HasValue) config.SaslMechanism = SaslMechanism.Value;
         if (SaslUsername is not null) config.SaslUsername = SaslUsername;
         if (SaslPassword is not null) config.SaslPassword = SaslPassword;
+        if (SaslOauthbearerMethod.HasValue) config.SaslOauthbearerMethod = SaslOauthbearerMethod.Value;
+        if (SaslOauthbearerClientId is not null) config.SaslOauthbearerClientId = SaslOauthbearerClientId;
+        if (SaslOauthbearerClientSecret is not null) config.SaslOauthbearerClientSecret = SaslOauthbearerClientSecret;
+        if (SaslOauthbearerTokenEndpointUrl is not null) config.SaslOauthbearerTokenEndpointUrl = SaslOauthbearerTokenEndpointUrl;
+        if (SaslOauthbearerScope is not null) config.SaslOauthbearerScope = SaslOauthbearerScope;
+        if (SaslOauthbearerExtensions is not null) config.SaslOauthbearerExtensions = SaslOauthbearerExtensions;
         if (SslCaLocation is not null) config.SslCaLocation = SslCaLocation;
         if (SslCertificateLocation is not null) config.SslCertificateLocation = SslCertificateLocation;
         if (SslKeyLocation is not null) config.SslKeyLocation = SslKeyLocation;
         if (SslKeyPassword is not null) config.SslKeyPassword = SslKeyPassword;
+        if (SslEndpointIdentificationAlgorithm.HasValue) config.SslEndpointIdentificationAlgorithm = SslEndpointIdentificationAlgorithm.Value;
+        if (EnableSslCertificateVerification.HasValue) config.EnableSslCertificateVerification = EnableSslCertificateVerification.Value;
+
+        // Timeouts
         if (SocketTimeout.HasValue) config.SocketTimeoutMs = (int)SocketTimeout.Value.TotalMilliseconds;
+        if (SocketConnectionSetupTimeout.HasValue) config.SocketConnectionSetupTimeoutMs = (int)SocketConnectionSetupTimeout.Value.TotalMilliseconds;
         if (ConnectionsMaxIdle.HasValue) config.ConnectionsMaxIdleMs = (int)ConnectionsMaxIdle.Value.TotalMilliseconds;
         if (MetadataMaxAge.HasValue) config.MetadataMaxAgeMs = (int)MetadataMaxAge.Value.TotalMilliseconds;
+        if (TopicMetadataRefreshInterval.HasValue) config.TopicMetadataRefreshIntervalMs = (int)TopicMetadataRefreshInterval.Value.TotalMilliseconds;
         if (ReconnectBackoff.HasValue) config.ReconnectBackoffMs = (int)ReconnectBackoff.Value.TotalMilliseconds;
         if (ReconnectBackoffMax.HasValue) config.ReconnectBackoffMaxMs = (int)ReconnectBackoffMax.Value.TotalMilliseconds;
+        if (RetryBackoff.HasValue) config.RetryBackoffMs = (int)RetryBackoff.Value.TotalMilliseconds;
+        if (RetryBackoffMax.HasValue) config.RetryBackoffMaxMs = (int)RetryBackoffMax.Value.TotalMilliseconds;
         if (StatisticsInterval.HasValue) config.StatisticsIntervalMs = (int)StatisticsInterval.Value.TotalMilliseconds;
+
+        // Other
         if (SocketKeepaliveEnable.HasValue) config.SocketKeepaliveEnable = SocketKeepaliveEnable.Value;
         if (MessageMaxBytes.HasValue) config.MessageMaxBytes = MessageMaxBytes.Value;
+        if (ReceiveMessageMaxBytes.HasValue) config.ReceiveMessageMaxBytes = ReceiveMessageMaxBytes.Value;
+        if (MaxInFlightRequestsPerConnection.HasValue) config.MaxInFlight = MaxInFlightRequestsPerConnection.Value;
+        if (BrokerAddressFamily.HasValue) config.BrokerAddressFamily = BrokerAddressFamily.Value;
+        if (AllowAutoCreateTopics.HasValue) config.AllowAutoCreateTopics = AllowAutoCreateTopics.Value;
+        if (Debug is not null) config.Debug = Debug;
     }
 }

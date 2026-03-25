@@ -52,6 +52,58 @@ public sealed class KafkaProducerConfig
     public int? BatchNumMessages { get; set; }
 
     /// <summary>
+    /// Local message timeout. This value is only enforced locally and limits the time a produced message
+    /// waits for successful delivery. A time of <see cref="TimeSpan.Zero"/> is infinite.
+    /// This is the maximum time librdkafka may use to deliver a message (including retries).
+    /// Delivery error occurs when either the retry count or the message timeout are exceeded.
+    /// </summary>
+    public TimeSpan? MessageTimeout { get; set; }
+
+    /// <summary>
+    /// The ack timeout of the producer request. This value is only enforced by the broker
+    /// and relies on <see cref="Acks"/> being non-zero.
+    /// </summary>
+    public TimeSpan? RequestTimeout { get; set; }
+
+    /// <summary>
+    /// The maximum amount of time a transaction may remain open. If the transaction coordinator does not
+    /// receive an update from the producer within this timeout, it will abort the transaction.
+    /// This property requires <see cref="TransactionalId"/> to be set.
+    /// The transaction timeout automatically adjusts <c>message.timeout.ms</c> and <c>socket.timeout.ms</c>
+    /// unless explicitly configured.
+    /// </summary>
+    public TimeSpan? TransactionTimeout { get; set; }
+
+    /// <summary>
+    /// Enables the transactional producer. The transactional ID is used to identify the same transactional
+    /// producer instance across process restarts. It allows the producer to guarantee that transactions
+    /// using the same transactional ID have been completed prior to starting new ones.
+    /// </summary>
+    public string? TransactionalId { get; set; }
+
+    /// <summary>
+    /// Maximum number of messages allowed on the producer queue. This queue is shared by all topics and partitions.
+    /// </summary>
+    public int? QueueBufferingMaxMessages { get; set; }
+
+    /// <summary>
+    /// Maximum total message size sum allowed on the producer queue. This queue is shared by all topics and partitions.
+    /// This property has higher priority than <see cref="QueueBufferingMaxMessages"/>.
+    /// </summary>
+    public int? QueueBufferingMaxKbytes { get; set; }
+
+    /// <summary>
+    /// Partitioner to use for assigning messages to partitions.
+    /// </summary>
+    public ConfluentKafka.Partitioner? Partitioner { get; set; }
+
+    /// <summary>
+    /// How many times to retry sending a failing MessageSet. Retrying may cause reordering
+    /// unless <see cref="EnableIdempotence"/> is set to <c>true</c>.
+    /// </summary>
+    public int? MessageSendMaxRetries { get; set; }
+
+    /// <summary>
     /// Applies non-null overrides onto a <see cref="ConfluentKafka.ProducerConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ProducerConfig config)
@@ -62,5 +114,13 @@ public sealed class KafkaProducerConfig
         if (EnableIdempotence.HasValue) config.EnableIdempotence = EnableIdempotence.Value;
         if (CompressionType.HasValue) config.CompressionType = CompressionType.Value;
         if (BatchNumMessages.HasValue) config.BatchNumMessages = BatchNumMessages.Value;
+        if (MessageTimeout.HasValue) config.MessageTimeoutMs = (int)MessageTimeout.Value.TotalMilliseconds;
+        if (RequestTimeout.HasValue) config.RequestTimeoutMs = (int)RequestTimeout.Value.TotalMilliseconds;
+        if (TransactionTimeout.HasValue) config.TransactionTimeoutMs = (int)TransactionTimeout.Value.TotalMilliseconds;
+        if (TransactionalId is not null) config.TransactionalId = TransactionalId;
+        if (QueueBufferingMaxMessages.HasValue) config.QueueBufferingMaxMessages = QueueBufferingMaxMessages.Value;
+        if (QueueBufferingMaxKbytes.HasValue) config.QueueBufferingMaxKbytes = QueueBufferingMaxKbytes.Value;
+        if (Partitioner.HasValue) config.Partitioner = Partitioner.Value;
+        if (MessageSendMaxRetries.HasValue) config.MessageSendMaxRetries = MessageSendMaxRetries.Value;
     }
 }

@@ -131,6 +131,34 @@ public sealed class KafkaConsumerConfigTests
     }
 
     [Fact]
+    public void GivenCheckCrcsSet_WhenApplyTo_ThenConfigCheckCrcsIsSet()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerConfig { CheckCrcs = true };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(true, config.CheckCrcs);
+    }
+
+    [Fact]
+    public void GivenGroupProtocolSet_WhenApplyTo_ThenConfigGroupProtocolIsSet()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerConfig { GroupProtocol = ConfluentKafka.GroupProtocol.Consumer };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(ConfluentKafka.GroupProtocol.Consumer, config.GroupProtocol);
+    }
+
+    [Fact]
     public void GivenNoPropertiesSet_WhenApplyTo_ThenConsumerConfigUnchanged()
     {
         // Arrange
@@ -165,7 +193,9 @@ public sealed class KafkaConsumerConfigTests
             MaxPartitionFetchBytes = 1048576,
             GroupInstanceId = "instance-1",
             PartitionAssignmentStrategy = ConfluentKafka.PartitionAssignmentStrategy.RoundRobin,
-            IsolationLevel = ConfluentKafka.IsolationLevel.ReadCommitted
+            IsolationLevel = ConfluentKafka.IsolationLevel.ReadCommitted,
+            CheckCrcs = true,
+            GroupProtocol = ConfluentKafka.GroupProtocol.Consumer
         };
         var config = new ConfluentKafka.ConsumerConfig();
 
@@ -184,5 +214,7 @@ public sealed class KafkaConsumerConfigTests
         Assert.Equal("instance-1", config.GroupInstanceId);
         Assert.Equal(ConfluentKafka.PartitionAssignmentStrategy.RoundRobin, config.PartitionAssignmentStrategy);
         Assert.Equal(ConfluentKafka.IsolationLevel.ReadCommitted, config.IsolationLevel);
+        Assert.Equal(true, config.CheckCrcs);
+        Assert.Equal(ConfluentKafka.GroupProtocol.Consumer, config.GroupProtocol);
     }
 }

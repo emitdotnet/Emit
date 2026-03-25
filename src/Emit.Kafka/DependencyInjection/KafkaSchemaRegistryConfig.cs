@@ -89,6 +89,39 @@ public sealed class KafkaSchemaRegistryConfig
     /// </summary>
     public string? BasicAuthUserInfo { get; set; }
 
+    // ── Bearer Auth ──
+
+    /// <summary>
+    /// Bearer authentication token. Used when <see cref="BearerAuthCredentialsSource"/> is set
+    /// to <see cref="ConfluentSchemaRegistry.BearerAuthCredentialsSource.StaticToken"/>.
+    /// </summary>
+    public string? BearerAuthToken { get; set; }
+
+    /// <summary>
+    /// OAuth2 client ID for retrieving bearer tokens via OIDC.
+    /// </summary>
+    public string? BearerAuthClientId { get; set; }
+
+    /// <summary>
+    /// OAuth2 client secret for retrieving bearer tokens via OIDC.
+    /// </summary>
+    public string? BearerAuthClientSecret { get; set; }
+
+    /// <summary>
+    /// Source of the bearer authentication credentials.
+    /// </summary>
+    public ConfluentSchemaRegistry.BearerAuthCredentialsSource? BearerAuthCredentialsSource { get; set; }
+
+    /// <summary>
+    /// OAuth2/OIDC token endpoint URL for retrieving bearer tokens.
+    /// </summary>
+    public string? BearerAuthTokenEndpointUrl { get; set; }
+
+    /// <summary>
+    /// OAuth2 scope for retrieving bearer tokens.
+    /// </summary>
+    public string? BearerAuthScope { get; set; }
+
     /// <summary>
     /// Applies non-null settings onto a <see cref="ConfluentSchemaRegistry.SchemaRegistryConfig"/>.
     /// </summary>
@@ -108,5 +141,11 @@ public sealed class KafkaSchemaRegistryConfig
         if (EnableSslCertificateVerification.HasValue) config.EnableSslCertificateVerification = EnableSslCertificateVerification.Value;
         if (BasicAuthCredentialsSource.HasValue) config.BasicAuthCredentialsSource = BasicAuthCredentialsSource.Value;
         if (BasicAuthUserInfo is not null) config.BasicAuthUserInfo = BasicAuthUserInfo;
+        if (BearerAuthToken is not null) config.BearerAuthToken = BearerAuthToken;
+        if (BearerAuthClientId is not null) config.BearerAuthClientId = BearerAuthClientId;
+        if (BearerAuthClientSecret is not null) config.BearerAuthClientSecret = BearerAuthClientSecret;
+        if (BearerAuthCredentialsSource.HasValue) config.BearerAuthCredentialsSource = BearerAuthCredentialsSource.Value;
+        if (BearerAuthTokenEndpointUrl is not null) config.BearerAuthTokenEndpointUrl = BearerAuthTokenEndpointUrl;
+        if (BearerAuthScope is not null) config.BearerAuthScope = BearerAuthScope;
     }
 }
