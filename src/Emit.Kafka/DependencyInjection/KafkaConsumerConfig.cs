@@ -85,6 +85,19 @@ public sealed class KafkaConsumerConfig
     public ConfluentKafka.IsolationLevel? IsolationLevel { get; set; }
 
     /// <summary>
+    /// Verify CRC32 of consumed messages, ensuring no on-the-wire or on-disk corruption to the messages occurred.
+    /// This check comes at slightly increased CPU usage.
+    /// </summary>
+    public bool? CheckCrcs { get; set; }
+
+    /// <summary>
+    /// Group protocol to use. Set to <see cref="ConfluentKafka.GroupProtocol.Consumer"/> to use the new
+    /// KIP-848 consumer group protocol, or <see cref="ConfluentKafka.GroupProtocol.Classic"/> for the
+    /// traditional protocol. Requires broker version >= 4.0 for the consumer protocol.
+    /// </summary>
+    public ConfluentKafka.GroupProtocol? GroupProtocol { get; set; }
+
+    /// <summary>
     /// Applies non-null overrides onto a <see cref="ConfluentKafka.ConsumerConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ConsumerConfig config)
@@ -100,5 +113,7 @@ public sealed class KafkaConsumerConfig
         if (GroupInstanceId is not null) config.GroupInstanceId = GroupInstanceId;
         if (PartitionAssignmentStrategy.HasValue) config.PartitionAssignmentStrategy = PartitionAssignmentStrategy.Value;
         if (IsolationLevel.HasValue) config.IsolationLevel = IsolationLevel.Value;
+        if (CheckCrcs.HasValue) config.CheckCrcs = CheckCrcs.Value;
+        if (GroupProtocol.HasValue) config.GroupProtocol = GroupProtocol.Value;
     }
 }
