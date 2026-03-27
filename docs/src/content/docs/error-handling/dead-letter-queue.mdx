@@ -1,23 +1,24 @@
 ---
 title: Dead Letter Queue
-description: Routing failed messages to a dead-letter topic for inspection and replay.
+description: How Emit routes unprocessable messages to a dead-letter topic with diagnostic context for inspection and replay.
 ---
 
-When a message cannot be processed after retries are exhausted (or when the error policy immediately calls for it), Emit can forward it to a dead-letter topic. The original bytes are preserved, and Emit adds diagnostic headers to help you understand why the message ended up there.
+Some messages cannot be processed. The payload is malformed, the handler has a bug, an external dependency is permanently down. Retrying won't help. These messages need to go somewhere safe where you can inspect them later without blocking the consumer.
+
+That is the dead-letter queue. Emit forwards the original message bytes (untouched, not re-serialized) to a dedicated topic and attaches diagnostic headers that tell you exactly what went wrong, where, and when. The consumer moves on to the next message.
 
 ## Configuring the DLQ sink
 
-Register the dead-letter topic on the Kafka builder with an explicit topic name:
+Register the dead-letter topic on the Kafka builder:
 
 ```csharp
 emit.AddKafka(kafka =>
 {
     kafka.DeadLetter("orders.dlt");
-    // ...
 });
 ```
 
-The DLQ topic is registered as a regular `byte[]` topic. It participates in topic verification at startup and in auto-provisioning when enabled:
+This registers a `byte[]` topic under the hood, which means the DLQ topic participates in topic verification at startup and in auto-provisioning if you have that enabled. You can configure provisioning options the same way as any other topic:
 
 ```csharp
 kafka.DeadLetter("orders.dlt", dlq =>
@@ -30,75 +31,89 @@ kafka.DeadLetter("orders.dlt", dlq =>
 });
 ```
 
-Without `DeadLetter`, calling `action.DeadLetter()` in an error policy logs an error and discards the message instead.
+You register one DLQ topic per Kafka builder. All consumer groups that dead-letter messages route to this single topic, regardless of their source topic. The diagnostic headers identify which group and consumer produced each DLQ entry.
 
-## Using dead-letter actions
+## Where dead-letter actions appear
 
-In your error policy, chain `.DeadLetter()` to route to the configured DLQ topic:
+The `.DeadLetter()` terminal action shows up in three places, all configured on the consumer group:
 
-```csharp
-group.OnError(err =>
-{
-    err.When<KitchenCapacityException>(action => action
-        .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(500)))
-        .DeadLetter());
+- **Error policies** route handler exceptions to the DLQ. This is the most common case. See [Error Policies](../error-policies/) for configuration.
+- **Validation** routes invalid messages to the DLQ when you configure `onFailure => onFailure.DeadLetter()`. See [Validation](../validation/) for the available approaches.
+- **Deserialization errors** route unparseable messages to the DLQ via `OnDeserializationError`. These messages never made it past deserialization, so there is no typed message to work with.
 
-    err.Default(action => action.DeadLetter());
-});
-```
-
-All dead-letter actions route to the single DLQ topic configured via `kafka.DeadLetter(...)`.
+In all three cases, the forwarding mechanism is the same: raw bytes go to the DLQ topic with diagnostic headers attached.
 
 ## What gets forwarded
 
-The dead-letter sink receives the **raw bytes** of the original message (key and value). The message is not re-serialized. The DLQ message is byte-for-byte identical to what was originally consumed, which matters for replay.
+The dead-letter sink receives the **raw bytes** of the original message: both key and value, byte-for-byte identical to what was consumed from the source topic. Emit does not deserialize and re-serialize the message. This is a deliberate design choice.
 
-## Headers added by Emit
+Re-serialization would risk data loss. Schema evolution, encoding quirks, or fields your application does not model would be silently dropped. By forwarding raw bytes, Emit guarantees that the message in the DLQ is an exact copy of what the broker delivered. When you replay it later, you can re-publish to the original topic without any transformation.
 
-When forwarding to the DLQ, the original message headers are preserved first, followed by Emit's diagnostic headers:
+## Diagnostic headers
+
+When forwarding to the DLQ, Emit preserves the original message headers first, then appends its own diagnostic headers:
 
 | Header | Content |
 |---|---|
-| *(original headers)* | All headers from the original message are preserved |
-| `emit.dlq.original_traceparent` | W3C traceparent from the original message (for trace linking) |
+| *(original headers)* | All headers from the source message, preserved in order |
+| `emit.dlq.original_traceparent` | W3C traceparent from the source message, for linking the DLQ entry back to the original distributed trace |
 | `emit.dlq.original_topic` | Source topic name |
-| `x-emit-exception-type` | Full name of the exception type |
-| `x-emit-exception-message` | Exception message |
-| `x-emit-source-topic` | Kafka source topic name |
-| `x-emit-source-partition` | Kafka source partition |
-| `x-emit-source-offset` | Kafka source offset |
-| `x-emit-timestamp` | ISO 8601 timestamp when the DLQ forward occurred |
-| `x-emit-consumer-group` | Consumer group that failed to process the message |
-| `x-emit-consumer` | Consumer identifier |
-| `x-emit-consumer-type` | Consumer handler type name |
-| `x-emit-route-key` | Matched route key (if using a router) |
-| `x-emit-retry-count` | Number of retry attempts before dead-lettering |
+| `x-emit-exception-type` | Fully qualified name of the exception type (e.g. `System.TimeoutException` or `Emit.MessageValidationException`) |
+| `x-emit-exception-message` | The exception message text. For validation failures, this contains the concatenated validation error strings. |
+| `x-emit-source-topic` | Source topic name |
+| `x-emit-source-partition` | Source partition number |
+| `x-emit-source-offset` | Source offset within the partition |
+| `x-emit-timestamp` | ISO 8601 UTC timestamp of when the DLQ forward occurred |
+| `x-emit-consumer-group` | Consumer group ID that failed to process the message |
+| `x-emit-consumer` | Consumer identifier within the group |
+| `x-emit-consumer-type` | Fully qualified type name of the consumer handler |
+| `x-emit-route-key` | The matched route key, if [content-based routing](../../kafka/routing/) is in use |
+| `x-emit-retry-count` | Number of retry attempts before the message was dead-lettered (0 if no retries were configured) |
+
+Between the original headers and the diagnostic metadata, you have everything you need to understand the failure without digging through logs.
 
 ## Transactional consumers and the DLQ
 
-When a consumer decorated with `[Transactional]` fails and the message is dead-lettered, the transaction for the final retry attempt is rolled back before the message is forwarded to the DLQ. Any business writes from that attempt are not persisted.
+When a consumer decorated with `[Transactional]` fails and the message is dead-lettered, the transaction for the final attempt is rolled back before the message is forwarded. Any database writes from that failed attempt are not persisted. The DLQ forward itself is not transactional; it happens independently after the rollback.
+
+This ordering matters. You will never end up in a state where partial business writes from a failed attempt are committed while the message is also sitting in the DLQ.
+
+## When things go wrong
+
+### No DLQ configured
+
+If your error policy (or validation, or deserialization handler) specifies `.DeadLetter()` but you never called `kafka.DeadLetter(...)`, Emit logs an error and discards the message. The consumer continues processing. This is a configuration mistake, not a runtime failure, so you will see it immediately in your logs at startup or on the first failure.
+
+### DLQ produce failure
+
+If the DLQ topic becomes unavailable after startup (deleted, broker outage), the DLQ producer retries internally with exponential backoff (up to 5 attempts over roughly 30 seconds). If all attempts fail, the error is logged and the message is discarded. The source consumer is not blocked; it continues processing the next message.
+
+Both scenarios record distinct metrics (`dead_letter_no_sink` and `dead_letter_failed` respectively) so you can alert on them.
 
 ## Replaying DLQ messages
 
-There is no built-in replay mechanism, and that is intentional. A DLQ message means something went wrong that retries could not fix. Blindly replaying without understanding why is just rescheduling the same failure.
+Emit does not include a built-in replay mechanism, and that is intentional. A message in the DLQ means something went wrong that retries could not fix. Blindly replaying without understanding why is rescheduling the same failure.
 
 The intended workflow:
 
-1. Inspect DLQ messages using your Kafka tooling (Kafka UI, kcat, etc.)
-2. Identify the root cause: code bug, bad configuration, missing dependency
-3. Fix it, then re-publish the raw bytes back to the original topic
+1. Inspect DLQ messages using your Kafka tooling (Kafka UI, kcat, Conduktor, etc.)
+2. Read the diagnostic headers to understand the failure: exception type, source topic, consumer group, retry count.
+3. Identify the root cause. Code bug, missing configuration, schema mismatch, external dependency issue.
+4. Fix the root cause. Deploy the fix.
+5. Re-publish the raw bytes back to the original topic.
 
-Because the raw bytes are preserved and Emit's headers are metadata-only, replaying is straightforward once you know what you're fixing.
+Because the raw bytes are preserved and Emit's headers are additive metadata, step 5 is straightforward. Read the key and value from the DLQ message, publish them to the topic in `emit.dlq.original_topic`, and let your (now fixed) consumer process them normally.
 
-## Validation DLQ
-
-Validation failures use the same DLQ mechanism:
+You can also register a consumer group directly on the DLQ topic to automate inspection or alerting:
 
 ```csharp
-group.Validate<PizzaValidator>(err =>
+kafka.DeadLetter("orders.dlt", dlq =>
 {
-    err.DeadLetter();
+    dlq.ConsumerGroup("dlq-alerting", group =>
+    {
+        group.AddConsumer<DlqAlertConsumer>();
+    });
 });
 ```
 
-The headers added by validation failures include `x-emit-exception-type: ValidationException` and the validation error messages in `x-emit-exception-message`.
+This is useful for feeding DLQ entries into a monitoring system, but the replay decision should remain a human one until you are confident in the automation.

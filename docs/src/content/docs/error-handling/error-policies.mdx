@@ -1,23 +1,23 @@
 ---
 title: Error Policies
-description: "Configuring what happens when a consumer throws: retry, dead-letter, or discard."
+description: Configuring what happens when a consumer throws using retry, dead-letter, and discard actions.
 ---
 
-When a consumer throws, Emit evaluates an error policy to decide what to do next. The policy is configured per consumer group via `OnError`, and it's worth spending five minutes getting right rather than discovering your defaults at 11pm on a Friday.
+When a consumer throws an exception, Emit evaluates the error policy you configured on the consumer group to decide what happens next. The policy maps exception types to actions: retry the message, forward it to a dead-letter topic, or discard it. Getting this right takes five minutes. Getting it wrong surfaces at 11pm on a Friday.
 
-## OnError
+## Configuring OnError
+
+Call `OnError` on the consumer group to define your error policy:
 
 ```csharp
 topic.ConsumerGroup("pizza-kitchen", group =>
 {
     group.OnError(err =>
     {
-        // Kitchen gets slammed during dinner rush; retry with backoff
         err.When<KitchenCapacityException>(action => action
             .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(200)))
             .DeadLetter());
 
-        // Bad address can't be fixed by retrying; send to DLQ for human review
         err.When<InvalidAddressException>(action => action.DeadLetter());
 
         err.Default(action => action.DeadLetter());
@@ -27,106 +27,120 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-Clauses are evaluated in order. The first matching clause wins. `Default` applies when no clause matches.
+Clauses are evaluated in registration order. The first `When` clause whose exception type matches wins. If nothing matches, the `Default` action applies. You should always configure a `Default`; without one, unmatched exceptions are logged and the message is discarded with a warning.
 
-## Error actions
+## Terminal actions
 
-### Retry
-
-```csharp
-err.When<KitchenCapacityException>(action => action
-    .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(200)))
-    .DeadLetter());  // exhaustion action
-```
-
-Retries the message up to `maxAttempts` times using the specified backoff strategy. Chain `.DeadLetter()` or `.Discard()` after `.Retry()` to define what happens when retries are exhausted.
-
-Backoff strategies:
-
-| Strategy | Signature | Behavior |
-|---|---|---|
-| Fixed | `Backoff.Fixed(delay)` | Same delay between every retry |
-| Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt with ±20% jitter; capped at `maxDelay` (default 5 min) |
-| None | `Backoff.None` | No delay between retries |
-
-When a consumer is decorated with `[Transactional]`, each retry attempt starts a fresh transaction. If the first attempt fails and the retry succeeds, only the successful attempt's writes are committed.
-
-The current attempt number is available directly on `ConsumeContext<T>`:
-
-```csharp
-var attempt = context.RetryAttempt;
-// 0 = initial attempt, 1 = first retry, ...
-```
+Every error clause ends with a terminal action that tells Emit what to do with the failed message.
 
 ### Dead-letter
+
+Forwards the raw message bytes to the configured dead-letter topic. The original payload is preserved byte-for-byte. See the [Dead Letter Queue](../dead-letter-queue/) page for sink configuration and the diagnostic headers Emit attaches.
 
 ```csharp
 err.When<SomeException>(action => action.DeadLetter());
 ```
 
-Forwards the raw message bytes to the configured dead-letter topic. See [Dead Letter Queue](../dead-letter-queue/) for how the sink is configured and what headers are added.
-
 ### Discard
+
+Acknowledges the message and moves on. The error is logged, but the message is never retried. Use this for errors you know cannot be resolved by reprocessing.
 
 ```csharp
 err.When<SomeException>(action => action.Discard());
 ```
 
-Logs the error and moves on. The message is acknowledged and never retried. Use this for known-invalid messages you never want to see again.
+### Retry
+
+Retries the message up to `maxAttempts` times using a backoff strategy, then falls through to an exhaustion action. The exhaustion action is mandatory: chain `.DeadLetter()` or `.Discard()` after `.Retry()`.
+
+```csharp
+err.When<HttpRequestException>(action => action
+    .Retry(5, Backoff.Exponential(TimeSpan.FromSeconds(1)))
+    .DeadLetter());
+```
+
+If all five retries fail, the message is dead-lettered. Without the chained terminal action, the configuration throws at build time.
+
+## Backoff strategies
+
+The second argument to `Retry` controls how long Emit waits between attempts.
+
+| Strategy | Signature | Behavior |
+|---|---|---|
+| Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt. Jitter adds a random factor of +/-20% to prevent thundering herds. Default max delay is 5 minutes. |
+| Fixed | `Backoff.Fixed(delay)` | Same delay between every retry. Predictable, but offers no spread when multiple consumers fail simultaneously. |
+| None | `Backoff.None` | Zero delay between retries. Useful in tests or when an external system has its own backoff. |
+
+For most production scenarios, exponential backoff with jitter is the right choice. Fixed backoff works when you need predictable timing (rate-limited APIs with known reset windows, for example).
 
 ## Exception matching
 
-`When<TException>` matches exact exception types and subclasses:
+`When<TException>` matches the specified exception type and all its subclasses. This follows standard .NET exception hierarchy rules:
 
 ```csharp
-err.When<TimeoutException>(action => action
-    .Retry(5, Backoff.Exponential(TimeSpan.FromSeconds(1)))
-    .DeadLetter());
-err.When<InvalidOperationException>(action => action.Discard());
-```
-
-If no `Default` is configured and no clause matches, the error is logged and the message is discarded. Configure `Default` explicitly if you want a different fallback.
-
-## Validation
-
-Validation runs before the consumer pipeline and has its own policy:
-
-```csharp
-group.Validate<PizzaValidator>(err =>
+group.OnError(err =>
 {
-    err.DeadLetter();
+    // Matches HttpRequestException and any derived types
+    err.When<HttpRequestException>(action => action
+        .Retry(3, Backoff.Exponential(TimeSpan.FromSeconds(1)))
+        .DeadLetter());
+
+    // Matches InvalidOperationException and subclasses
+    err.When<InvalidOperationException>(action => action.Discard());
+
+    err.Default(action => action.DeadLetter());
 });
 ```
 
-Or with an inline validator:
+Because clauses evaluate in order, place more specific exception types before broader ones. A `When<Exception>` as the first clause would match everything and make subsequent clauses unreachable.
+
+### Predicate filtering
+
+For finer control, add a predicate to filter within an exception type:
 
 ```csharp
-group.Validate(
-    (msg, ct) => Task.FromResult(
-        msg.Toppings.Length > 0
-            ? MessageValidationResult.Success()
-            : MessageValidationResult.Failure("At least one topping is required")),
-    err => err.DeadLetter());
+err.When<HttpRequestException>(
+    ex => ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests,
+    action => action
+        .Retry(5, Backoff.Exponential(TimeSpan.FromSeconds(2)))
+        .DeadLetter());
+
+err.When<HttpRequestException>(action => action.DeadLetter());
 ```
 
-Implement `IMessageValidator<TValue>` for reusable validators:
+The predicate receives the typed exception instance. If the predicate returns `false`, evaluation continues to the next clause.
+
+### Unmatched route errors
+
+When using [content-based routing](../../kafka/routing/), messages that match no route throw `UnmatchedRouteException`. A convenience extension saves you from remembering the type name:
 
 ```csharp
-public class PizzaValidator : IMessageValidator<PizzaOrdered>
-{
-    public Task<MessageValidationResult> ValidateAsync(PizzaOrdered message, CancellationToken ct)
-    {
-        if (message.Toppings.Length == 0)
-            return Task.FromResult(MessageValidationResult.Failure("At least one topping is required"));
+err.WhenRouteUnmatched(action => action.Discard());
+```
 
-        return Task.FromResult(MessageValidationResult.Success());
-    }
+This is equivalent to `err.When<UnmatchedRouteException>(...)`.
+
+## Retries and transactions
+
+When a consumer is decorated with `[Transactional]`, each retry attempt gets a fresh transaction. If the first attempt writes to the database and then fails, those writes are rolled back. If the second attempt succeeds, only its writes are committed. There is no accumulation of partial state across retries.
+
+Each retry attempt also creates a fresh DI scope, so scoped services (database contexts, unit-of-work instances) are not reused between attempts.
+
+The current attempt number is available on `ConsumeContext<T>`:
+
+```csharp
+public async Task ConsumeAsync(ConsumeContext<OrderPlaced> context)
+{
+    if (context.RetryAttempt > 0)
+        logger.LogInformation("Retry attempt {Attempt}", context.RetryAttempt);
+
+    // 0 = initial attempt, 1 = first retry, 2 = second retry, ...
 }
 ```
 
 ## Deserialization errors
 
-Handle errors that occur before the message is even deserialized:
+Deserialization errors occur before the message enters the consumer pipeline. A corrupt payload or a schema mismatch means the message cannot be deserialized into your expected type. These errors are handled separately from consumer exceptions because there is no typed message to pass through the regular error policy.
 
 ```csharp
 group.OnDeserializationError(err =>
@@ -135,4 +149,12 @@ group.OnDeserializationError(err =>
 });
 ```
 
-Without this, deserialization errors are logged and the message is skipped.
+Without `OnDeserializationError` configured, deserialization failures are logged and the message is skipped. Only `DeadLetter()` and `Discard()` are available here; retrying a message that cannot be deserialized is not going to produce a different result.
+
+## Validation
+
+Validation runs before the error policy and has its own separate error action. See the [Validation](../validation/) page for all available approaches and configuration.
+
+## Default behavior
+
+If you do not configure `OnError` at all, Emit logs the exception as a warning and discards the message. This is a safe default that prevents poison messages from blocking the consumer, but it means failures are silent beyond the log. For production workloads, configure an explicit policy.

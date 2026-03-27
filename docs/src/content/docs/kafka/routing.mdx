@@ -14,7 +14,7 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 {
     group.AddRouter(
         identifier: "crust-type-router",
-        selector: ctx => ctx.Message.CrustType,  // extract the routing key
+        selector: ctx => ctx.Message.CrustType,
         configure: router =>
         {
             router.Route<ThinCrustHandler>("thin");
@@ -24,11 +24,11 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-The `selector` receives the full `ConsumeContext<TValue>` and returns the route key. The key is matched against the routes you registered. The matching consumer is instantiated from the DI container and invoked.
+The `selector` receives the full `ConsumeContext<TValue>` and returns the route key. That key is matched against the registered routes, and the matching consumer is resolved from the DI container and invoked.
 
 ## Route key types
 
-The route key type is inferred from the `selector` return type. It must be `notnull`. Common choices:
+The route key type is inferred from the `selector` return type. It must be `notnull`. Common patterns:
 
 ```csharp
 // String discriminator field
@@ -37,13 +37,13 @@ selector: ctx => ctx.Message.EventType
 // Enum value
 selector: ctx => ctx.Message.OrderKind
 
-// Prefix of a string field
+// Derived value
 selector: ctx => ctx.Message.CorrelationId.StartsWith("B2B") ? "b2b" : "b2c"
 ```
 
 ## Per-route middleware
 
-Each route can have its own middleware layer, which wraps only that handler:
+Each route can have its own middleware layer, wrapping only that handler:
 
 ```csharp
 router.Route<DeepDishHandler>("deep-dish", route =>
@@ -54,7 +54,7 @@ router.Route<DeepDishHandler>("deep-dish", route =>
 
 ## Unmatched messages
 
-If the selector returns a key that has no registered route, an `UnmatchedRouteException` is thrown. Configure how this is handled via the group's `OnError` policy:
+If the selector returns a key with no registered route, an `UnmatchedRouteException` is thrown. Configure how this is handled via the group's `OnError` policy:
 
 ```csharp
 group.OnError(err =>
@@ -70,14 +70,14 @@ If the selector returns `null`, the message is silently skipped.
 
 ## Accessing the matched route in middleware
 
-After routing, the matched route key is tagged on the current `Activity` (when tracing is enabled). You can read it from the activity in middleware:
+After routing, the matched route key is tagged on the current `Activity` when tracing is enabled:
 
 ```csharp
 var routeKey = Activity.Current?.GetTagItem("emit.route.key")?.ToString();
 ```
 
-The consumer identity (consumer type name and kind) is baked into the tracing middleware at build time and does not need to be read manually.
+The consumer type name and kind are baked into the tracing middleware at build time and do not need to be read manually.
 
 ## Router vs. multiple consumer groups
 
-Use a router when all messages arrive on the same topic and you need to dispatch them differently based on content. Use multiple consumer groups when you need independent Kafka consumer group offsets (different replay positions, different lag tracking, etc.).
+Use a router when all messages arrive on the same topic and you need to dispatch them differently based on content. Use multiple consumer groups when you need independent Kafka offsets: different replay positions, separate lag tracking, or independent scaling.

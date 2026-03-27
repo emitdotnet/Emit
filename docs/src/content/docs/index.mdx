@@ -29,28 +29,30 @@ This is the **dual-write problem**, and it corrupts systems in ways that are par
 
 ## How Emit solves it
 
-Emit implements the **transactional outbox pattern**. Messages are written to a database table inside the same transaction as your business data. A background worker delivers them to the broker, retrying until confirmed. Your handler commits everything or nothing.
+Emit is a .NET library for reliable, ordered messaging between services. At its core is the **transactional outbox pattern**: messages are written to a database table inside the same transaction as your business data, then delivered by a background worker that retries until the broker confirms. Your handler commits everything or nothing.
 
-The outbox is one of several tools Emit provides. The library also covers in-process request dispatch, distributed coordination, and deep Kafka integration, all sharing the same layered middleware pipeline.
+The outbox is one of several tools Emit provides. An in-process mediator, distributed coordination primitives, and deep Kafka integration all share the same layered middleware pipeline, so cross-cutting concerns like transactions, retries, and observability apply uniformly across every subsystem.
 
-## Integrations
+## Works with
 
 <IntegrationGrid />
 
 ## What's in the box
 
-**Transactional outbox**: atomic message enqueue with your business data, durable background delivery, and ordering guarantees per group key. With EF Core, just call `SaveChangesAsync`. With MongoDB, use `IUnitOfWork`. For consumers and handlers, add `[Transactional]` and let the middleware handle it. No message goes missing because a broker hiccupped at the wrong moment.
+**Transactional outbox** with durable, ordered delivery and automatic retries. Messages never go missing because a broker hiccupped at the wrong moment.
 
-**In-process mediator**: a typed request/response dispatcher with the same middleware pipeline model as the outbox. Useful for CQRS handlers that also need to publish events.
+**In-process mediator** for typed request/response dispatch. Useful for CQRS handlers that also need to publish events.
 
-**Kafka integration**: typed producers, consumer groups with configurable worker pools, fan-out, content-based routing, dead-letter queues, circuit breakers, and rate limiting.
+**Kafka integration** with typed producers, consumer groups, fan-out, content-based routing, dead-letter queues, circuit breakers, and rate limiting.
 
-**Pluggable persistence**: MongoDB and PostgreSQL (EF Core) backends. You bring your own client; Emit handles the rest.
+**Pluggable persistence** across MongoDB and PostgreSQL. You bring your own client; Emit handles the rest.
 
-**Cluster coordination**: [leader election](./concepts/leader-election/) with daemon scheduling for background work, plus [distributed locks](./persistence/distributed-locks/) available to your own code.
+**Cluster coordination** with [leader election](./concepts/leader-election/) for daemon scheduling and [distributed locks](./persistence/distributed-locks/) available to your own code.
 
-**OpenTelemetry**: distributed tracing with W3C propagation, metrics across every subsystem, and structured logging throughout.
+**Observability** through distributed tracing with W3C propagation, per-subsystem metrics, and structured logging throughout.
 
-## License
+## Next steps
+
+Ready to try it? Head to the [installation guide](./getting-started/installation/) and have a working outbox in minutes.
 
 Emit is released under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0).

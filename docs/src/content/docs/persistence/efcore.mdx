@@ -3,12 +3,14 @@ title: EF Core (PostgreSQL)
 description: Using EF Core with PostgreSQL as the persistence backend for the outbox and distributed locks.
 ---
 
-The `Emit.EntityFrameworkCore` package provides EF Core-backed implementations of the outbox repository and distributed lock provider, with PostgreSQL as the supported database.
+import { Steps } from '@astrojs/starlight/components';
+
+The `Emit.Persistence.EntityFrameworkCore` package provides EF Core-backed implementations of the outbox repository and distributed lock provider. PostgreSQL is the supported database.
 
 ## Installation
 
 ```bash
-dotnet add package Emit.EntityFrameworkCore
+dotnet add package Emit.Persistence.EntityFrameworkCore
 ```
 
 ## Registration
@@ -30,7 +32,7 @@ builder.Services.AddEmit(emit =>
 
 You register `IDbContextFactory<TDbContext>` yourself using the standard EF Core pattern. Emit resolves the factory internally to access the database without interfering with your application's DbContext lifetimes.
 
-`UseNpgsql()` is required to configure PostgreSQL-specific type mappings. `UseOutbox()` and `UseDistributedLock()` are independent. Calling `UseOutbox()` here provisions the outbox infrastructure (tables, background worker) and registers `IUnitOfWork` as a scoped service. When `UseOutbox()` is called, all producers route through the outbox by default; see [Producers](../../kafka/producers/) for how to opt out with `UseDirect()`.
+`UseNpgsql()` is required: it configures PostgreSQL-specific type mappings. `UseOutbox()` and `UseDistributedLock()` are independent. When `UseOutbox()` is called, the background delivery worker starts and all producers route through the outbox by default. See [Producers](../../kafka/producers/) for how to opt out with `UseDirect()`.
 
 ## Model configuration
 
@@ -52,20 +54,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
 ## Migrations
 
-Run a standard EF Core migration after adding `AddEmitModel`:
+Emit does not apply migrations automatically. Your migration history stays under your control:
 
 ```bash
 dotnet ef migrations add AddEmitTables
 dotnet ef database update
 ```
 
-Emit does not run migrations automatically. Your migration history stays under your control.
+Run these after adding `AddEmitModel` to your `OnModelCreating` override. If you update to a new version of Emit that adds or changes schema, add another migration the same way.
 
 ## Transactional outbox
 
-EF Core supports two approaches for coordinating outbox writes with your business data.
+EF Core supports two transaction approaches for coordinating outbox writes with your business data. For the full explanation, including the `[Transactional]` attribute and when to use each approach, see [Transactional Outbox](../../outbox/).
 
-**Implicit (recommended for most cases):** The outbox entry is tracked by the same `DbContext` as your business entities. `SaveChangesAsync` flushes both atomically in a single implicit database transaction.
+### Implicit (recommended for most cases)
+
+The outbox entry is tracked by the same `DbContext` as your business entities. A single `SaveChangesAsync` call flushes both atomically in one implicit database transaction. No transaction boilerplate needed:
 
 ```csharp
 public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
@@ -78,7 +82,9 @@ public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
 }
 ```
 
-**`IUnitOfWork` (when explicit transaction control is needed):** `CommitAsync` calls `SaveChangesAsync` internally before committing the database transaction. Use this for hosted services, background jobs, or when you need conditional commit logic.
+### `IUnitOfWork`
+
+For hosted services, background jobs, or anywhere you need explicit control over when to commit or roll back:
 
 ```csharp
 await using var tx = await unitOfWork.BeginAsync(ct);
@@ -87,8 +93,8 @@ await producer.ProduceAsync(..., ct);
 await tx.CommitAsync(ct);
 ```
 
-`IUnitOfWork` is registered automatically as a scoped service when `UseOutbox()` is called. You do not need to register it yourself.
+`CommitAsync` calls `SaveChangesAsync` internally before committing the database transaction. `IUnitOfWork` is registered automatically as a scoped service when `UseOutbox()` is called.
 
 ## Lock cleanup
 
-The EF Core provider includes a background worker that periodically deletes expired lock rows. This runs automatically; you do not configure it separately.
+The EF Core provider includes a background worker that periodically deletes expired lock rows. It runs automatically alongside the distributed lock provider. The default cleanup interval is 5 minutes, configurable via `LockCleanupOptions`.

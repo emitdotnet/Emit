@@ -7,7 +7,7 @@ import Mermaid from '../../../components/Mermaid.astro';
 
 ## IConsumer
 
-`IConsumer<TValue>` is where your message handling lives. Implement it, register it on a consumer group, and Emit takes care of the rest:
+`IConsumer<TValue>` is where your message handling lives. Implement it, register it on a consumer group, and Emit manages the rest:
 
 ```csharp
 public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
@@ -17,13 +17,9 @@ public class PizzaOrderedConsumer(ILogger<PizzaOrderedConsumer> logger)
     {
         var pizza = context.Message;
         logger.LogInformation("Preparing pizza {PizzaId} for {CustomerId}", pizza.PizzaId, pizza.CustomerId);
-
-        // route to kitchen, notify delivery, whatever your domain needs
     }
 }
 ```
-
-Register it on the consumer group:
 
 ```csharp
 kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
@@ -39,25 +35,22 @@ Consumers are resolved from the DI container per message, so constructor injecti
 
 ## ConsumeContext
 
-`ConsumeContext<TValue>` carries the message and metadata:
+`ConsumeContext<TValue>` carries the message and the metadata your handler needs most:
 
 | Member | Type | Description |
 |---|---|---|
 | `Message` | `TValue` | The deserialized message value |
-| `MessageId` | `string` | Unique message identifier |
-| `Timestamp` | `DateTimeOffset` | Message timestamp |
-| `DestinationAddress` | `Uri?` | Transport URI (e.g. `kafka://broker:9092/orders`) |
-| `SourceAddress` | `Uri?` | Sender address, propagated via headers |
-| `Headers` | `IReadOnlyList<...>` | Message headers (delegated from transport context) |
+| `Headers` | `IReadOnlyList<...>` | Message headers |
 | `RetryAttempt` | `int` | Current retry count (0 on first attempt) |
-| `CancellationToken` | `CancellationToken` | Cancellation for this message |
-| `Services` | `IServiceProvider` | Scoped provider for this message |
-| `TransportContext` | `TransportContext` | Transport-specific metadata |
+| `TransportContext` | `TransportContext` | Kafka-specific metadata |
 | `Transaction` | `ITransactionContext?` | Active transaction, if any |
+| `Services` | `IServiceProvider` | Scoped provider for this message |
+
+For the full list of properties and the payload bag API, see [Feature Collection](../../advanced/feature-collection/).
 
 ### Accessing Kafka-specific data
 
-The `TransportContext` is a `KafkaTransportContext<TKey>` on the consume side. Cast it to access the deserialized message key and Kafka metadata:
+`TransportContext` is a `KafkaTransportContext<TKey>` on the consume side. Cast it to read the deserialized key and broker metadata:
 
 ```csharp
 if (context.TransportContext is KafkaTransportContext<string> kafka)
@@ -67,24 +60,21 @@ if (context.TransportContext is KafkaTransportContext<string> kafka)
 }
 ```
 
-See [Feature Collection & Payload Bag](../../advanced/feature-collection/) for more on context properties and payload access.
-
 ## Worker pool
 
-The worker pool controls how many messages your instance processes at the same time. To size it correctly, you need to understand how Kafka distributes work — starting with partitions.
+The worker pool controls how many messages your instance processes concurrently. Sizing it correctly requires a working understanding of how Kafka distributes work.
 
 ### Partitions: the unit of parallelism
 
-A Kafka topic is not a single queue. It is divided into **partitions** — independent, ordered logs. Inside a single partition, messages are always delivered in the order they were written. Across different partitions, there is no ordering guarantee whatsoever.
+A Kafka topic is not a single queue. It is divided into partitions: independent, ordered logs. Inside a single partition, messages are always delivered in write order. Across partitions, there is no ordering guarantee.
 
-When a producer sends a message to `orders`, Kafka assigns it to one partition — typically based on the message key. The more partitions a topic has, the more consumers can read from it simultaneously.
-
+When a producer sends a message, Kafka assigns it to one partition, typically based on the message key. More partitions means more consumers can read simultaneously.
 
 ### Consumer groups and partition assignment
 
-A **consumer group** is a named set of consumers that share the work of reading a topic. Kafka's contract: each partition is consumed by **exactly one member** of the group at a time. Two consumers in the same group never read the same partition simultaneously.
+A consumer group is a named set of consumers that share the work of reading a topic. Kafka's contract: each partition is consumed by exactly one member of the group at a time. Two consumers in the same group never read the same partition simultaneously.
 
-When you run multiple instances of your application with the same group ID, Kafka divides the partitions between them automatically. This redistribution — called a **rebalance** — happens whenever an instance joins or leaves the group. No configuration needed; Kafka handles it.
+When you run multiple instances with the same group ID, Kafka divides partitions between them automatically. This redistribution (a rebalance) happens whenever an instance joins or leaves. No configuration required; Kafka handles it.
 
 <Mermaid code={`flowchart LR
     subgraph i1[Instance 1  ·  pizza-kitchen]
@@ -102,9 +92,9 @@ Scale to three instances and each gets two partitions. Take one down and Kafka r
 
 ### Workers within an instance
 
-Each application instance runs one Kafka consumer per group. That consumer polls its assigned partitions and feeds messages into Emit's **worker pool** — a set of concurrent processing channels within the instance.
+Each application instance runs one Kafka consumer per group. That consumer polls its assigned partitions and feeds messages into Emit's worker pool: a set of concurrent processing channels within the instance.
 
-Each worker handles one message at a time. With three workers, the instance processes up to three messages simultaneously. A fourth message waits for a slot to open up, or queues in the channel buffer (up to `BufferSize`) while it waits.
+Each worker handles one message at a time. With three workers, the instance processes up to three messages simultaneously. A fourth message waits for a slot to open, or queues in the channel buffer (up to `BufferSize`) while waiting.
 
 <Mermaid code={`flowchart LR
     subgraph kafka[Kafka]
@@ -135,11 +125,11 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 
 **The rule of thumb: match `WorkerCount` to the number of partitions your instance will be assigned.**
 
-If `orders` has 6 partitions and you run 2 instances, Kafka assigns 3 partitions to each. Set `WorkerCount = 3` and each partition gets a dedicated worker — full parallelism, no contention.
+If `orders` has 6 partitions and you run 2 instances, Kafka assigns 3 partitions to each. Set `WorkerCount = 3` and each partition gets a dedicated worker, full parallelism, no contention.
 
-**More workers than assigned partitions?** Extra workers stay idle. They hold a small buffer channel in memory but cause no harm. If you scale dynamically and can't predict the exact partition count per instance, erring slightly high is safe.
+**More workers than partitions?** Extra workers stay idle. They hold a small buffer channel in memory but cause no harm. If you scale dynamically and can't predict the exact partition count per instance, erring slightly high is safe.
 
-**Fewer workers than assigned partitions?** Multiple partitions compete for the same workers. A slow message from Partition 0 can hold up messages from Partition 1 and Partition 2, even though those messages are already sitting in the buffer ready to go. You lose the parallelism the partitions were designed to give you.
+**Fewer workers than partitions?** Multiple partitions compete for the same workers. A slow message from Partition 0 can hold up Partition 1 and Partition 2, even though those messages are already in the buffer. You lose the parallelism the partitions were designed to provide.
 
 <Mermaid code={`flowchart LR
     subgraph kafka[Kafka]
@@ -163,9 +153,9 @@ The distribution strategy answers one question: when a message arrives, which wo
 
 ### ByKeyHash (default)
 
-Emit computes `hash(key) % WorkerCount` and routes the message to the resulting worker. Because the hash of a key never changes, **the same key always maps to the same worker** — for every message, without exception.
+Emit computes `hash(key) % WorkerCount` and routes the message to that worker. Because the hash of a key never changes, the same key always maps to the same worker, for every message, without exception.
 
-Think of it as giving each customer a dedicated lane. Customer 42's orders always land on Worker 2. Customer 99's orders always land on Worker 3. If three orders arrive for Customer 42 in quick succession, Worker 2 processes them in sequence. Worker 3 is busy with Customer 99's orders in parallel — neither lane waits for the other.
+Think of it as giving each customer a dedicated lane. Customer 42's orders always land on Worker 2. Customer 99's orders always land on Worker 3. Three orders for Customer 42 arrive in quick succession, Worker 2 processes them in sequence. Worker 3 handles Customer 99 in parallel. Neither lane waits for the other.
 
 <Mermaid code={`flowchart LR
     subgraph g42[cust-42]
@@ -185,15 +175,15 @@ Think of it as giving each customer a dedicated lane. Customer 42's orders alway
     g99 --> w3
     g15 --> w1`} />
 
-`order-1` and `order-3` both belong to `cust-42`, so both route to Worker 2 and process in arrival order. `order-2` (cust-99) runs on Worker 3 at the same time — the two customers are completely independent of each other.
+`order-1` and `order-3` both belong to `cust-42`, so both route to Worker 2 and process in arrival order. `order-2` runs on Worker 3 simultaneously; the two customers are independent.
 
-The tradeoff: load isn't perfectly balanced. A very active key monopolizes its worker while others run lighter. That's usually the right tradeoff — correctness is worth more than perfect load distribution.
+The tradeoff: load is not perfectly balanced. A very active key monopolizes its worker while others run lighter. That is usually the right tradeoff; correctness is worth more than perfect load distribution.
 
 Use `ByKeyHash` when ordering within a key matters: state transitions for the same entity, inventory updates for the same product SKU, anything where two messages about the same subject must not process out of order.
 
 ### RoundRobin
 
-Workers are assigned in rotation — message 1 goes to Worker 0, message 2 to Worker 1, message 3 to Worker 2, then back to Worker 0. The message key is ignored entirely.
+Workers are assigned in rotation. Message 1 goes to Worker 0, message 2 to Worker 1, message 3 to Worker 2, then back to Worker 0. The message key is ignored entirely.
 
 <Mermaid code={`flowchart LR
     e1[event-1] --> w0([Worker 0])
@@ -202,13 +192,13 @@ Workers are assigned in rotation — message 1 goes to Worker 0, message 2 to Wo
     e4[event-4] --> w3([Worker 3])
     e5[event-5] --> w0`} />
 
-This spreads load as evenly as possible and maximizes throughput across the pool. The cost is that two messages from the same source can land on different workers and complete in a different order than they arrived.
+This spreads load as evenly as possible and maximizes throughput across the pool. The cost: two messages from the same source can land on different workers and complete in a different order than they arrived.
 
-Use `RoundRobin` when messages are independent and throughput matters more than ordering: audit events, telemetry records, fire-and-forget notifications — anything where it's fine if two events from the same customer finish in a different order than they were sent.
+Use `RoundRobin` when messages are independent and throughput matters more than ordering: audit events, telemetry records, fire-and-forget notifications, anything where arrival-order completion is not required.
 
 ## Offset commit
 
-Emit commits offsets automatically using a watermark algorithm: the offset advances only when all messages up to that point have been processed. A slow message at offset 100 blocks the commit at 99 even if 101 through 200 have already finished.
+Emit commits offsets automatically using a watermark algorithm. The offset advances only when all messages up to that point have been processed. A slow message at offset 100 blocks the commit at 99 even if offsets 101 through 200 have already finished.
 
 Configure the commit interval:
 
@@ -220,20 +210,22 @@ Commits happen in the background on this interval. You do not call commit manual
 
 ## Transactional consumers
 
-Decorate your consumer class with `[Transactional]` to have the pipeline automatically wrap each invocation in a unit-of-work transaction. All outbox entries produced within the handler are committed atomically with any business data writes. Each retry attempt gets a fresh transaction.
+Decorate your consumer class with `[Transactional]` to have the pipeline wrap each invocation in a unit-of-work transaction. All outbox entries produced within the handler commit atomically with any business data writes. Each retry attempt gets a fresh transaction.
 
 ```csharp
 [Transactional]
 public sealed class PizzaOrderedConsumer(
-    IEventProducer<string, PizzaOrdered> producer) : IConsumer<PizzaOrdered>
+    IEventProducer<string, PizzaDispatched> producer) : IConsumer<PizzaOrdered>
 {
     public async Task ConsumeAsync(ConsumeContext<PizzaOrdered> context, CancellationToken ct)
     {
         await producer.ProduceAsync(..., ct);
-        // Transaction committed automatically on success, rolled back on failure.
+        // Transaction commits on success, rolls back on failure.
     }
 }
 ```
+
+For the full transactional outbox story, see [Outbox](../../outbox/).
 
 ## Per-consumer middleware
 
@@ -246,7 +238,7 @@ group.AddConsumer<PizzaOrderedConsumer>(consumer =>
 });
 ```
 
-This is the innermost middleware layer for that consumer, running inside any group-level middleware.
+This runs inside any group-level middleware.
 
 ## Consumer group middleware
 
@@ -261,19 +253,49 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-For error handling, validation, circuit breakers, and rate limiting at the group level, see [Error Policies](../../error-handling/error-policies/) and [Resilience](../../error-handling/resilience/).
+For error handling, circuit breakers, and rate limiting at the group level, see [Error Policies](../../error-handling/error-policies/) and [Resilience](../../error-handling/resilience/).
 
 ## Graceful shutdown
 
-When the application stops, Emit waits up to `WorkerStopTimeout` (default 30 seconds) for in-flight messages to complete before forcing shutdown:
+When the application stops, Emit waits up to `WorkerStopTimeout` for in-flight messages to complete before forcing shutdown:
 
 ```csharp
-group.WorkerStopTimeout = TimeSpan.FromSeconds(30);
+group.WorkerStopTimeout = TimeSpan.FromSeconds(30);  // default
 ```
+
+## Flow control
+
+`IConsumerFlowControl` lets you pause and resume message delivery without dropping the Kafka connection. The consumer stays in the group and holds its partition assignments; it simply stops receiving new messages until you resume.
+
+```csharp
+public class ExternalHealthMonitor(IConsumerFlowControl flowControl) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var healthy = await CheckExternalDependency(ct);
+
+            if (!healthy)
+                await flowControl.PauseAsync(ct);
+            else
+                await flowControl.ResumeAsync(ct);
+
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+        }
+    }
+}
+```
+
+The primary use case is back-pressure from external dependencies. When a downstream service becomes unhealthy, pausing consumption prevents a flood of failed messages from piling up in your retry queue. No rebalance occurs, so partition assignments are preserved for when you resume.
+
+Both `PauseAsync` and `ResumeAsync` are idempotent: calling `PauseAsync` when already paused, or `ResumeAsync` when already running, is a no-op.
+
+Inject `IConsumerFlowControl` into any service or middleware that needs to influence consumption rate.
 
 ## Message filtering
 
-`IConsumerFilter<TMessage>` lets you skip messages before they reach the handler. Return `false` to short-circuit the pipeline without triggering the error policy — the offset is committed and the message is silently dropped.
+`IConsumerFilter<TMessage>` lets you skip messages before they reach the handler. Return `false` to short-circuit the pipeline without triggering the error policy; the offset is committed and the message is silently dropped.
 
 ```csharp
 public class ActiveOrderFilter : IConsumerFilter<PizzaOrdered>
@@ -303,15 +325,11 @@ consumer.Filter<PizzaOrdered>(async (ctx, ct) =>
     await featureFlags.IsEnabledAsync("pizza-kitchen", ct));
 ```
 
+Multiple filters can be registered on the same consumer. All registered filters must return `true` for the message to proceed; AND logic. If any filter returns `false`, the message is skipped and no further filters are evaluated.
+
 ## Consumer observers
 
-`IKafkaConsumerObserver` provides Kafka-specific lifecycle events. Register it on the Kafka builder:
-
-```csharp
-kafka.AddConsumerObserver<MyKafkaObserver>();
-```
-
-All methods have default no-op implementations — implement only the ones you care about:
+`IKafkaConsumerObserver` provides Kafka-specific lifecycle events. All methods have default no-op implementations; implement only the ones you care about:
 
 | Method | Event record | When it fires |
 |---|---|---|
@@ -325,12 +343,14 @@ All methods have default no-op implementations — implement only the ones you c
 | `OnOffsetCommitErrorAsync` | `OffsetCommitErrorEvent(GroupId, Offsets, Exception)` | Offset commit fails |
 | `OnDeserializationErrorAsync` | `DeserializationErrorEvent(GroupId, Topic, Partition, Offset, Exception)` | Message fails deserialization before pipeline entry |
 
-`OnConsumerFaultedAsync` and `OnPartitionsLostAsync` are the most operationally important — they signal conditions that require attention rather than normal lifecycle transitions.
+`OnConsumerFaultedAsync` and `OnPartitionsLostAsync` are the most operationally significant; they signal conditions that require attention rather than normal lifecycle transitions.
 
-For transport-agnostic consume lifecycle hooks, use `IConsumeObserver` at the global level:
+The three partition events each represent a distinct situation. `OnPartitionsAssignedAsync` fires during a normal rebalance when new partitions become ready; use it to initialize per-partition state such as caches or counters. `OnPartitionsRevokedAsync` fires during a cooperative (planned) rebalance before the partition moves to another consumer; you have a window here to flush state or commit any side effects. `OnPartitionsLostAsync` is different in kind: it fires after an unclean loss, typically a session timeout, where the partition has already been reassigned. Any in-progress work on those partitions may be duplicated by the new owner, so do not attempt to flush; just clean up local state and move on.
+
+Register on the Kafka builder:
 
 ```csharp
-emit.AddConsumeObserver<MyConsumeObserver>();
+kafka.AddConsumerObserver<MyKafkaObserver>();
 ```
 
-See [Observers](../../observability/observers/) for details on both.
+For transport-agnostic consume lifecycle hooks, use `IConsumeObserver` at the global level. See [Observers](../../observability/observers/) for details on both.

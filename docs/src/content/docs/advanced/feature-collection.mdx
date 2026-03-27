@@ -20,7 +20,7 @@ if (feature is not null)
 }
 ```
 
-`Get<T>` returns `null` if the feature is not present. Features are optional by design.
+`Get<T>` returns `null` if the feature is not present. Features are optional by design; middleware that reads them should always null-check before using them.
 
 ### Writing a feature
 
@@ -28,13 +28,13 @@ if (feature is not null)
 context.Features.Set<IMyCustomFeature>(new MyCustomFeature(value));
 ```
 
-Later middleware in the same pipeline can read it.
+Later middleware in the same pipeline can read it. Features are scoped to the lifetime of the context.
 
 ### Built-in features
 
 #### IResponseFeature
 
-For request-response patterns (mediator), carries the response back to the caller. Not present for Kafka consumers.
+For request-response patterns via the mediator. Carries the response back to the caller. Not present for broker consumers.
 
 | Member | Description |
 |---|---|
@@ -43,7 +43,7 @@ For request-response patterns (mediator), carries the response back to the calle
 
 ## Payload bag
 
-The payload bag stores transport-specific objects keyed by their CLR type. Unlike the feature collection (which uses interface-based features), the payload bag stores concrete types directly.
+The payload bag stores transport-specific objects keyed by their CLR type. Unlike features (which use interface keys), the payload bag stores concrete types directly. Use it when you want to pass a fully-typed object that does not need an interface contract.
 
 ### Writing a payload
 
@@ -65,7 +65,7 @@ if (payload is not null)
 
 #### KafkaTransportContext\<TKey\>
 
-On the **consume side**, `KafkaTransportContext<TKey>` is set as the `TransportContext` on `ConsumeContext<T>`. It carries all Kafka-specific metadata plus the deserialized message key:
+On the consume side, `KafkaTransportContext<TKey>` is set as the `TransportContext` on `ConsumeContext<T>`. It carries all Kafka-specific metadata plus the deserialized message key:
 
 ```csharp
 if (context.TransportContext is KafkaTransportContext<string> kafka)
@@ -75,7 +75,7 @@ if (context.TransportContext is KafkaTransportContext<string> kafka)
 }
 ```
 
-On the **produce side**, the same type is stored as a payload on `SendContext<T>` so the terminal can extract the key:
+On the produce side, the same type is stored as a payload on `SendContext<T>` so the terminal producer can extract the key:
 
 ```csharp
 var kafka = context.TryGetPayload<KafkaTransportContext<string>>();
@@ -84,7 +84,7 @@ var kafka = context.TryGetPayload<KafkaTransportContext<string>>();
 
 ## Context properties
 
-Most metadata that middleware needs is available directly on the context, not through features or payloads:
+Most metadata middleware needs is available directly on the context, without going through features or payloads. This table is the authoritative reference; the consumers page links here rather than maintaining its own copy.
 
 | Property | Location | Description |
 |---|---|---|
@@ -96,7 +96,7 @@ Most metadata that middleware needs is available directly on the context, not th
 | `Headers` | `ConsumeContext<T>` | Message headers (delegated from `TransportContext`) |
 | `RetryAttempt` | `ConsumeContext<T>` | Current retry count (0 on first attempt) |
 | `Transaction` | `ConsumeContext<T>` | Active transaction context, if any |
-| `TransportContext` | `ConsumeContext<T>` | Full transport metadata (raw bytes, headers, provider ID) |
+| `TransportContext` | `ConsumeContext<T>` | Full transport metadata: raw bytes, headers, provider ID |
 
 ### Extracting transport info from URIs
 

@@ -9,10 +9,10 @@ All configuration in Emit is validated at startup via `IValidateOptions<T>`. Mis
 
 Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persistence provider. These options control the background worker that delivers outbox entries to the broker. All producers route through the outbox by default when outbox infrastructure is configured; use `topic.Producer(p => p.UseDirect())` to opt out.
 
-| Option | Default | Description |
-|---|---|---|
-| `PollingInterval` | 5s | Minimum time between poll cycles; next poll starts immediately if the previous batch took longer |
-| `BatchSize` | 100 | Max entries fetched per cycle, ordered by sequence (FIFO) |
+| Option | Default | Range | Description |
+|---|---|---|---|
+| `PollingInterval` | `5s` | min `1s` | Minimum time between poll cycles. The next poll starts immediately if the previous batch took longer than this interval. |
+| `BatchSize` | `100` | `1`-`10000` | Max entries fetched per cycle, ordered by sequence (FIFO). |
 
 ## Kafka client options
 
@@ -31,7 +31,7 @@ Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persiste
 
 | Method | Description |
 |---|---|
-| `UseDirect()` | Forces the producer to send messages directly to the broker, bypassing the outbox. Only meaningful when outbox infrastructure is configured. |
+| `UseDirect()` | Forces the producer to send directly to the broker, bypassing the outbox. Only meaningful when outbox infrastructure is configured. |
 
 ## Kafka producer options
 
@@ -46,9 +46,9 @@ Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persiste
 
 ## Consumer and handler options
 
-| Attribute / Method | Description |
+| Attribute | Description |
 |---|---|
-| `[Transactional]` | When applied to a consumer or mediator handler class, the pipeline automatically wraps the handler invocation in a transactional unit of work. The transaction is committed on success and rolled back on failure or unhandled exception. |
+| `[Transactional]` | Applied to a consumer or mediator handler class. The pipeline wraps the handler invocation in a unit of work; the transaction commits on success and rolls back on failure. |
 
 ## Kafka consumer group options
 
@@ -66,8 +66,8 @@ Confluent consumer options (also settable on the group):
 
 | Option | Description |
 |---|---|
-| `AutoOffsetReset` | Where to start when no committed offset exists (`Earliest` or `Latest`) |
-| `SessionTimeout` | Broker marks the consumer dead after this without a heartbeat |
+| `AutoOffsetReset` | Where to start when no committed offset exists: `Earliest` or `Latest` |
+| `SessionTimeout` | Broker marks the consumer dead after this period without a heartbeat |
 | `HeartbeatInterval` | How often the consumer sends heartbeats to the broker |
 | `MaxPollInterval` | Maximum time between poll calls before the broker considers the consumer dead |
 | `IsolationLevel` | `ReadUncommitted` or `ReadCommitted` (for transactional producers) |
@@ -85,17 +85,21 @@ Confluent consumer options (also settable on the group):
 
 ## Circuit breaker options
 
+Circuit breaker configuration is covered in detail on the [error policies](../../error-handling/error-policies/) page. The short form:
+
 ```csharp
 group.CircuitBreaker(cb =>
 {
-    cb.FailureThreshold(5)
-    cb.SamplingWindow(TimeSpan.FromSeconds(60))
-    cb.PauseDuration(TimeSpan.FromSeconds(30))
-    cb.TripOn<HttpRequestException>()  // optional; default trips on any exception
-})
+    cb.FailureThreshold(5);
+    cb.SamplingWindow(TimeSpan.FromSeconds(60));
+    cb.PauseDuration(TimeSpan.FromSeconds(30));
+    cb.TripOn<HttpRequestException>(); // optional; default trips on any exception
+});
 ```
 
-## DLQ options
+## Dead letter options
+
+Dead letter configuration is covered on the [error policies](../../error-handling/error-policies/) page. The short form:
 
 ```csharp
 kafka.DeadLetter("orders.dlt");
@@ -110,36 +114,34 @@ kafka.DeadLetter("orders.dlt", dlq =>
 });
 ```
 
-The DLQ topic name is required. The topic is registered as a regular `byte[]` topic and participates in topic verification and auto-provisioning.
+The DLQ topic participates in topic verification and auto-provisioning like any other topic.
 
 ## Auto-provisioning options
 
-Call `kafka.AutoProvision()` to enable automatic topic creation at startup. Per-topic creation options are configured via `topic.Provisioning(...)`:
+Call `kafka.AutoProvision()` to enable automatic topic creation at startup. Per-topic creation options are configured via `topic.Provisioning(...)`. See [Kafka Setup: Auto-provisioning](../../kafka/setup/#auto-provisioning) for usage examples.
 
 | Option | Default | Description |
 |---|---|---|
 | `NumPartitions` | broker default | Number of partitions |
 | `ReplicationFactor` | broker default | Number of replicas |
-| `Retention` | 7 days | How long messages are retained (`null` = infinite) |
+| `Retention` | `7 days` | How long messages are retained (`null` = infinite) |
 | `RetentionBytes` | no limit | Maximum partition size before old segments are discarded |
 | `CleanupPolicy` | `Delete` | `Delete`, `Compact`, or `DeleteAndCompact` |
-| `DeleteRetention` | 1 day | Tombstone retention for compacted topics |
+| `DeleteRetention` | `1 day` | Tombstone retention for compacted topics |
 | `CompressionType` | `Producer` | `Producer`, `Uncompressed`, `Gzip`, `Snappy`, `Lz4`, or `Zstd` |
 | `MinCleanableDirtyRatio` | `0.5` | Minimum dirty-to-total ratio before compaction |
 | `MinCompactionLag` | `0` | Minimum time before compaction |
 | `MaxCompactionLag` | none | Maximum time before compaction |
 
-See [Kafka Setup — Auto-provisioning](../../kafka/setup/#auto-provisioning) for usage examples.
-
 ## Leader election options
 
-Controls how Emit elects a leader across instances. Tuning is rarely needed except in high-latency networks or when the default lease duration is too long for your failover requirements.
+Controls how Emit elects a leader across instances. Tuning is rarely needed except in high-latency networks or when the default lease duration is too aggressive for your failover requirements.
 
 | Option | Default | Description |
 |---|---|---|
 | `HeartbeatInterval` | `15s` | How often each node attempts to renew leadership |
 | `LeaseDuration` | `60s` | How long a lease lasts; another node takes over if not renewed in time |
-| `QueryTimeout` | `5s` | Max time for a heartbeat database query; node drops leadership on timeout |
+| `QueryTimeout` | `5s` | Max time for a heartbeat database query; the node drops leadership on timeout |
 | `NodeRegistrationTtl` | `90s` | How long before a silent node is considered dead and removed |
 | `InstanceId` | `MachineName` | Human-readable node identifier visible in leader records |
 
@@ -169,6 +171,23 @@ emit.ConfigureDaemons(d =>
 });
 ```
 
+## Lock cleanup options
+
+Applies to the EF Core persistence provider only. Controls how often expired distributed lock rows are purged from the database.
+
+| Option | Default | Range | Description |
+|---|---|---|---|
+| `CleanupInterval` | `5 minutes` | min `1 minute` | How often the cleanup worker runs |
+
+## Tracing options
+
+| Option | Default | Description |
+|---|---|---|
+| `Enabled` | `true` | Master switch for all Emit trace activity |
+| `CreateRootActivities` | `true` | Creates a root span when no parent trace context is present |
+| `PropagateBaggage` | `true` | Forwards W3C baggage across message boundaries |
+| `MaxBaggageSizeBytes` | `8192` | Maximum baggage payload size in bytes (range: `1024`-`65536`) |
+
 ## OpenTelemetry instrumentation options
 
 | Option | Default | Description |
@@ -185,10 +204,12 @@ Call `options.EnrichWithTag("key", "value")` to add a global dimension to all in
 ## Middleware lifetimes
 
 ```csharp
-group.Use<MyMiddleware>(MiddlewareLifetime.Singleton);  // default: one shared instance
-group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);     // one instance per message
+group.Use<MyMiddleware>(MiddlewareLifetime.Singleton); // default: one shared instance
+group.Use<MyMiddleware>(MiddlewareLifetime.Scoped);    // one instance per message
 ```
+
+See [Custom Middleware](../custom-middleware/) for registration details and lifetime semantics.
 
 ## Validation on startup
 
-All options classes implement `IValidateOptions<T>` and are registered with `ValidateOnStart()`. If a required field is missing or a value is out of range, the application will throw on startup before accepting any requests. You will see a descriptive error in the logs pointing to the misconfigured option.
+All options classes implement `IValidateOptions<T>` and are registered with `ValidateOnStart()`. If a required field is missing or a value falls outside its allowed range, the application throws at startup with a descriptive error pointing to the misconfigured option. You will not discover bad configuration at 2am when a message finally exercises that code path.

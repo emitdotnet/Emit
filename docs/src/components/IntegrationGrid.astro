@@ -6,7 +6,7 @@ const integrations = [
     icon: `${base}/icons/mongodb.svg`,
     title: 'MongoDB',
     description:
-      'Document-native persistence. Outbox entries land in the same session as your business write — one atomic operation, no two-phase commit required.',
+      'Document-native persistence with atomic outbox writes.',
     link: `${base}/persistence/mongodb/`,
     brandColor: '#47A248',
   },
@@ -14,7 +14,7 @@ const integrations = [
     icon: `${base}/icons/postgresql.svg`,
     title: 'PostgreSQL',
     description:
-      'EF Core over PostgreSQL. Bring your own DbContext; Emit extends it with outbox tables and IDENTITY-sequenced entries. No separate migration tool needed.',
+      'EF Core persistence with your own DbContext.',
     link: `${base}/persistence/efcore/`,
     brandColor: '#4169E1',
   },
@@ -22,7 +22,7 @@ const integrations = [
     icon: `${base}/icons/kafka.svg`,
     title: 'Apache Kafka',
     description:
-      'Typed producers, consumer groups, fan-out, content-based routing, circuit breakers, and dead-letter queues. The entire Kafka stack, wired and ready.',
+      'Producers, consumer groups, and the full messaging stack.',
     link: `${base}/kafka/setup/`,
     brandColor: '#FF6B00',
   },
@@ -30,7 +30,7 @@ const integrations = [
     icon: `${base}/icons/opentelemetry.svg`,
     title: 'OpenTelemetry',
     description:
-      'W3C trace propagation, per-subsystem metrics, and structured logging across every layer. Zero-friction observability — no configuration tax.',
+      'Distributed tracing, metrics, and structured logging built in.',
     link: `${base}/observability/tracing/`,
     brandColor: '#F5A800',
   },

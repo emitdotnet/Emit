@@ -3,13 +3,13 @@ title: Observers
 description: Lifecycle hooks for produce, consume, and outbox operations without writing middleware.
 ---
 
-Observers are a lightweight alternative to middleware for cross-cutting concerns. They receive lifecycle notifications at fixed points (before, after, on error) without needing to call `next`. They are simpler than middleware when you don't need to intercept or transform the message, only observe it.
+Observers are a lightweight alternative to middleware for cross-cutting concerns. They receive lifecycle notifications at fixed points (before, after, on error) without needing to call `next`. Use them when you want to observe the pipeline, not intercept it.
 
 Exceptions thrown by observers are caught and logged individually. A failing observer never affects other observers or the message pipeline.
 
 ## IConsumeObserver
 
-Receives notifications for every inbound message, across all transport consumers:
+Receives notifications for every inbound message across all transport consumers:
 
 ```csharp
 public class AuditConsumeObserver(IAuditLog audit) : IConsumeObserver
@@ -34,7 +34,7 @@ public class AuditConsumeObserver(IAuditLog audit) : IConsumeObserver
 }
 ```
 
-All three methods have default implementations that return `Task.CompletedTask`, so you only implement what you need.
+All three methods have default implementations that return `Task.CompletedTask`, so you only need to implement what you care about.
 
 Register at the global level:
 
@@ -89,7 +89,7 @@ Fires for mediator request/response operations.
 | `OnHandledAsync<T>(MediatorContext<T>)` | After the handler completes successfully |
 | `OnHandleErrorAsync<T>(MediatorContext<T>, Exception)` | If the handler throws |
 
-Register on the mediator builder, not on `EmitBuilder`:
+`IMediatorObserver` is registered on the mediator builder, not on `EmitBuilder`:
 
 ```csharp
 emit.AddMediator(mediator =>
@@ -98,11 +98,32 @@ emit.AddMediator(mediator =>
 });
 ```
 
+## IDaemonObserver
+
+Fires when daemon assignments change on the current node.
+
+| Method | When it fires |
+|---|---|
+| `OnDaemonAssignedAsync` | A daemon was assigned to this node (before it starts) |
+| `OnDaemonStartedAsync` | The daemon has started running on this node |
+| `OnDaemonStoppedAsync` | The daemon stopped cleanly on this node |
+| `OnDaemonRevokedAsync` | The leader revoked the daemon from this node |
+
+All four methods receive `(string daemonId, Guid nodeId, CancellationToken)`.
+
+Register globally:
+
+```csharp
+emit.AddDaemonObserver<MyDaemonObserver>();
+```
+
+The built-in outbox daemon (`emit:outbox`) is the most common daemon you will observe. Use `OnDaemonRevokedAsync` to detect when outbox processing shifts to another node during a rebalance.
+
 ## Observer vs. middleware
 
-Use observers when you need simple before/after/error hooks and do not need to:
+Observers are the right tool when you need simple before/after/error hooks and do not need to:
 - Intercept or modify the message
 - Short-circuit the pipeline
-- Call async code that the pipeline should wait for in a specific position
+- Execute async code at a specific position relative to other middleware
 
-Use middleware when you need any of the above, or when you need fine-grained control over execution order relative to other middleware.
+Use middleware when you need any of the above, or when execution order matters relative to other pipeline stages.

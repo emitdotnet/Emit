@@ -3,19 +3,17 @@ title: Transactional Outbox
 description: How Emit's outbox delivers messages reliably without the dual-write problem.
 ---
 
-The transactional outbox solves the dual-write problem by ensuring that your business data and your message enqueue happen in the same database transaction. Either both commit, or neither does.
+The transactional outbox solves the dual-write problem: your business data and your message enqueue happen in the same database transaction. Either both commit, or neither does. Your service cannot write to the database without the message following, and cannot send a message without the database write persisting.
 
 ## How it works
 
-1. **Atomic write:** When `ProduceAsync` is called within a transaction scope, the outbox entry is written to the database in the same session as your business data. Both commit together.
+1. **Atomic write.** When `ProduceAsync` is called within a transaction scope, the outbox entry is written to the database in the same transaction as your business data. Both commit together.
 
-2. **Background delivery:** A [daemon](../concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the broker. Your endpoint returns immediately after the commit.
+2. **Background delivery.** A [daemon](../concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the message broker. Your endpoint returns immediately after the commit.
 
-3. **Node tracking:** Each entry records the `NodeId` of the node that enqueued it, set automatically from `INodeIdentity`. This lets you trace message provenance to the originating node.
+3. **Delete on success.** Once delivery is confirmed, the entry is deleted. No status fields, no state machine: entry present means pending, entry absent means delivered.
 
-4. **Delete on success:** Once delivery succeeds, the entry is deleted. There are no intermediate status fields: entry present means pending, entry absent means delivered.
-
-5. **Automatic retry:** If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
+4. **Automatic retry.** If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
 
 ## Choosing your approach
 
@@ -28,7 +26,9 @@ Pick the approach that fits your context:
 | Hosted service or background job | EF Core or MongoDB | `IUnitOfWork` |
 | Anything needing conditional commit logic | EF Core or MongoDB | `IUnitOfWork` |
 
-**`[Transactional]` attribute:** the simplest option for consumers and handlers. Add the attribute to your class and write your business logic. The pipeline handles begin, commit, and rollback automatically. Each retry attempt gets a fresh transaction.
+### `[Transactional]` attribute
+
+The simplest option for consumers and handlers. Add the attribute to your class and the pipeline handles begin, commit, and rollback automatically. Each retry attempt gets a fresh transaction.
 
 ```csharp
 [Transactional]
@@ -38,18 +38,39 @@ public sealed class MyHandler : IRequestHandler<MyCommand>
     {
         await eventRepository.InsertAsync(request.Event, ct);
         await producer.ProduceAsync(..., ct);
-        // Transaction is managed automatically by the middleware.
+        // Transaction committed automatically by middleware.
     }
 }
 ```
 
-**Implicit (EF Core only):** produce messages and call `SaveChangesAsync()`. The outbox entry and your business data share the same change tracker, so they're flushed atomically in a single implicit database transaction. No ceremony needed.
+### Implicit (EF Core only)
 
-**`IUnitOfWork`:** for scenarios outside the pipeline (hosted services, background jobs) or when you need explicit control over when to commit or rollback. Inject `IUnitOfWork`, call `BeginAsync`, do your work, then `CommitAsync`. Works identically for EF Core and MongoDB. See the [EF Core](../persistence/efcore/) and [MongoDB](../persistence/mongodb/) persistence pages for provider-specific examples.
+Produce messages and call `SaveChangesAsync`. The outbox entry and your business entities share the same EF Core change tracker, so they're flushed atomically in a single implicit database transaction. No ceremony needed.
+
+```csharp
+public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
+{
+    dbContext.PizzaOrders.Add(new PizzaOrder(request));
+    await producer.ProduceAsync(..., ct);
+    await dbContext.SaveChangesAsync(ct);
+}
+```
+
+### `IUnitOfWork`
+
+For scenarios outside the pipeline, such as hosted services or background jobs, or when you need explicit control over when to commit or roll back. Inject `IUnitOfWork`, call `BeginAsync`, do your work, then `CommitAsync`. Works with both EF Core and MongoDB.
+
+```csharp
+await using var tx = await unitOfWork.BeginAsync(ct);
+// ... business writes and produce calls ...
+await tx.CommitAsync(ct);
+```
+
+If anything throws before `CommitAsync`, `await using` aborts the transaction automatically. For provider-specific examples, see [EF Core](../persistence/efcore/) and [MongoDB](../persistence/mongodb/).
 
 ## Setup
 
-Call `UseOutbox()` on your persistence provider to enable the outbox infrastructure. When `UseOutbox()` is configured, all producers route through the outbox by default. Call `UseDirect()` on any producer that should bypass the outbox.
+Call `UseOutbox()` on your persistence provider to enable the outbox infrastructure. Once it is configured, all producers route through the outbox by default. Call `UseDirect()` on any producer that should bypass it.
 
 ```csharp
 emit.AddMongoDb(mongo =>
@@ -68,39 +89,41 @@ emit.AddKafka(kafka =>
 
     kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
     {
-        // ... serializers ...
         topic.Producer();  // routes through outbox by default
     });
 
     kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
     {
-        // ... serializers ...
         topic.Producer(p => p.UseDirect());  // bypasses the outbox
     });
 });
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `PollingInterval` | 5 seconds | Minimum time between poll cycles; next poll starts immediately if the previous batch took longer |
-| `BatchSize` | 100 | Maximum entries fetched per poll cycle, ordered by sequence (FIFO) |
+| Option | Default | Range | Description |
+|---|---|---|---|
+| `PollingInterval` | 5 seconds | minimum 1 second | Time between poll cycles. The next poll starts immediately if the previous batch took longer. |
+| `BatchSize` | 100 | 1 to 10,000 | Maximum entries fetched per poll cycle, ordered by sequence (FIFO). |
 
-See [Installation](../getting-started/installation/) for the full setup.
+For provider-specific registration details, see [EF Core](../persistence/efcore/) and [MongoDB](../persistence/mongodb/).
 
 ## Ordering guarantees
 
-Messages are ordered by **group key**. The default group key for a Kafka topic is `kafka:{topic}` (e.g., `kafka:pizzas`). All entries within the same group are delivered strictly in sequence.
+Messages are ordered by group key. The default group key for a Kafka producer is `kafka:{topic}` (for example, `kafka:pizzas`). When a partition key is present, the group key is `kafka:{topic}:{partitionKey}`. All entries within the same group are delivered strictly in sequence.
 
 The worker processes different groups in parallel, so two topics make progress independently. Within a single group, entries are delivered one at a time in enqueue order.
+
+:::note
+With EF Core, entries within a single `SaveChangesAsync` batch are assigned identity column values in database insertion order, which may not match the order you called `Add`. For guaranteed sequence ordering within a group, use separate `SaveChangesAsync` calls or `IUnitOfWork` with separate transactions.
+:::
 
 ## Single-worker guarantee
 
 The outbox worker runs as a [daemon](../concepts/leader-election/#daemon-coordination): exactly one instance in your cluster processes the outbox at any time. If the assigned node goes down, the leader reassigns the daemon to another node within one heartbeat cycle (default: 15 seconds).
 
-This prevents duplicate delivery from concurrent workers processing the same group.
+This prevents concurrent workers from racing on the same group and producing duplicate deliveries.
 
 ## Failure behavior
 
-When delivery to the broker fails, the worker logs the error and leaves the entry in place. It will be retried on the next poll. There is no exponential backoff at the outbox level; that is handled at the broker layer (e.g., Kafka producer retries).
+When delivery to the message broker fails, the worker logs the error and leaves the entry in place. It will be retried on the next poll cycle. There is no exponential backoff at the outbox level; retries at the broker layer (such as Kafka producer retries) handle that.
 
-The outbox is stubborn persistence, not smart retry logic. It keeps trying until it succeeds. If you need to route messages elsewhere after repeated failures, that belongs at the broker layer. The outbox guarantees at-least-once delivery; everything else is upstream.
+The outbox is stubborn persistence, not smart retry logic. It keeps trying until it succeeds. If you need dead-lettering or routing after repeated failures, that belongs at the broker layer. The outbox guarantees at-least-once delivery; everything else is upstream.

@@ -44,7 +44,7 @@ builder.Services.AddEmit(emit =>
         mongo.Configure((sp, ctx) =>
         {
             ctx.Client = sp.GetRequiredService<IMongoClient>();
-            ctx.Database = ctx.Client.GetDatabase("pizzeria-db");
+            ctx.Database = ctx.Client.GetDatabase("my-db");
         })
         .UseOutbox()
         .UseDistributedLock();
@@ -57,31 +57,32 @@ builder.Services.AddEmit(emit =>
             cfg.BootstrapServers = "localhost:9092";
         });
 
-        kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+        kafka.Topic<string, OrderPlaced>("orders", topic =>
         {
             topic.Producer();
-
-            topic.ConsumerGroup("pizza-kitchen", group =>
+            topic.ConsumerGroup("order-processor", group =>
             {
-                group.AddConsumer<PizzaOrderedConsumer>();
+                group.AddConsumer<OrderPlacedConsumer>();
             });
         });
     });
 });
 ```
 
-`AddEmit` returns your `IServiceCollection`, so it chains normally with the rest of your registration.
+`AddEmit` returns `IServiceCollection`, so it chains normally with the rest of your registration.
 
-Call `UseOutbox()` on your persistence provider to enable the transactional outbox infrastructure (outbox table/collection, background worker). When outbox infrastructure is enabled, all producers route through the outbox by default, guaranteeing exactly-once delivery. To opt out a specific producer for low-latency at-most-once delivery, call `UseDirect()` on that producer. You can mix outbox and direct producers on the same Kafka registration.
+`UseOutbox()` and `UseDistributedLock()` are both opt-in. Call `UseOutbox()` to enable the transactional outbox infrastructure: when active, all producers route through the outbox by default, giving you atomic writes and guaranteed delivery. To bypass the outbox for a specific producer, call `UseDirect()` on that producer. You can mix outbox and direct producers freely.
 
-`UseDistributedLock()` is also opt-in. You can use Emit purely as a Kafka integration layer without pulling in any persistence package at all.
+`UseDistributedLock()` is independent of the outbox. You can use Emit purely as a broker integration layer without any persistence package at all.
 
 ## What gets registered
 
-Emit registers its own background services (outbox worker, leader election, offset committer) automatically. You don't start them manually; they're `BackgroundService` implementations that the host lifecycle manages.
+Emit registers its own background services automatically: the outbox worker, leader election, and offset committer are all `BackgroundService` implementations managed by the host lifecycle. You don't start them manually.
 
-Configuration is validated at startup with `IValidateOptions<T>`. If something is misconfigured, you'll find out when the application starts, not three hours into a production incident.
+All configuration is validated at startup via `IValidateOptions<T>` with `ValidateOnStart()`. Misconfiguration surfaces when the application starts, not during a production incident.
 
-## A note on DI lifetimes
+## DI lifetimes
 
-`IEventProducer<TKey, TValue>` is registered as **scoped**. Inject it into controllers, endpoint handlers, or any scoped service. If you need to use it from a singleton, inject `IServiceScopeFactory` and create a scope per operation.
+`IEventProducer<TKey, TValue>` is registered as **scoped**. Inject it into controllers, endpoint handlers, or any scoped service. If you need it from a singleton, inject `IServiceScopeFactory` and create a scope per operation.
+
+See the [Quickstart](../quickstart/) for a full working example.

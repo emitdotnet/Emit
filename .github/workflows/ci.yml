@@ -28,7 +28,14 @@ jobs:
       run: dotnet build --no-restore
 
     - name: Run unit tests
-      run: dotnet test tests/Emit.UnitTests/Emit.UnitTests.csproj --no-build --verbosity normal
+      run: dotnet test tests/Emit.UnitTests/Emit.UnitTests.csproj --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
+
+    - name: Upload unit test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-test-results
+        path: tests/Emit.UnitTests/TestResults/unit-tests.trx
 
     - name: Check code formatting
       run: dotnet format --verify-no-changes
@@ -51,4 +58,11 @@ jobs:
       run: dotnet build --no-restore
 
     - name: Run integration tests
-      run: dotnet test tests/Emit.IntegrationTests/Emit.IntegrationTests.csproj --no-build --verbosity normal
+      run: dotnet test tests/Emit.IntegrationTests/Emit.IntegrationTests.csproj --no-build --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
+
+    - name: Upload integration test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-results
+        path: tests/Emit.IntegrationTests/TestResults/integration-tests.trx

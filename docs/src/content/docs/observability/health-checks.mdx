@@ -56,12 +56,12 @@ Every method accepts the same optional parameters:
 ```csharp
 builder.Services.AddHealthChecks()
     .AddEmitKafka(
-        name: "kafka",
+        name: "emit-kafka",
         failureStatus: HealthStatus.Degraded,
         tags: ["messaging"],
         timeout: TimeSpan.FromSeconds(10))
     .AddEmitMongoDB(
-        name: "mongodb",
+        name: "emit-mongodb",
         failureStatus: HealthStatus.Degraded,
         tags: ["database"]);
 ```
@@ -71,7 +71,7 @@ builder.Services.AddHealthChecks()
 | `name` | `emit-kafka` / `emit-mongodb` / `emit-postgresql` | Name shown in health check results |
 | `failureStatus` | `Unhealthy` | Status reported on failure; use `Degraded` to avoid hard-failing readiness probes |
 | `tags` | `["emit", "<provider>"]` | Tags for filtering checks by endpoint |
-| `timeout` | 30 s (ASP.NET Core default), 5 s for Kafka | Per-check timeout |
+| `timeout` | 30 s (5 s for Kafka) | Per-check timeout |
 
 ## Filtering by tag
 
