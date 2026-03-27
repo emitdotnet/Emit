@@ -103,30 +103,27 @@ emit.AddMediator(mediator =>
 });
 ```
 
-The context flowing through all middleware layers is `MediatorContext<TRequest>`.
+The context flowing through all middleware layers is `MediatorContext<TRequest>`, which extends `MessageContext<T>`.
 
 ## Observers
 
-`IMediatorObserver` provides lifecycle hooks without writing middleware:
+`IMediatorObserver` provides lifecycle hooks without writing middleware. An observer receives three callbacks: `OnHandlingAsync` (before the handler runs), `OnHandledAsync` (after successful completion), and `OnHandleErrorAsync` (on exception):
 
 ```csharp
 public class AuditObserver : IMediatorObserver
 {
     public Task OnHandlingAsync<T>(MediatorContext<T> context)
     {
-        // Called before the handler
         return Task.CompletedTask;
     }
 
     public Task OnHandledAsync<T>(MediatorContext<T> context)
     {
-        // Called after successful completion
         return Task.CompletedTask;
     }
 
     public Task OnHandleErrorAsync<T>(MediatorContext<T> context, Exception exception)
     {
-        // Called on exception
         return Task.CompletedTask;
     }
 }
@@ -142,7 +139,7 @@ Observer exceptions are swallowed and logged; a failing observer never interrupt
 
 ## Transactional handlers
 
-Mediator handlers can participate in the transactional outbox by decorating the handler class with `[Transactional]`:
+Mediator handlers participate in the transactional outbox by decorating the handler class with `[Transactional]`. See the [Transactional Outbox](../outbox/) page for full details on what that implies for transaction scope and retry behavior.
 
 ```csharp
 [Transactional]
@@ -154,7 +151,7 @@ public sealed class CreateOrderHandler(
     {
         db.Orders.Add(cmd.Order);
         await producer.ProduceAsync(..., ct);
-        // SaveChanges and transaction commit handled by middleware.
+        // SaveChanges and transaction commit are handled by middleware.
     }
 }
 ```

@@ -8,25 +8,17 @@ You don't need to do anything to see it work. A simulator fires realistic events
 
 - **Transactional outbox** — the event is saved to the database and enqueued to Kafka in one atomic transaction. Kill the app mid-flight; nothing is lost.
 - **Mediator** — the API endpoint dispatches a command and stays out of everything else.
-- **Auto-provisioning** — `kafka.AutoProvision()` creates all required Kafka topics at startup. No manual topic creation needed.
-- **Dead-letter topic** — `kafka.DeadLetter("building.events.dlt")` routes permanently failed messages to a dead-letter topic after retries are exhausted.
+- **Auto-provisioning** — all required Kafka topics are created at startup. No manual topic creation needed.
+- **Dead-letter topic** — permanently failed messages are routed to `building.events.dlt` after retries are exhausted.
 - **Kafka router consumer** (`building.classifier`) — routes on `eventType`. Only `access.denied` events are handled; everything else is discarded. This is the point of the router.
 - **Kafka simple consumer** (`building.watchdog`) — handles every single event, upserts a heartbeat per device. Total contrast to the router above.
-- **Health checks** — `/health` endpoint reports Kafka and database (MongoDB or PostgreSQL) health.
-- **OpenTelemetry** — Prometheus metrics + Tempo traces, explored directly in Grafana.
-- **Dual persistence** — pick MongoDB or PostgreSQL at startup. All business logic is shared.
+- **FluentValidation** — both consumer groups validate incoming messages. The simulator intentionally produces ~5% invalid events to demonstrate validation failures and dead-lettering.
+- **Health checks** — `/health` endpoint reports Kafka and database health.
+- **OpenTelemetry** — Prometheus metrics and Tempo traces, explored directly in Grafana.
 
 ## Running it
 
-**1. Start the infrastructure** (from the `samples/` directory):
-
-```bash
-docker compose up -d
-```
-
-Give MongoDB ~20 seconds to elect its replica-set primary. Yes, it needs a replica set. Yes, it's a single node. Transactions require it.
-
-**2. Start the app:**
+[Start the infrastructure](../README.md#starting-infrastructure) first, then pick a persistence backend:
 
 ```bash
 # MongoDB
@@ -36,11 +28,11 @@ dotnet run --project BuildingSentinel.MongoDB
 dotnet run --project BuildingSentinel.PostgreSQL
 ```
 
-That's it. The simulator kicks in 5 seconds after startup.
+The API is available at `http://localhost:5000` (Scalar docs at `http://localhost:5000/scalar/v1`). The simulator kicks in 5 seconds after startup.
 
 ## What to watch for
 
-**In the console** — you'll see a stream of events like:
+**In the console**, you'll see a stream of events:
 
 ```
 [Simulator] Normal access — badge emp-017 granted at Floor 5 - East Wing
@@ -48,7 +40,7 @@ That's it. The simulator kicks in 5 seconds after startup.
 [RUSH] Morning rush simulation started
 ```
 
-Keep an eye out for the alarm line — it's the payoff:
+Keep an eye out for the alarm line, it's the payoff:
 
 ```
 ALARM: device badge-suspect-01 at Server Room (Main) has 3 consecutive access denials
@@ -56,18 +48,11 @@ ALARM: device badge-suspect-01 at Server Room (Main) has 3 consecutive access de
 
 That's `AccessDeniedConsumer` inside the `building.classifier` group firing after the suspect badge crosses the threshold. Every ~10 seconds the suspect tries again, so it happens pretty fast.
 
-**Every 20 events**, a morning rush plays out — 8 rapid lobby events at 150 ms each. Watch the throughput spike in Grafana.
+**Every 20 events**, a morning rush plays out: 8 rapid lobby events at 150 ms each. Watch the throughput spike in Grafana.
 
-**In the tools** (see the [root README](../README.md) for URLs):
+**In the [observability tools](../README.md#observability-tools):**
 
 - **Grafana** — watch the outbox throughput spike during morning rushes
-- **Grafana → Drilldown → Traces** — search for `BuildingSentinel` and watch a single HTTP request fan out into a DB write, an outbox enqueue, and a Kafka consume — all in one trace
+- **Grafana > Drilldown > Traces** — search for `BuildingSentinel` and watch a single HTTP request fan out into a DB write, an outbox enqueue, and a Kafka consume, all in one trace
 - **Kafka UI** — inspect `building.events` and watch `building.classifier` / `building.watchdog` consumer lag
 - **Mongo Express / pgAdmin** — browse the `building_events`, `access_denial_alerts`, and `device_heartbeats` collections
-
-## Stopping
-
-```bash
-docker compose down        # keep your data
-docker compose down -v     # nuke everything
-```

@@ -18,7 +18,7 @@ Emit does not use `Critical` or `Trace`.
 
 ## Filtering Emit logs
 
-All Emit loggers are in categories that start with `Emit.`. To suppress verbose logs in development:
+All Emit loggers use categories that start with `Emit.`. To suppress verbose logs in development:
 
 ```json
 {
@@ -46,7 +46,7 @@ To see only specific subsystems:
 
 ## Structured log properties
 
-Emit uses named placeholders in log messages, which means structured logging backends (Serilog, Seq, Application Insights) capture them as queryable properties:
+Emit uses named placeholders in log messages, so structured logging backends (Serilog, Seq, Application Insights) capture them as queryable properties:
 
 ```
 Retry {Attempt}/{MaxAttempts} failed for message from {Source}
@@ -57,7 +57,7 @@ Circuit breaker opened, pausing consumer group. Pause duration: {PauseDuration}
 
 `{Source}` is a compact string derived from the `TransportContext` that includes topic, partition, and offset (e.g., `orders[2]@1547`). In a structured log query you can filter on `Source` to find all events for a specific partition.
 
-## Adding log context in your consumers
+## Adding log context in consumers
 
 Standard `ILogger` scopes work in consumers because each message runs in its own scope. Wrap your consumer logic in a scope for richer log context:
 
@@ -80,7 +80,7 @@ public class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume
 
 ## Logging middleware
 
-For cross-cutting log context (for example, adding a tenant ID to every message log), use middleware to add a scope once and let all downstream code benefit:
+For cross-cutting log context (adding a tenant ID to every message log, for example), use middleware to open a scope once and let all downstream code benefit:
 
 ```csharp
 public class TenantLoggingMiddleware<T>(ILogger<TenantLoggingMiddleware<T>> logger, ITenantResolver tenant)
@@ -95,4 +95,4 @@ public class TenantLoggingMiddleware<T>(ILogger<TenantLoggingMiddleware<T>> logg
 }
 ```
 
-Register it at the global or provider level to apply to all consumers.
+Register it at the global or provider level to apply it to all consumers.

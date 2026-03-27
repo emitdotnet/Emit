@@ -12,69 +12,61 @@ dotnet add package Emit.Testing
 `MessageSink<T>` collects consumed messages in memory. Pair it with `SinkConsumer<T>` as a test double for your real consumer:
 
 ```csharp
-public class PizzaKitchenTests
+[Fact]
+public async Task Consumer_writes_to_sink()
 {
-    [Fact]
-    public async Task Consumer_writes_to_sink()
+    // Arrange
+    var sink = new MessageSink<PizzaOrdered>();
+    var services = new ServiceCollection();
+
+    services.AddEmit(emit =>
     {
-        // Arrange
-        var sink = new MessageSink<PizzaOrdered>();
-        var services = new ServiceCollection();
-
-        services.AddEmit(emit =>
+        emit.AddKafka(kafka =>
         {
-            emit.AddKafka(kafka =>
+            kafka.ConfigureClient(cfg => cfg.BootstrapServers = "localhost:9092");
+
+            kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
             {
-                kafka.ConfigureClient(cfg => cfg.BootstrapServers = "localhost:9092");
+                topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
+                topic.SetValueDeserializer(myDeserializer);
 
-                kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
+                topic.ConsumerGroup("test-group", group =>
                 {
-                    topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
-                    topic.SetValueDeserializer(myDeserializer);
-
-                    topic.ConsumerGroup("test-group", group =>
-                    {
-                        group.AddConsumer<SinkConsumer<PizzaOrdered>>();
-                    });
+                    group.AddConsumer<SinkConsumer<PizzaOrdered>>();
                 });
             });
         });
+    });
 
-        services.AddSingleton(sink);
+    services.AddSingleton(sink);
 
-        // Act: produce a message using your real producer, or inject one via Kafka
+    // Act: produce a message using your real producer or inject one directly
 
-        // Assert
-        var context = await sink.WaitForMessageAsync(timeout: TimeSpan.FromSeconds(10));
-        Assert.Equal(expectedPizzaId, context.Message.PizzaId);
-    }
+    // Assert
+    var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(10));
+    Assert.Equal(expectedPizzaId, context.Message.PizzaId);
 }
 ```
 
-For integration tests against a real Kafka broker, Testcontainers spins up the container automatically. See `tests/Emit.IntegrationTests/INSTRUCT.md` for the integration test patterns used in this repository.
+For integration tests against a real broker, Testcontainers spins up the container automatically. See `tests/Emit.IntegrationTests/INSTRUCT.md` for the integration test patterns used in this repository.
 
 ## WaitForMessageAsync
 
-`WaitForMessageAsync` blocks until a message arrives or the timeout elapses:
+`WaitForMessageAsync` blocks until a message arrives or the timeout elapses. It throws `TimeoutException` if the timeout expires, or `OperationCanceledException` if the token fires.
 
-```csharp
-var context = await sink.WaitForMessageAsync(TimeSpan.FromSeconds(10), ct);
-```
-
-Throws `TimeoutException` if the timeout elapses, `OperationCanceledException` if the token fires.
-
-If you expect multiple messages:
+For multiple messages, call it sequentially or inspect `sink.ReceivedMessages` after waiting:
 
 ```csharp
 var first = await sink.WaitForMessageAsync(timeout);
 var second = await sink.WaitForMessageAsync(timeout);
+
+// or after collecting N messages:
+Assert.Equal(3, sink.ReceivedMessages.Count);
 ```
 
-Or inspect `sink.ReceivedMessages` after waiting for the expected count.
+## Testing the mediator
 
-## Testing with the mediator
-
-The mediator is a plain `IMediator` resolved from DI. Test it directly:
+The mediator is a plain `IMediator` resolved from DI:
 
 ```csharp
 [Fact]
@@ -89,7 +81,6 @@ public async Task PlacePizzaOrder_saves_order()
             mediator.AddHandler<PlacePizzaOrderHandler>();
         });
     });
-
     services.AddScoped<IPizzaRepository, InMemoryPizzaRepository>();
 
     var provider = services.BuildServiceProvider();
@@ -106,13 +97,11 @@ public async Task PlacePizzaOrder_saves_order()
 
 ## Testing error handling
 
-Register `SinkConsumer<T>` as the consumer, then produce a message that triggers the error condition. Use `MessageSink<T>.ReceivedMessages` to verify the message either arrived (on success) or did not (on discard/DLQ).
-
-For DLQ assertions, register a second sink on the DLQ topic.
+Register `SinkConsumer<T>` as the consumer, then produce a message that triggers the error condition. Use `sink.ReceivedMessages` to verify the message arrived (on success) or did not (on discard). For DLQ assertions, register a second sink on the DLQ topic.
 
 ## Testing outbox behavior
 
-The outbox adds a database write to the mix. Use real containers (Testcontainers) rather than in-memory fakes; the outbox behavior depends on database-level atomicity that in-memory implementations cannot replicate.
+The outbox adds a database write to the mix. Use real containers via Testcontainers rather than in-memory fakes; the outbox depends on database-level atomicity that no in-memory implementation can replicate.
 
 **Testing with `IUnitOfWork`:**
 
@@ -129,7 +118,7 @@ var msg = await sink.WaitForMessageAsync();
 Assert.Equal("value", msg.Message);
 ```
 
-**Testing EF Core implicit approach:**
+**Testing the EF Core implicit approach:**
 
 ```csharp
 using var scope = host.Services.CreateScope();
@@ -143,7 +132,7 @@ var msg = await sink.WaitForMessageAsync();
 Assert.Equal("value", msg.Message);
 ```
 
-**Testing a `[Transactional]` consumer:** produce to the input topic and assert on the output sink. The consumer handles transaction management automatically.
+**Testing a `[Transactional]` consumer:** produce to the input topic and assert on the output sink. Transaction management is automatic.
 
 ```csharp
 await producer.ProduceAsync(new EventMessage<string, string>("key", "trigger"));

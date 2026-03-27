@@ -23,7 +23,7 @@ public sealed class SubmitBuildingEventHandler(
         await eventRepository.InsertAsync(request.Event, cancellationToken).ConfigureAwait(false);
 
         await producer.ProduceAsync(
-            new EventMessage<string, BuildingEvent>(request.Event.DeviceId, request.Event),
+            request.Event.DeviceId, request.Event,
             cancellationToken).ConfigureAwait(false);
     }
 }

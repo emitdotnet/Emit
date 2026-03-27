@@ -72,6 +72,7 @@ export default defineConfig({
           label: 'Error Handling',
           items: [
             { label: 'Error Policies', link: '/error-handling/error-policies/' },
+            { label: 'Validation', link: '/error-handling/validation/' },
             { label: 'Resilience', link: '/error-handling/resilience/' },
             { label: 'Dead Letter Queue', link: '/error-handling/dead-letter-queue/' },
           ],
@@ -92,7 +93,6 @@ export default defineConfig({
           items: [
             { label: 'Custom Middleware', link: '/advanced/custom-middleware/' },
             { label: 'Testing', link: '/advanced/testing/' },
-            { label: 'Validation', link: '/advanced/validation/' },
             { label: 'Feature Collection', link: '/advanced/feature-collection/' },
             { label: 'Configuration Reference', link: '/advanced/configuration/' },
           ],

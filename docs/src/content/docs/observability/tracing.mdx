@@ -3,7 +3,7 @@ title: Distributed Tracing
 description: OpenTelemetry distributed tracing across the produce, outbox, and consume pipeline.
 ---
 
-Emit instruments the full message lifecycle with OpenTelemetry activities. A trace started in your HTTP handler flows through the outbox and lands in the consumer span, giving you an end-to-end view in any compatible backend (Tempo, Zipkin, Datadog, etc.).
+Emit instruments the full message lifecycle with OpenTelemetry activities. A trace started in your HTTP handler flows through the outbox and lands in the consumer span, giving you an end-to-end view in any compatible backend (Tempo, Zipkin, Datadog, and others).
 
 ## Setup
 
@@ -36,13 +36,13 @@ The `Emit.Provider.*` wildcard captures any additional provider sources added in
 
 ## Trace propagation
 
-Emit propagates the W3C `traceparent` header across the async outbox boundary:
+Emit propagates the W3C `traceparent` header across the async outbox boundary. This is worth understanding because produce and consume happen in different processes at different times, yet the trace stays connected.
 
 1. When `ProduceAsync` is called inside an active activity, Emit captures the `traceparent` and stores it in the outbox entry's `Headers`.
-2. When the outbox worker delivers the entry to the broker, the `traceparent` header is forwarded as a Kafka message header.
+2. When the outbox worker delivers the entry to the broker, the `traceparent` header is forwarded as a message header.
 3. When the consumer processes the message, Emit extracts the `traceparent` and starts a linked consumer span.
 
-This gives you a connected trace even though the produce and consume operations run in different processes at different times.
+The result is a connected trace even across the async gap between producer and consumer.
 
 ## What gets traced
 
@@ -76,7 +76,7 @@ builder.Services.AddEmit(emit =>
 });
 ```
 
-Set `CreateRootActivities = false` if you only want Emit to emit spans when your code is already inside an active trace — useful for keeping background-worker spans from polluting your backend.
+Set `CreateRootActivities = false` if you only want Emit to emit spans when your code is already inside an active trace. This is useful for keeping background-worker spans from polluting your tracing backend.
 
 ## Activity enrichment
 
@@ -96,10 +96,17 @@ public class TenantActivityEnricher : IActivityEnricher
 }
 ```
 
-Register it in DI:
+Register it in DI, then add it to the tracing configuration:
 
 ```csharp
 builder.Services.AddScoped<IActivityEnricher, TenantActivityEnricher>();
+```
+
+```csharp
+emit.ConfigureTracing(tracing =>
+{
+    tracing.AddEnricher<TenantActivityEnricher>();
+});
 ```
 
 For inline enrichment without a dedicated class, register a delegate directly:

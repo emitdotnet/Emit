@@ -12,9 +12,7 @@ public class PizzeriaService(IEventProducer<string, PizzaOrdered> producer)
 {
     public async Task PublishAsync(PizzaOrdered pizza, CancellationToken ct)
     {
-        await producer.ProduceAsync(
-            new EventMessage<string, PizzaOrdered>(pizza.PizzaId.ToString(), pizza),
-            ct);
+        await producer.ProduceAsync(pizza.PizzaId.ToString(), pizza, ct);
     }
 }
 ```
@@ -23,7 +21,7 @@ public class PizzeriaService(IEventProducer<string, PizzaOrdered> producer)
 
 ## EventMessage
 
-`EventMessage<TKey, TValue>` carries the key, value, and optional headers:
+`EventMessage<TKey, TValue>` is a sealed record that carries the key, value, and optional headers:
 
 ```csharp
 // Key + value only
@@ -36,13 +34,46 @@ var msg = new EventMessage<string, PizzaOrdered>(
     [new KeyValuePair<string, string>("x-tenant-id", tenantId)]);
 ```
 
-Headers are passed through to Kafka as-is. Emit also appends its own tracing headers when OpenTelemetry is enabled.
+Headers are forwarded to Kafka as-is. When OpenTelemetry is enabled, Emit appends W3C trace context headers automatically.
+
+## Convenience overloads
+
+`IEventProducer<TKey, TValue>` has extension methods from `EventProducerExtensions` that skip the `EventMessage` wrapper:
+
+```csharp
+// Key + value
+await producer.ProduceAsync(pizza.PizzaId.ToString(), pizza, ct);
+
+// Key + value + headers
+await producer.ProduceAsync(pizza.PizzaId.ToString(), pizza,
+    [new KeyValuePair<string, string>("x-tenant-id", tenantId)], ct);
+```
+
+They construct the `EventMessage` internally. Use them when you don't need to build the message object ahead of time, which is most of the time.
+
+## Headers
+
+Headers are string key-value pairs that travel with the message through the full pipeline:
+
+**Producing:** Set headers on `EventMessage` at produce time, either via the record constructor or a convenience overload.
+
+**Pipeline enrichment:** Emit's `ProduceTracingMiddleware` appends W3C trace context headers (`traceparent`, `tracestate`, `baggage`) and `emit-source-address` before delivery. The canonical header names are defined on `WellKnownHeaders`.
+
+**Outbox path:** Headers are UTF-8 encoded to `byte[]` and stored alongside the message body in the outbox. The background worker forwards them byte-for-byte to Kafka.
+
+**Direct path:** Headers are UTF-8 encoded and attached to the Kafka message directly.
+
+**Consuming:** On the consume side, headers are decoded back to strings and available on `ConsumeContext<T>.Headers` as `IReadOnlyList<KeyValuePair<string, string>>`.
+
+Custom headers survive the full round trip untouched regardless of which delivery mode you use.
 
 ## Outbox mode and direct mode
 
-When outbox infrastructure is configured on a persistence provider (`UseOutbox()`), all producers route through the outbox by default. This ensures transactional guarantees for every message produced within a unit of work.
+Emit supports two delivery modes per producer. For the full explanation of outbox mechanics and transactional guarantees, see [Outbox](../../outbox/).
 
-To opt out a specific producer for low-latency, at-most-once delivery:
+**Outbox mode** is the default when outbox infrastructure is configured on a persistence provider. `ProduceAsync` writes to the database outbox inside the current unit of work, and the background worker delivers to Kafka after the transaction commits.
+
+**Direct mode** calls the Kafka producer immediately and waits for the broker acknowledgement before returning. Opt in per producer:
 
 ```csharp
 kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
@@ -51,9 +82,7 @@ kafka.Topic<string, AnalyticsEvent>("analytics", topic =>
 });
 ```
 
-**Outbox mode** (default when outbox infrastructure is configured): `ProduceAsync` writes to the database outbox inside the current unit of work. The background worker delivers to Kafka later.
-
-**Direct mode** (`p.UseDirect()`): `ProduceAsync` calls the Kafka producer directly and waits for the broker acknowledgement before returning. Use this when you want low-latency and can tolerate the dual-write risk or don't have a database write to coordinate with.
+Use direct mode when you want low latency and can tolerate the dual-write risk, or when there is no database write to coordinate with.
 
 ## Per-producer middleware
 
@@ -92,7 +121,7 @@ public class LoggingMiddleware<T>(ILogger<LoggingMiddleware<T>> logger)
 
 ## Produce observers
 
-`IProduceObserver` gives lifecycle hooks without writing middleware:
+`IProduceObserver` provides lifecycle hooks without writing pipeline middleware. All three methods fire around every `ProduceAsync` call:
 
 ```csharp
 public class ProduceAuditObserver : IProduceObserver

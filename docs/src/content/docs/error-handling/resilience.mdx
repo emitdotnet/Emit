@@ -1,13 +1,13 @@
 ---
 title: Resilience
-description: Circuit breakers and rate limiting for Kafka consumer groups.
+description: Circuit breakers and rate limiting for consumer groups.
 ---
 
-Beyond retry policies, Emit provides two resilience mechanisms at the consumer group level: circuit breakers to stop hammering a downstream system that is clearly broken, and rate limiting to protect a system that is struggling.
+Beyond retry policies, Emit provides two resilience mechanisms at the consumer group level: circuit breakers to stop hammering a downstream system that is clearly broken, and rate limiting to protect one that is struggling.
 
 ## Circuit breaker
 
-A circuit breaker tracks failures in a sliding window. When failures exceed the threshold, it opens, pausing the consumer group entirely until the pause duration elapses.
+A circuit breaker tracks failures in a sliding window. When failures exceed the threshold, it opens and the consumer group pauses entirely until the pause duration elapses.
 
 ```csharp
 topic.ConsumerGroup("order-processor", group =>
@@ -42,7 +42,7 @@ Only the listed exception types increment the failure counter. Other exceptions 
 
 ### States
 
-The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open** and the consumer group is paused at the Kafka level; no new messages are fetched. After `PauseDuration` elapses, the circuit enters **Half-open** and allows one probe message through. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
+The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open** and the consumer group is paused at the broker level; no new messages are fetched. After `PauseDuration` elapses, the circuit enters **Half-open** and allows one probe message through. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
 
 Circuit breaker state transitions are tracked by the `emit.consumer.circuit_breaker.state_transitions` metric and the `emit.consumer.circuit_breaker.state` gauge.
 

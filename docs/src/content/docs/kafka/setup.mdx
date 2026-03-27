@@ -3,7 +3,7 @@ title: Kafka Setup
 description: Connecting Emit to Kafka and registering topics, producers, and consumer groups.
 ---
 
-All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection and topic registration. See [Producers](../producers/) and [Consumers](../consumers/) for the specifics of each.
+All Kafka configuration flows through `AddKafka` on the `EmitBuilder`. This page covers the broker connection, topic registration, and auto-provisioning. See [Producers](../producers/) and [Consumers](../consumers/) for what you can do once topics are wired up.
 
 ## Package
 
@@ -45,7 +45,7 @@ builder.Services.AddEmit(emit =>
 
 ## Client configuration
 
-`ConfigureClient` applies to all producers and consumers. The most common options:
+`ConfigureClient` applies settings that affect all producers and consumers. The most common options:
 
 ```csharp
 kafka.ConfigureClient(cfg =>
@@ -62,7 +62,7 @@ kafka.ConfigureClient(cfg =>
 });
 ```
 
-For producer-specific tuning (batching, compression, idempotence):
+For producer-specific tuning (batching, compression, idempotence), use `ConfigureProducer`:
 
 ```csharp
 kafka.ConfigureProducer(cfg =>
@@ -76,7 +76,7 @@ kafka.ConfigureProducer(cfg =>
 
 ## Schema Registry
 
-If you use Avro, JSON Schema, or Protobuf serializers, configure the Schema Registry connection:
+If you use Avro, JSON Schema, or Protobuf serializers, configure the Schema Registry connection before your topics:
 
 ```csharp
 kafka.ConfigureSchemaRegistry(cfg =>
@@ -90,16 +90,14 @@ See [Serialization](../serialization/) for how to wire schema-aware serializers 
 
 ## Topics
 
-Each topic is declared with `Topic<TKey, TValue>`. The type parameters determine the serializer and deserializer types for that topic.
+Each topic is declared with `Topic<TKey, TValue>`. The type parameters fix the serializer and deserializer types for that topic. You attach a producer, one or more consumer groups, or both:
 
 ```csharp
 kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 {
-    // Serializers (required if this topic has a producer)
     topic.SetKeySerializer(Confluent.Kafka.Serializers.Utf8);
     topic.SetValueSerializer(mySerializer);
 
-    // Deserializers (required if this topic has consumer groups)
     topic.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
     topic.SetValueDeserializer(myDeserializer);
 
@@ -112,11 +110,11 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 });
 ```
 
-A single topic can have both a producer and multiple consumer groups. These are independent; declaring a producer does not require a consumer group on the same topic.
+A topic can have both a producer and multiple consumer groups. Declaring a producer does not require a consumer group on the same topic, and vice versa.
 
 ## Fan-out
 
-Calling `ConsumerGroup` multiple times on the same topic registers separate consumer groups; each group receives every message. The pizza kitchen and the analytics pipeline both get every order:
+Call `ConsumerGroup` multiple times on the same topic to register separate consumer groups. Each group receives every message independently. This is standard Kafka consumer group semantics; Emit adds no special mechanism:
 
 ```csharp
 kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
@@ -133,11 +131,11 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 });
 ```
 
-This is standard Kafka consumer group semantics; Emit does not add any special fan-out mechanism.
+Both groups receive every pizza order. Their offsets and processing are completely independent.
 
 ## Auto-provisioning
 
-By default, Emit verifies that all declared topics exist when the application starts. If a topic is missing, startup fails with an `InvalidOperationException`. Enable auto-provisioning to create missing topics automatically:
+By default, Emit verifies that all declared topics exist at startup. A missing topic causes an `InvalidOperationException` before any message processing begins. Call `AutoProvision()` to create missing topics instead:
 
 ```csharp
 emit.AddKafka(kafka =>
@@ -146,7 +144,6 @@ emit.AddKafka(kafka =>
 
     kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
     {
-        // Per-topic creation options (optional)
         topic.Provisioning(options =>
         {
             options.NumPartitions = 6;
@@ -160,7 +157,7 @@ emit.AddKafka(kafka =>
 });
 ```
 
-Without per-topic `Provisioning`, topics are created with broker defaults and a 7-day retention.
+Without per-topic `Provisioning`, missing topics are created with broker defaults and 7-day retention.
 
 ### Topic creation options
 
@@ -177,29 +174,41 @@ Without per-topic `Provisioning`, topics are created with broker defaults and a 
 | `MinCompactionLag` | `0` | Minimum time a message remains uncompacted |
 | `MaxCompactionLag` | none | Maximum time a message can remain uncompacted |
 
-Compression-specific levels are applied when matching `CompressionType` is set:
+Compression levels apply when the matching `CompressionType` is set:
 
 | Option | Range | Default |
 |---|---|---|
-| `GzipCompressionLevel` | 1–9 (or -1 for default) | -1 |
-| `Lz4CompressionLevel` | 1–17 | 9 |
-| `ZstdCompressionLevel` | negative for fast mode, 1–22 for normal | 3 |
+| `GzipCompressionLevel` | 1-9 (or -1 for default) | -1 |
+| `Lz4CompressionLevel` | 1-17 | 9 |
+| `ZstdCompressionLevel` | negative for fast mode, 1-22 for normal | 3 |
 
 ### How it works
 
-`KafkaTopicVerifier` runs as a hosted service before all other hosted services. It queries the broker for existing topics and compares against all declared topics (including the DLQ topic). When auto-provisioning is enabled, missing topics are created with their configured `TopicCreationOptions`. When disabled, missing topics cause a startup failure.
+`KafkaTopicVerifier` runs as a hosted service before all other hosted services. It queries the broker for existing topics and compares the result against all declared topics, including the dead-letter topic. When auto-provisioning is enabled, missing topics are created with their configured options. When disabled, any missing topic fails startup immediately.
+
+## Dead-letter topic
+
+To route unprocessable messages to a dead-letter topic, call `DeadLetter` on the Kafka builder with the topic name:
+
+```csharp
+emit.AddKafka(kafka =>
+{
+    kafka.DeadLetter("emit-dlq");
+
+    // ...
+});
+```
+
+The dead-letter topic is subject to the same existence check (or auto-provisioning) as all other declared topics.
 
 ## Provider-level middleware
 
-Middleware registered on `kafka.InboundPipeline` or `kafka.OutboundPipeline` runs for all Kafka consumers or producers, respectively:
+Middleware registered on `kafka.InboundPipeline` or `kafka.OutboundPipeline` runs for all Kafka consumers or producers respectively. This is the Provider level of the [pipeline model](../../concepts/pipeline-model/):
 
 ```csharp
 emit.AddKafka(kafka =>
 {
     kafka.InboundPipeline.Use<TracingMiddleware>();
     kafka.OutboundPipeline.Use<SigningMiddleware>();
-    // ...
 });
 ```
-
-This is the Provider level of the [pipeline model](../../concepts/pipeline-model/).

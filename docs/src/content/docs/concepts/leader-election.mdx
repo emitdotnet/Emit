@@ -3,28 +3,38 @@ title: Leader Election & Daemons
 description: How Emit coordinates background work across multiple application instances.
 ---
 
-When you deploy multiple instances of your application, background work like outbox processing must run on exactly one node at a time. Emit handles this automatically through two cooperating systems: **leader election** and **daemon coordination**.
+import Mermaid from '../../../components/Mermaid.astro';
+
+When you run multiple instances of your application, background work like outbox processing must not run on every node simultaneously. Emit handles this through two cooperating systems: leader election decides which node is in charge, and daemon coordination distributes the actual work across the cluster.
 
 ## Leader election
 
-Emit uses a heartbeat-based lease model to elect a single leader across all instances. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap operation. The database itself provides the consistency guarantee; no external consensus service is needed.
+Emit uses a heartbeat-based lease model. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap. The database provides the consistency guarantee; no external consensus service is needed.
 
-Each node is identified by a stable `Guid` generated once at startup and exposed through `INodeIdentity`. The heartbeat worker, metrics, and activity traces all use this same identity. Inject `INodeIdentity` if you need to read the current node's ID; register a custom implementation before `AddEmit` to control the value.
+Each node is identified by a stable `Guid` generated once at startup, exposed through `INodeIdentity`. The heartbeat worker, distributed traces, and metrics all use this same identity, so you can correlate behavior back to a specific instance. Inject `INodeIdentity` to read the current node's ID. Register a custom implementation before `AddEmit()` if you need to control the value (useful in environments where you want a stable identity tied to a pod name or container ID rather than a random GUID).
 
-| Concept | Description |
-|---|---|
-| **Heartbeat** | Every node sends a periodic heartbeat to the database (default: every 15 seconds) |
-| **Lease** | The leader holds a time-limited lease (default: 60 seconds). If not renewed before expiry, another node can claim it |
-| **Takeover** | If the leader stops heartbeating (crash, network partition, shutdown), another node acquires the lease on its next heartbeat cycle |
+The lease model works like this:
 
-Leadership transitions are observable via `ILeaderElectionObserver`:
+- Every live node writes a heartbeat on a configurable interval (default: 15 seconds).
+- The leader holds a time-limited lease (default: 60 seconds). It must renew the lease before it expires or another node can claim it.
+- If a node stops heartbeating (crash, network partition, clean shutdown), its lease expires and the next node to attempt renewal acquires leadership.
 
-- `OnLeaderElectedAsync` — This node just became the leader
-- `OnLeaderLostAsync` — This node just lost leadership
+There is no separate failure detector or quorum calculation. If the database can be reached, leadership can be acquired. If it cannot, nothing runs, which is the safe outcome.
+
+### Observing leadership changes
+
+Register an `ILeaderElectionObserver` to react when leadership changes on the current node:
+
+- `OnLeaderElectedAsync`: this node just became the leader.
+- `OnLeaderLostAsync`: this node just lost leadership.
+- `OnNodeRegisteredAsync`: a node has joined the cluster (visible to all nodes).
+- `OnNodeRemovedAsync`: a node has left the cluster (visible to all nodes).
+
+The first two are useful for triggering leader-only work outside the daemon system. The latter two give you visibility into cluster membership if you want to log or monitor it.
 
 ### Querying leadership status
 
-Inject `ILeaderElectionService` to check the current node's role:
+Inject `ILeaderElectionService` to check the current node's role at any point:
 
 ```csharp
 public class MyService(ILeaderElectionService leaderElection)
@@ -33,40 +43,76 @@ public class MyService(ILeaderElectionService leaderElection)
     {
         if (leaderElection.IsLeader)
         {
-            // This node is the leader
+            // Only the leader reaches this branch
         }
 
-        // Cancels when this node loses leadership
+        // This token cancels when the node loses leadership.
+        // Pass it to long-running leader-only operations.
         var token = leaderElection.LeadershipToken;
     }
 }
 ```
 
+`LeadershipToken` is particularly useful for cooperative cancellation: pass it into any long-running operation so it stops naturally when this node is no longer the leader, rather than having to poll `IsLeader` in a loop.
+
 ## Daemon coordination
 
-The leader doesn't run all background work itself. Instead, it acts as a **coordinator** that assigns work units called *daemons* to nodes in the cluster. This allows Emit to distribute work evenly and reassign it when nodes join or leave.
+The leader does not run all background work itself. Instead, it acts as a coordinator that assigns work units called daemons to nodes in the cluster. This distributes load and handles the reality that nodes come and go.
 
-A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon.
+A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon; additional daemons may be registered for other recurring work.
 
 ### How assignment works
 
-1. **Leader reconciles** — On each heartbeat, the leader reviews all daemon assignments. It assigns unassigned daemons to the least-loaded live node and reassigns daemons from dead nodes.
+<Mermaid code={`sequenceDiagram
+    participant L as Leader node
+    participant DB as Database
+    participant W as Worker node
 
-2. **Nodes process assignments** — Every node (leader or not) checks for assignments directed at it. When a node receives an assignment, it acknowledges and starts the daemon. When an assignment is revoked, it gracefully stops the daemon.
+    loop Every heartbeat
+        L->>DB: Reconcile assignments
+        DB-->>L: Current state
+        L->>DB: Assign unassigned daemons to least-loaded nodes
+    end
 
-3. **Graceful handoff** — When a daemon needs to move (e.g., the assigned node is shutting down), the leader revokes the assignment and waits for the node to drain in-flight work before reassigning elsewhere.
+    W->>DB: Poll for assignments
+    DB-->>W: Assignment for emit:outbox
+    W->>DB: Acknowledge
+    Note over W: Daemon starts running
+
+    L->>DB: Revoke assignment (node leaving)
+    W->>DB: Drain in-flight work
+    W->>DB: Confirm stopped
+    L->>DB: Reassign to another node`} />
+
+On each heartbeat cycle, the leader reviews all daemon assignments: assigning unassigned daemons to the least-loaded live node and reclaiming assignments from nodes that have stopped heartbeating.
+
+Every node (leader included) polls for assignments directed at it. When a node receives an assignment, it acknowledges and starts the daemon. When an assignment is revoked, the node drains in-flight work and confirms it has stopped before the leader reassigns elsewhere.
 
 ### Assignment lifecycle
 
 | State | Meaning |
 |---|---|
-| **Assigning** | Leader assigned the daemon to a node; waiting for acknowledgement |
+| **Assigning** | Leader assigned the daemon; waiting for the node to acknowledge |
 | **Active** | Node acknowledged; daemon is running |
-| **Revoking** | Leader requested shutdown; waiting for the node to stop the daemon |
+| **Revoking** | Leader requested shutdown; waiting for the node to drain and confirm |
 | **Deleted** | Node confirmed shutdown; assignment is cleaned up |
 
-If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds) or fails to drain within `DrainTimeout` (default: 30 seconds), the leader force-reassigns the daemon to another node.
+If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds) or fails to drain within `DrainTimeout` (default: 30 seconds), the leader treats it as unresponsive and force-reassigns the daemon to another node.
 
 ## Configuration
 
-See [Configuration Reference — Leader Election](../../advanced/configuration/#leader-election-options) and [Daemon Coordination](../../advanced/configuration/#daemon-coordination-options) for all tunable options.
+The key options and their defaults:
+
+| Option | Default | Notes |
+|---|---|---|
+| `HeartbeatInterval` | 15 seconds | How often each node writes a heartbeat |
+| `LeaseDuration` | 60 seconds | How long a leadership lease is valid before expiry |
+| `QueryTimeout` | 5 seconds | Timeout for individual database operations in the election system |
+| `NodeRegistrationTtl` | 90 seconds | How long a node's registration persists after its last heartbeat |
+| `InstanceId` | `null` (uses `MachineName`) | Override to assign a stable, human-readable identity to this node |
+| `AcknowledgeTimeout` | 30 seconds | Time allowed for a node to acknowledge a daemon assignment |
+| `DrainTimeout` | 30 seconds | Time allowed for a node to drain in-flight work when a daemon is revoked |
+
+`LeaseDuration` should be meaningfully larger than `HeartbeatInterval`. The default ratio of 4:1 gives the leader four missed heartbeats before another node takes over, which is enough tolerance for transient database latency without leaving work uncoordinated for long after a real failure.
+
+See [Configuration Reference](../../advanced/configuration/#leader-election-options) for the full option set.
