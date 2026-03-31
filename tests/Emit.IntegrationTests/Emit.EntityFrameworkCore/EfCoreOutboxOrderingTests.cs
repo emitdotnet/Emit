@@ -11,7 +11,6 @@ using Emit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Npgsql;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
@@ -21,74 +20,27 @@ using ConfluentKafka = Confluent.Kafka;
 /// and remaining entries are retried on the next poll cycle.
 /// </summary>
 [Trait("Category", "Integration")]
-public class EfCoreOutboxOrderingTests
+public class EfCoreOutboxOrderingTests(
+    PostgreSqlContainerFixture postgresFixture,
+    KafkaContainerFixture kafkaFixture)
     : IAsyncLifetime,
       IClassFixture<PostgreSqlContainerFixture>,
       IClassFixture<KafkaContainerFixture>
 {
-    private readonly string databaseName;
-    private readonly string testConnectionString;
-    private readonly PostgreSqlContainerFixture postgresFixture;
-    private readonly KafkaContainerFixture kafkaFixture;
-
-    public EfCoreOutboxOrderingTests(
-        PostgreSqlContainerFixture postgresFixture,
-        KafkaContainerFixture kafkaFixture)
-    {
-        this.postgresFixture = postgresFixture;
-        this.kafkaFixture = kafkaFixture;
-        databaseName = $"emit_ordering_{Guid.NewGuid():N}"[..30];
-
-        var builder = new NpgsqlConnectionStringBuilder(postgresFixture.ConnectionString)
-        {
-            Database = databaseName,
-            MaxPoolSize = 5,
-            MinPoolSize = 0
-        };
-        testConnectionString = builder.ConnectionString;
-    }
+    private PostgreSqlTestDatabase testDb = null!;
 
     /// <inheritdoc/>
     public async Task InitializeAsync()
     {
         await postgresFixture.InitializeAsync();
         await kafkaFixture.InitializeAsync();
-
-        await using var adminConnection = new NpgsqlConnection(postgresFixture.ConnectionString);
-        await adminConnection.OpenAsync();
-
-        await using var createCmd = adminConnection.CreateCommand();
-        createCmd.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-        await createCmd.ExecuteNonQueryAsync();
-
-        var services = new ServiceCollection();
-        services.AddDbContextFactory<IntegrationTestDbContext>(opts => opts.UseNpgsql(testConnectionString));
-        await using var sp = services.BuildServiceProvider();
-        var factory = sp.GetRequiredService<IDbContextFactory<IntegrationTestDbContext>>();
-        await using var dbContext = await factory.CreateDbContextAsync();
-        await dbContext.Database.EnsureCreatedAsync();
+        testDb = await PostgreSqlTestDatabase.CreateAsync(postgresFixture.ConnectionString, "outboxord");
     }
 
     /// <inheritdoc/>
     public async Task DisposeAsync()
     {
-        NpgsqlConnection.ClearPool(new NpgsqlConnection(testConnectionString));
-
-        await using var adminConnection = new NpgsqlConnection(postgresFixture.ConnectionString);
-        await adminConnection.OpenAsync();
-
-        await using var terminateCmd = adminConnection.CreateCommand();
-        terminateCmd.CommandText = $"""
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{databaseName}'
-            AND pid <> pg_backend_pid()
-            """;
-        await terminateCmd.ExecuteNonQueryAsync();
-
-        await using var dropCmd = adminConnection.CreateCommand();
-        dropCmd.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\"";
-        await dropCmd.ExecuteNonQueryAsync();
+        await testDb.DropAsync();
     }
 
     /// <summary>
@@ -111,7 +63,7 @@ public class EfCoreOutboxOrderingTests
             {
                 services.AddSingleton(sink);
                 services.AddDbContextFactory<IntegrationTestDbContext>(opts =>
-                    opts.UseNpgsql(testConnectionString));
+                    opts.UseNpgsql(testDb.ConnectionString));
                 services.AddEmit(emit =>
                 {
                     emit.AddEntityFrameworkCore<IntegrationTestDbContext>(ef =>

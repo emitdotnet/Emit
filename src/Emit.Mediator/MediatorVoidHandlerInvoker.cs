@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// service provider and invokes it without producing a response.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
-internal sealed class MediatorVoidHandlerInvoker<TRequest>(Type handlerType) : IHandlerInvoker<MediatorContext<TRequest>>
+internal sealed class MediatorVoidHandlerInvoker<TRequest>(Type handlerType) : IMiddlewarePipeline<MediatorContext<TRequest>>
     where TRequest : IRequest
 {
     /// <inheritdoc />

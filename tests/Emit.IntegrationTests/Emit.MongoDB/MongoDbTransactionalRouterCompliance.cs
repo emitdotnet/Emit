@@ -9,14 +9,14 @@ using global::MongoDB.Driver;
 using Xunit;
 
 [Trait("Category", "Integration")]
-public class MongoDbUnitOfWorkCompliance(
+public class MongoDbTransactionalRouterCompliance(
     MongoDbContainerFixture mongoFixture,
     KafkaContainerFixture kafkaFixture)
-    : UnitOfWorkCompliance,
+    : TransactionalRouterCompliance,
       IClassFixture<MongoDbContainerFixture>,
       IClassFixture<KafkaContainerFixture>
 {
-    private readonly string databaseName = $"emit_uow_{Guid.NewGuid():N}";
+    private readonly string databaseName = $"emit_txnrouter_{Guid.NewGuid():N}";
     private readonly IMongoClient mongoClient = new MongoClient(mongoFixture.ConnectionString);
 
     protected override string BootstrapServers => kafkaFixture.BootstrapServers;

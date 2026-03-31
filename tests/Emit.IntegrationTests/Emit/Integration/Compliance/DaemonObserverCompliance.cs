@@ -2,28 +2,34 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions.Observability;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
+using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for <see cref="IDaemonObserver"/>. Derived classes configure a persistence
 /// provider so that the daemon coordinator and leader election are activated. The test verifies
 /// that <c>OnDaemonAssignedAsync</c> and <c>OnDaemonStartedAsync</c> both fire when the host
 /// starts and a daemon is assigned to this node.
+/// Kafka configuration is handled by the base class.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class DaemonObserverCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Configures a persistence provider (with outbox enabled so a daemon agent is registered)
-    /// and a messaging provider for outbox delivery. The daemon coordinator and heartbeat worker
-    /// are registered automatically when a persistence provider is present.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
+    /// </summary>
+    protected abstract string BootstrapServers { get; }
+
+    /// <summary>
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
     /// </summary>
     /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="topic">The topic name for the Kafka outbox provider.</param>
-    /// <param name="groupId">The consumer group ID.</param>
-    protected abstract void ConfigureEmit(EmitBuilder emit, string topic, string groupId);
+    protected abstract void ConfigurePersistence(EmitBuilder emit);
 
     /// <inheritdoc />
     public virtual Task InitializeAsync() => Task.CompletedTask;
@@ -52,7 +58,8 @@ public abstract class DaemonObserverCompliance : IAsyncLifetime
                 {
                     services.AddSingleton<IDaemonObserver>(
                         sp => sp.GetRequiredService<TrackingDaemonObserver>());
-                    ConfigureEmit(emit, topic, groupId);
+                    ConfigurePersistence(emit);
+                    ConfigureKafka(emit, topic, groupId);
                 });
             })
             .Build();
@@ -75,6 +82,30 @@ public abstract class DaemonObserverCompliance : IAsyncLifetime
             await host.StopAsync();
             host.Dispose();
         }
+    }
+
+    private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config => config.BootstrapServers = BootstrapServers);
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(topic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
     }
 
     /// <summary>

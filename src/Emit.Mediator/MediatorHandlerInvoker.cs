@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResponse">The response type.</typeparam>
-internal sealed class MediatorHandlerInvoker<TRequest, TResponse>(Type handlerType) : IHandlerInvoker<MediatorContext<TRequest>>
+internal sealed class MediatorHandlerInvoker<TRequest, TResponse>(Type handlerType) : IMiddlewarePipeline<MediatorContext<TRequest>>
     where TRequest : IRequest<TResponse>
 {
     /// <inheritdoc />

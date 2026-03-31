@@ -2,15 +2,18 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
+using Emit.Models;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests verifying that custom headers set on an outbox-produced message are
 /// preserved and available in the consumer pipeline after end-to-end delivery through the outbox.
-/// Derived classes configure a persistence provider (with outbox) and a messaging provider.
+/// Derived classes configure a persistence provider; Kafka configuration is handled by the base class.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class OutboxHeadersCompliance : IAsyncLifetime
@@ -18,36 +21,24 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
     private const string CorrelationIdHeaderKey = "x-correlation-id";
 
     /// <summary>
-    /// Configures the messaging and persistence layers for outbox header round-trip tests.
-    /// The derived class must enable the transactional outbox on the persistence provider
-    /// and register a <c>string, string</c> topic with both a producer (in outbox mode)
-    /// and a consumer group backed by <see cref="SinkConsumer{T}"/> of <see cref="string"/>.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
     /// </summary>
-    /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="topic">The topic name to register.</param>
-    /// <param name="groupId">The consumer group ID.</param>
-    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string topic,
-        string groupId,
-        TimeSpan pollingInterval);
+    protected abstract string BootstrapServers { get; }
 
     /// <summary>
-    /// Begins a transaction and produces a message with specific headers to the outbox,
-    /// then commits the transaction.
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
     /// </summary>
-    /// <param name="services">The host-level service provider.</param>
-    /// <param name="key">The message key.</param>
-    /// <param name="value">The message value.</param>
-    /// <param name="headers">Custom headers to attach to the message.</param>
-    /// <param name="ct">A cancellation token.</param>
-    protected abstract Task ProduceWithHeadersAsync(
-        IServiceProvider services,
-        string key,
-        string value,
-        IReadOnlyList<KeyValuePair<string, string>> headers,
-        CancellationToken ct = default);
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
+
+    /// <summary>
+    /// Hook for EF Core implementations to call SaveChangesAsync before committing.
+    /// MongoDB does not need this. Default implementation does nothing.
+    /// </summary>
+    protected virtual Task FlushBeforeCommitAsync(IServiceProvider scopedServices)
+        => Task.CompletedTask;
 
     /// <inheritdoc />
     public virtual Task InitializeAsync() => Task.CompletedTask;
@@ -69,13 +60,7 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
         var sink = new MessageSink<string>();
         var correlationId = Guid.NewGuid().ToString("N");
 
-        var host = Host.CreateDefaultBuilder()
-            .ConfigureServices(services =>
-            {
-                services.AddSingleton(sink);
-                services.AddEmit(emit => ConfigureEmit(emit, topic, groupId, pollingInterval));
-            })
-            .Build();
+        var host = BuildHost(sink, topic, groupId, pollingInterval);
 
         await host.StartAsync();
 
@@ -107,5 +92,65 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
             await host.StopAsync();
             host.Dispose();
         }
+    }
+
+    private async Task ProduceWithHeadersAsync(
+        IServiceProvider services,
+        string key,
+        string value,
+        IReadOnlyList<KeyValuePair<string, string>> headers,
+        CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
+        var producer = sp.GetRequiredService<IEventProducer<string, string>>();
+
+        await using var transaction = await unitOfWork.BeginAsync(ct);
+
+        await producer.ProduceAsync(new EventMessage<string, string>(key, value, headers), ct);
+
+        await FlushBeforeCommitAsync(sp);
+        await transaction.CommitAsync(ct);
+    }
+
+    private IHost BuildHost(MessageSink<string> sink, string topic, string groupId, TimeSpan pollingInterval)
+    {
+        return Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddEmit(emit =>
+                {
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, topic, groupId);
+                });
+            })
+            .Build();
+    }
+
+    private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config => config.BootstrapServers = BootstrapServers);
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(topic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
     }
 }
