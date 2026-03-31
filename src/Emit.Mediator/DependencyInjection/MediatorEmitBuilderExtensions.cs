@@ -74,7 +74,7 @@ public static class MediatorEmitBuilderExtensions
         // Register mediator middleware with appropriate lifetimes
         mediatorBuilder.InboundPipeline.RegisterServices(services);
 
-        // Build the invoker map at registration time — stores IHandlerInvoker<TRequest> as object
+        // Build the invoker map at registration time — stores IMiddlewarePipeline<TRequest> as object
         var invokerMap = new Dictionary<Type, object>();
         var handlerPipelineMap = new Dictionary<Type, IMessagePipelineBuilder>();
         foreach (var registration in mediatorBuilder.Registrations.Values)
@@ -139,7 +139,7 @@ public static class MediatorEmitBuilderExtensions
             bool outboxEnabled,
             Type handlerType)
     {
-        var typedInvoker = (IHandlerInvoker<MediatorContext<TRequest>>)invoker;
+        var typedInvoker = (IMiddlewarePipeline<MediatorContext<TRequest>>)invoker;
 
         // Wrap handler invoker with transactional middleware when outbox is enabled
         IMiddlewarePipeline<MediatorContext<TRequest>> terminal = typedInvoker;

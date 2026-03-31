@@ -494,7 +494,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         var invokerEntries = groupBuilder.ConsumerTypes
             .Select(t => (
                 ConsumerType: t,
-                Invoker: (IHandlerInvoker<ConsumeContext<TValue>>)new HandlerInvoker<TValue>(t),
+                Invoker: (IMiddlewarePipeline<ConsumeContext<TValue>>)new HandlerInvoker<TValue>(t),
                 Pipeline: consumerPipelines.GetValueOrDefault(t)))
             .ToList();
 
@@ -635,7 +635,8 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                                 type => new HandlerInvoker<TValue>(type),
                                 sp,
                                 loggerFactory,
-                                unmatchedAction);
+                                unmatchedAction,
+                                outboxEnabled);
 
                             entries.Add(composer.Compose(
                                 routerInvoker, null,

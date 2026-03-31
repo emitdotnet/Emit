@@ -3,6 +3,8 @@ namespace Emit.Routing;
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Pipeline;
+using Emit.Middleware;
+using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -41,7 +43,7 @@ public sealed class RouterRegistration<TMessage>
     /// Builds the router invoker, assembling sub-pipelines for each route.
     /// </summary>
     /// <param name="terminalFactory">
-    /// Creates a terminal handler invoker for each route's consumer type.
+    /// Creates a terminal pipeline for each route's consumer type.
     /// The provider supplies this (e.g., Kafka creates <c>HandlerInvoker</c>).
     /// </param>
     /// <param name="services">The service provider for resolving middleware.</param>
@@ -50,12 +52,18 @@ public sealed class RouterRegistration<TMessage>
     /// Pre-evaluated error action for unmatched messages. When <see cref="ErrorAction.DiscardAction"/>,
     /// the invoker discards unmatched messages inline without throwing. Pass <c>null</c> to always throw.
     /// </param>
-    /// <returns>The constructed router invoker ready to participate in fan-out.</returns>
-    public IHandlerInvoker<ConsumeContext<TMessage>> BuildInvoker(
-        Func<Type, IHandlerInvoker<ConsumeContext<TMessage>>> terminalFactory,
+    /// <param name="outboxEnabled">
+    /// When <see langword="true"/>, each route's terminal is wrapped with
+    /// <see cref="TransactionalOutboxMiddleware{TContext}"/> so that handlers decorated with
+    /// <see cref="TransactionalAttribute"/> participate in a unit of work.
+    /// </param>
+    /// <returns>The constructed router pipeline ready to participate in fan-out.</returns>
+    public IMiddlewarePipeline<ConsumeContext<TMessage>> BuildInvoker(
+        Func<Type, IMiddlewarePipeline<ConsumeContext<TMessage>>> terminalFactory,
         IServiceProvider services,
         ILoggerFactory loggerFactory,
-        ErrorAction? unmatchedAction = null)
+        ErrorAction? unmatchedAction = null,
+        bool outboxEnabled = false)
     {
         ArgumentNullException.ThrowIfNull(terminalFactory);
         ArgumentNullException.ThrowIfNull(services);
@@ -64,8 +72,12 @@ public sealed class RouterRegistration<TMessage>
         var subPipelines = new Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)>();
         foreach (var route in routes)
         {
-            var subInvoker = terminalFactory(route.ConsumerType);
-            IMiddlewarePipeline<ConsumeContext<TMessage>> subPipeline = subInvoker;
+            IMiddlewarePipeline<ConsumeContext<TMessage>> subPipeline = terminalFactory(route.ConsumerType);
+            if (outboxEnabled)
+            {
+                var transactionalMw = new TransactionalOutboxMiddleware<ConsumeContext<TMessage>>(route.ConsumerType);
+                subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(transactionalMw, subPipeline);
+            }
             if (route.Pipeline is not null)
                 subPipeline = route.Pipeline.Build<ConsumeContext<TMessage>, TMessage>(services, subPipeline);
             subPipelines[route.RouteKey] = (route.ConsumerType, subPipeline);

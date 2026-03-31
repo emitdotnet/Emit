@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Terminal handler invoker that evaluates a route selector and dispatches
 /// to the matching sub-pipeline. Participates in fan-out like any other
-/// <see cref="IHandlerInvoker{TContext}"/>. Unmatched messages are discarded
+/// <see cref="IMiddlewarePipeline{TContext}"/>. Unmatched messages are discarded
 /// inline when the pre-evaluated unmatched action is <see cref="ErrorAction.DiscardAction"/>;
 /// otherwise <see cref="UnmatchedRouteException"/> is thrown for the error policy to handle.
 /// </summary>
@@ -19,7 +19,7 @@ internal sealed class MessageRouterInvoker<TMessage>(
     Func<ConsumeContext<TMessage>, object?> routeSelector,
     Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)> routedPipelines,
     ILogger logger,
-    ErrorAction? unmatchedAction = null) : IHandlerInvoker<ConsumeContext<TMessage>>
+    ErrorAction? unmatchedAction = null) : IMiddlewarePipeline<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context)

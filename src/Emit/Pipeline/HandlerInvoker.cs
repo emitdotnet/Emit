@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// and invokes it with the consume context.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
-public sealed class HandlerInvoker<TValue>(Type consumerType) : IHandlerInvoker<ConsumeContext<TValue>>
+public sealed class HandlerInvoker<TValue>(Type consumerType) : IMiddlewarePipeline<ConsumeContext<TValue>>
 {
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TValue> context)
