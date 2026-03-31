@@ -2,10 +2,12 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for EF Core implicit outbox (Tier 1): produce + SaveChangesAsync
@@ -15,13 +17,17 @@ using Xunit;
 public abstract class ImplicitOutboxCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Configures Emit with persistence (outbox enabled) and Kafka with a string,string topic.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
     /// </summary>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string topic,
-        string groupId,
-        TimeSpan pollingInterval);
+    protected abstract string BootstrapServers { get; }
+
+    /// <summary>
+    /// Configures the persistence provider (EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
 
     /// <summary>
     /// Produces a message via IEventProducer and optionally calls SaveChangesAsync.
@@ -173,8 +179,39 @@ public abstract class ImplicitOutboxCompliance : IAsyncLifetime
             .ConfigureServices(services =>
             {
                 services.AddSingleton(sink);
-                services.AddEmit(emit => ConfigureEmit(emit, topic, groupId, pollingInterval));
+                services.AddEmit(emit =>
+                {
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, topic, groupId);
+                });
             })
             .Build();
+    }
+
+    private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config =>
+            {
+                config.BootstrapServers = BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(topic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
     }
 }

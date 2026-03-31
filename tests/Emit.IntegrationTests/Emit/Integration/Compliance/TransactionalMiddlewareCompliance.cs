@@ -2,11 +2,13 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
 using Emit.Models;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for the [Transactional] middleware. Verifies that the middleware wraps
@@ -17,33 +19,17 @@ using Xunit;
 public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Configures Emit with a persistence provider (with outbox), Kafka, an input topic with a
-    /// consumer group for the specified consumer type, and an output topic with a SinkConsumer.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
     /// </summary>
-    /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="inputTopic">The input topic that triggers the consumer.</param>
-    /// <param name="outputTopic">The output topic where the consumer produces outbox messages.</param>
-    /// <param name="groupId">The consumer group ID for the input topic.</param>
-    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
-    /// <param name="consumerType">The consumer type to register on the input topic.</param>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string inputTopic,
-        string outputTopic,
-        string groupId,
-        TimeSpan pollingInterval,
-        Type consumerType);
+    protected abstract string BootstrapServers { get; }
 
     /// <summary>
-    /// Produces a message directly to Kafka (bypassing the outbox) on the specified topic.
-    /// This is used to trigger consumers under test.
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
     /// </summary>
-    protected abstract Task ProduceDirectAsync(
-        IServiceProvider services,
-        string topic,
-        string key,
-        string value,
-        CancellationToken ct = default);
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
 
     /// <inheritdoc />
     public virtual Task InitializeAsync() => Task.CompletedTask;
@@ -69,7 +55,7 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
         try
         {
             // Act — produce to input topic; the [Transactional] consumer produces to output via outbox.
-            await ProduceDirectAsync(host.Services, inputTopic, "k", "hello");
+            await ProduceDirectAsync(inputTopic, "k", "hello");
 
             // Assert — outbox daemon delivers to output topic.
             var ctx = await sink.WaitForMessageAsync();
@@ -100,7 +86,7 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
         try
         {
             // Act — produce to input topic; the [Transactional] consumer throws after producing.
-            await ProduceDirectAsync(host.Services, inputTopic, "k", "will-fail");
+            await ProduceDirectAsync(inputTopic, "k", "will-fail");
 
             // Assert — wait for several daemon cycles to confirm no delivery.
             await Task.Delay(pollingInterval * 5);
@@ -131,7 +117,7 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
         try
         {
             // Act — produce to input topic; the non-transactional consumer processes without outbox.
-            await ProduceDirectAsync(host.Services, inputTopic, "k", "pass-through");
+            await ProduceDirectAsync(inputTopic, "k", "pass-through");
 
             // Assert — the consumer receives the message (via the direct sink, not outbox).
             var ctx = await sink.WaitForMessageAsync();
@@ -162,7 +148,7 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
         try
         {
             // Act — produce; the consumer fails first attempt, succeeds on second.
-            await ProduceDirectAsync(host.Services, inputTopic, "k", "retry-msg");
+            await ProduceDirectAsync(inputTopic, "k", "retry-msg");
 
             // Assert — exactly one outbox delivery (from the successful retry).
             var ctx = await sink.WaitForMessageAsync();
@@ -192,10 +178,77 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
             {
                 services.AddSingleton(sink);
                 services.AddSingleton(TransactionalRetryConsumer.CallTracker);
-                services.AddEmit(emit => ConfigureEmit(
-                    emit, inputTopic, outputTopic, groupId, pollingInterval, consumerType));
+                services.AddEmit(emit =>
+                {
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
+                });
             })
             .Build();
+    }
+
+    private void ConfigureKafka(
+        EmitBuilder emit,
+        string inputTopic,
+        string outputTopic,
+        string groupId,
+        Type consumerType)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config =>
+            {
+                config.BootstrapServers = BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(inputTopic, t =>
+            {
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.OnError(error => error.Default(a => a.Retry(1, Backoff.None).Discard()));
+
+                    if (consumerType == typeof(TransactionalProducingConsumer))
+                        group.AddConsumer<TransactionalProducingConsumer>();
+                    else if (consumerType == typeof(TransactionalThrowingConsumer))
+                        group.AddConsumer<TransactionalThrowingConsumer>();
+                    else if (consumerType == typeof(NonTransactionalSinkConsumer))
+                        group.AddConsumer<NonTransactionalSinkConsumer>();
+                    else if (consumerType == typeof(TransactionalRetryConsumer))
+                        group.AddConsumer<TransactionalRetryConsumer>();
+                });
+            });
+
+            kafka.Topic<string, string>(outputTopic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup($"{groupId}-out", group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
+    }
+
+    private async Task ProduceDirectAsync(string topic, string key, string value)
+    {
+        using var producer = new ConfluentKafka.ProducerBuilder<string, string>(
+            new ConfluentKafka.ProducerConfig { BootstrapServers = BootstrapServers })
+            .Build();
+
+        await producer.ProduceAsync(
+            topic,
+            new ConfluentKafka.Message<string, string> { Key = key, Value = value });
     }
 }
 

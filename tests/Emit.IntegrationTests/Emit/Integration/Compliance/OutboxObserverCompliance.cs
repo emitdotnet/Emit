@@ -1,15 +1,19 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using Emit.Abstractions;
 using Emit.Abstractions.Observability;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
 using Emit.Models;
+using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for <see cref="IOutboxObserver"/>. Derived classes configure a persistence
-/// provider with the outbox enabled and a messaging provider for a <c>string, string</c> topic.
+/// provider with the outbox enabled. Kafka configuration is handled by the base class.
 /// The test verifies that the enqueued, processing, and processed callbacks all fire when a
 /// message is produced through the outbox and delivered to the consumer.
 /// </summary>
@@ -17,29 +21,24 @@ using Xunit;
 public abstract class OutboxObserverCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Configures the persistence layer (with outbox enabled), the messaging provider with a
-    /// <c>string, string</c> topic producer, and registers a consumer group that delivers messages.
-    /// The <see cref="TrackingOutboxObserver"/> is registered as a singleton before this is called
-    /// and will be resolved by the DI container.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
     /// </summary>
-    /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="topic">The topic name to register.</param>
-    /// <param name="groupId">The consumer group ID.</param>
-    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string topic,
-        string groupId,
-        TimeSpan pollingInterval);
+    protected abstract string BootstrapServers { get; }
 
     /// <summary>
-    /// Begins a transaction, produces a message to the outbox, and commits.
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
     /// </summary>
-    protected abstract Task ProduceTransactionallyAsync(
-        IServiceProvider services,
-        string key,
-        string value,
-        CancellationToken ct = default);
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
+
+    /// <summary>
+    /// Hook for EF Core implementations to call SaveChangesAsync before committing.
+    /// MongoDB does not need this. Default implementation does nothing.
+    /// </summary>
+    protected virtual Task FlushBeforeCommitAsync(IServiceProvider scopedServices)
+        => Task.CompletedTask;
 
     /// <inheritdoc />
     public virtual Task InitializeAsync() => Task.CompletedTask;
@@ -68,7 +67,8 @@ public abstract class OutboxObserverCompliance : IAsyncLifetime
                 {
                     emit.Services.AddSingleton<IOutboxObserver>(
                         sp => sp.GetRequiredService<TrackingOutboxObserver>());
-                    ConfigureEmit(emit, topic, groupId, pollingInterval);
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, topic, groupId);
                 });
             })
             .Build();
@@ -95,6 +95,50 @@ public abstract class OutboxObserverCompliance : IAsyncLifetime
             await host.StopAsync();
             host.Dispose();
         }
+    }
+
+    private async Task ProduceTransactionallyAsync(
+        IServiceProvider services,
+        string key,
+        string value,
+        CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
+        var producer = sp.GetRequiredService<IEventProducer<string, string>>();
+
+        await using var transaction = await unitOfWork.BeginAsync(ct);
+
+        await producer.ProduceAsync(new EventMessage<string, string>(key, value), ct);
+
+        await FlushBeforeCommitAsync(sp);
+        await transaction.CommitAsync(ct);
+    }
+
+    private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config => config.BootstrapServers = BootstrapServers);
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(topic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
     }
 
     /// <summary>

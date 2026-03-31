@@ -1,41 +1,45 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
 using Emit.Models;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for producer routing: outbox-by-default when outbox infra is configured,
 /// and UseDirect() opt-out for immediate delivery.
+/// Derived classes configure a persistence provider; Kafka configuration is handled by the base class.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class ProducerRoutingCompliance : IAsyncLifetime
 {
-    /// <summary>
-    /// Configures Emit with persistence (outbox), Kafka, two topics:
-    /// - outboxTopic: producer with default routing (outbox)
-    /// - directTopic: producer with UseDirect()
-    /// Both topics have SinkConsumer consumer groups.
-    /// </summary>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string outboxTopic,
-        string directTopic,
-        string groupId,
-        TimeSpan pollingInterval);
+    private string? currentOutboxTopic;
 
     /// <summary>
-    /// Produces via IUnitOfWork + commit to the outbox topic.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
     /// </summary>
-    protected abstract Task ProduceViaOutboxAsync(
-        IServiceProvider services,
-        string key,
-        string value,
-        CancellationToken ct = default);
+    protected abstract string BootstrapServers { get; }
+
+    /// <summary>
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="pollingInterval">The outbox daemon polling interval.</param>
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
+
+    /// <summary>
+    /// Hook for EF Core implementations to call SaveChangesAsync before committing.
+    /// MongoDB does not need this. Default implementation does nothing.
+    /// </summary>
+    protected virtual Task FlushBeforeCommitAsync(IServiceProvider scopedServices)
+        => Task.CompletedTask;
 
     /// <inheritdoc />
     public virtual Task InitializeAsync() => Task.CompletedTask;
@@ -148,6 +152,34 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
         }
     }
 
+    private async Task ProduceViaOutboxAsync(
+        IServiceProvider services,
+        string key,
+        string value,
+        CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
+        var repository = sp.GetRequiredService<IOutboxRepository>();
+
+        await using var tx = await unitOfWork.BeginAsync(ct);
+
+        var keyBytes = Encoding.UTF8.GetBytes(key);
+        await repository.EnqueueAsync(new OutboxEntry
+        {
+            SystemId = "kafka",
+            Destination = $"kafka://localhost/{currentOutboxTopic}",
+            GroupKey = $"kafka:{currentOutboxTopic}:{Convert.ToBase64String(keyBytes)}",
+            Body = Encoding.UTF8.GetBytes(value),
+            EnqueuedAt = DateTime.UtcNow,
+            Properties = new Dictionary<string, string> { ["key"] = Convert.ToBase64String(keyBytes) },
+        }, ct);
+
+        await FlushBeforeCommitAsync(sp);
+        await tx.CommitAsync(ct);
+    }
+
     private IHost BuildHost(
         MessageSink<string> outboxSink,
         MessageSink<string> directSink,
@@ -156,15 +188,64 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
         string groupId,
         TimeSpan pollingInterval)
     {
+        currentOutboxTopic = outboxTopic;
+
         return Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 // Register sinks as keyed-like services using named wrappers.
                 services.AddSingleton(new OutboxTopicSink(outboxSink));
                 services.AddSingleton(new DirectTopicSink(directSink));
-                services.AddEmit(emit => ConfigureEmit(emit, outboxTopic, directTopic, groupId, pollingInterval));
+                services.AddEmit(emit =>
+                {
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, outboxTopic, directTopic, groupId);
+                });
             })
             .Build();
+    }
+
+    private void ConfigureKafka(
+        EmitBuilder emit,
+        string outboxTopic,
+        string directTopic,
+        string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config =>
+            {
+                config.BootstrapServers = BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(outboxTopic, t =>
+            {
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.ConsumerGroup($"{groupId}-outbox", group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<OutboxTopicSinkConsumer>();
+                });
+            });
+
+            kafka.Topic<string, string>(directTopic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer(p => p.UseDirect());
+                t.ConsumerGroup($"{groupId}-direct", group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DirectTopicSinkConsumer>();
+                });
+            });
+        });
     }
 }
 

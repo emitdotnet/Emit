@@ -3,37 +3,36 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.Kafka.DependencyInjection;
 using Emit.Models;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
 /// Compliance tests for the transactional outbox pattern. Covers four scenarios:
 /// E2E delivery when a transaction commits, no delivery when a transaction rolls back,
 /// ordered delivery of multiple messages, and durability of pending entries across a
-/// daemon restart. Derived classes configure both a persistence provider (with outbox)
-/// and a messaging provider (producer + consumer) for a <c>string, string</c> topic.
+/// daemon restart. Derived classes configure a persistence provider (with outbox enabled).
+/// Kafka configuration is handled by the base class.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class OutboxDeliveryCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Configures the messaging and persistence layers for outbox delivery tests.
-    /// The derived class must enable the transactional outbox on the persistence provider
-    /// and register a <c>string, string</c> topic with both a producer (in outbox mode)
-    /// and a consumer group backed by <see cref="SinkConsumer{T}"/> of <see cref="string"/>.
+    /// Gets the Kafka bootstrap servers address for producing and consuming messages.
+    /// </summary>
+    protected abstract string BootstrapServers { get; }
+
+    /// <summary>
+    /// Configures the persistence provider (MongoDB or EF Core) with outbox enabled.
+    /// Kafka configuration is handled by the base class.
     /// </summary>
     /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="topic">The topic name to register.</param>
-    /// <param name="groupId">The consumer group ID.</param>
     /// <param name="pollingInterval">The interval at which the outbox daemon polls for new entries.</param>
-    protected abstract void ConfigureEmit(
-        EmitBuilder emit,
-        string topic,
-        string groupId,
-        TimeSpan pollingInterval);
+    protected abstract void ConfigurePersistence(EmitBuilder emit, TimeSpan pollingInterval);
 
     /// <summary>
     /// Begins a transaction, produces a message to the outbox, and either commits or rolls back.
@@ -326,8 +325,36 @@ public abstract class OutboxDeliveryCompliance : IAsyncLifetime
             .ConfigureServices(services =>
             {
                 services.AddSingleton(sink);
-                services.AddEmit(emit => ConfigureEmit(emit, topic, groupId, pollingInterval));
+                services.AddEmit(emit =>
+                {
+                    ConfigurePersistence(emit, pollingInterval);
+                    ConfigureKafka(emit, topic, groupId);
+                });
             })
             .Build();
+    }
+
+    private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config => config.BootstrapServers = BootstrapServers);
+            kafka.AutoProvision();
+
+            kafka.Topic<string, string>(topic, t =>
+            {
+                t.SetUtf8KeySerializer();
+                t.SetUtf8ValueSerializer();
+                t.SetUtf8KeyDeserializer();
+                t.SetUtf8ValueDeserializer();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            });
+        });
     }
 }
