@@ -433,9 +433,13 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         {
             var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
             var confluentProducer = context.Services.GetRequiredService<ConfluentKafka.IProducer<byte[], byte[]>>();
+            var kafkaMetrics = context.Services.GetRequiredService<Metrics.KafkaMetrics>();
 
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
                 messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+
+            var messageSize = (keyBytes?.Length ?? 0) + (valueBytes?.Length ?? 0);
+            kafkaMetrics.RecordProduceMessageSize(messageSize, topicName);
 
             var kafkaMessage = new ConfluentKafka.Message<byte[], byte[]>
             {
@@ -451,7 +455,26 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     kafkaMessage.Headers.Add(key, System.Text.Encoding.UTF8.GetBytes(value));
             }
 
-            await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "success");
+                kafkaMetrics.RecordProduceMessage(topicName, "success");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "error");
+                kafkaMetrics.RecordProduceMessage(topicName, "error");
+                throw;
+            }
         }
     }
 

@@ -1,20 +1,28 @@
 {
   "uid": "emit-core",
-  "title": "Emit — Core",
-  "tags": ["emit"],
+  "title": "Emit \u2014 Core",
+  "tags": [
+    "emit"
+  ],
   "schemaVersion": 38,
   "version": 1,
   "refresh": "10s",
   "graphTooltip": 1,
   "timezone": "browser",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "provider",
         "label": "Provider",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "emit-prometheus"
+        },
         "query": "label_values(emit_pipeline_produce_completed_total, provider)",
         "includeAll": true,
         "allValue": ".*",
@@ -33,28 +41,45 @@
       "title": "Outbox",
       "collapsed": false,
       "panels": [],
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Enqueue Rate",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -62,33 +87,53 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_enqueued_total[1m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 }
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Completed / s",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -96,34 +141,57 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_processing_completed_total{result=\"success\"}[1m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 }
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      }
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Processing Errors / s",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.01 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -131,33 +199,53 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_processing_completed_total{result=\"error\"}[1m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 }
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      }
     },
     {
       "id": 5,
       "type": "stat",
       "title": "Avg Batch Size",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -165,140 +253,247 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_worker_batch_entries_sum[5m])) / sum(rate(emit_outbox_worker_batch_entries_count[5m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 }
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Outbox Throughput",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_enqueued_total[1m]))",
           "legendFormat": "enqueued"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_outbox_processing_completed_total[1m]))",
           "legendFormat": "completed"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      }
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "Processing Duration",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.50, sum by(le)(rate(emit_outbox_processing_duration_seconds_bucket[5m])))",
           "legendFormat": "p50"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_outbox_processing_duration_seconds_bucket[5m])))",
           "legendFormat": "p95"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.99, sum by(le)(rate(emit_outbox_processing_duration_seconds_bucket[5m])))",
           "legendFormat": "p99"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      }
     },
     {
       "id": 8,
       "type": "timeseries",
       "title": "Critical Time (end-to-end latency)",
       "description": "Time from enqueue to successful delivery and deletion.",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.50, sum by(le)(rate(emit_outbox_critical_time_seconds_bucket[5m])))",
           "legendFormat": "p50"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_outbox_critical_time_seconds_bucket[5m])))",
           "legendFormat": "p95"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.99, sum by(le)(rate(emit_outbox_critical_time_seconds_bucket[5m])))",
           "legendFormat": "p99"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      }
     },
     {
       "id": 9,
       "type": "timeseries",
       "title": "Worker Poll Cycles",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum by(has_entries)(rate(emit_outbox_worker_poll_cycles_total[1m]))",
           "legendFormat": "has_entries={{has_entries}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      }
     },
     {
       "id": 10,
@@ -306,109 +501,245 @@
       "title": "Pipeline",
       "collapsed": false,
       "panels": [],
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      }
     },
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Produce Pipeline Rate",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "title": "Produce Operations / s",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum by(provider, result)(rate(emit_pipeline_produce_completed_total[1m]))",
-          "legendFormat": "{{provider}} — {{result}}"
+          "legendFormat": "{{provider}} \u2014 {{result}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      }
     },
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Consume Pipeline Rate",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "title": "Consume Operations / s",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum by(provider, result)(rate(emit_pipeline_consume_completed_total[1m]))",
-          "legendFormat": "{{provider}} — {{result}}"
+          "legendFormat": "{{provider}} \u2014 {{result}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Messages Processed / s",
+      "description": "Individual messages processed by consume pipelines. For batch consumers, each batch item counts as one message.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
+          "expr": "sum by(provider, result)(rate(emit_pipeline_consume_messages_total[1m]))",
+          "legendFormat": "{{provider}} \u2014 {{result}}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      }
     },
     {
       "id": 13,
       "type": "timeseries",
       "title": "Produce Duration p95",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(provider, le)(rate(emit_pipeline_produce_duration_seconds_bucket[5m])))",
           "legendFormat": "{{provider}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      }
     },
     {
       "id": 14,
       "type": "timeseries",
       "title": "Consume Duration p95",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(provider, le)(rate(emit_pipeline_consume_duration_seconds_bucket[5m])))",
           "legendFormat": "{{provider}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      }
     },
     {
       "id": 15,
@@ -416,28 +747,45 @@
       "title": "Mediator",
       "collapsed": false,
       "panels": [],
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      }
     },
     {
       "id": 16,
       "type": "stat",
       "title": "Requests / s",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -445,33 +793,53 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_mediator_send_completed_total[1m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 39 }
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      }
     },
     {
       "id": 17,
       "type": "stat",
       "title": "Active Requests",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -479,34 +847,57 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(emit_mediator_send_active)",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 39 }
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      }
     },
     {
       "id": 18,
       "type": "stat",
       "title": "Handler Errors / s",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.01 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "horizontal",
         "textMode": "auto",
         "colorMode": "background",
@@ -514,63 +905,113 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum(rate(emit_mediator_send_completed_total{result=\"error\"}[1m]))",
           "legendFormat": ""
         }
       ],
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 39 }
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      }
     },
     {
       "id": 19,
       "type": "timeseries",
       "title": "Request Rate by Type",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum by(request_type)(rate(emit_mediator_send_completed_total[1m]))",
           "legendFormat": "{{request_type}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      }
     },
     {
       "id": 20,
       "type": "timeseries",
       "title": "Handler Duration p95 by Type",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(request_type, le)(rate(emit_mediator_send_duration_seconds_bucket[5m])))",
           "legendFormat": "{{request_type}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      }
     },
     {
       "id": 21,
@@ -578,115 +1019,207 @@
       "title": "Distributed Lock",
       "collapsed": false,
       "panels": [],
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      }
     },
     {
       "id": 22,
       "type": "timeseries",
       "title": "Acquire Duration by Result",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(result, le)(rate(emit_lock_acquire_duration_seconds_bucket[5m])))",
           "legendFormat": "p95 {{result}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 60
+      }
     },
     {
       "id": 23,
       "type": "timeseries",
       "title": "Lock Held Duration",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.50, sum by(le)(rate(emit_lock_held_duration_seconds_bucket[5m])))",
           "legendFormat": "p50"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_lock_held_duration_seconds_bucket[5m])))",
           "legendFormat": "p95"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 60
+      }
     },
     {
       "id": 24,
       "type": "timeseries",
       "title": "Acquire Retries",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          },
           "unit": "short"
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by(le)(rate(emit_lock_acquire_retries_bucket[5m])))",
           "legendFormat": "p95 retries"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 60 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 68
+      }
     },
     {
       "id": 25,
       "type": "timeseries",
       "title": "Lock Renewals",
-      "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emit-prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 }
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "emit-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "emit-prometheus"
+          },
           "expr": "sum by(result)(rate(emit_lock_renewal_completed_total[1m]))",
           "legendFormat": "{{result}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 60 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 68
+      }
     }
   ]
 }

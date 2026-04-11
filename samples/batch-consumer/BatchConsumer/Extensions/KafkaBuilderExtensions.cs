@@ -16,6 +16,13 @@ public static class KafkaBuilderExtensions
     {
         kafka.AutoProvision();
 
+        kafka.ConfigureProducer(producer =>
+        {
+            producer.Linger = TimeSpan.FromMilliseconds(50);
+            producer.CompressionType = Confluent.Kafka.CompressionType.Lz4;
+            producer.Acks = Confluent.Kafka.Acks.Leader;
+        });
+
         kafka.DeadLetter("sorting.scans.dlt");
 
         kafka.Topic<string, PackageScan>("sorting.scans", topic =>
@@ -35,8 +42,8 @@ public static class KafkaBuilderExtensions
 
                 group.Batch(bc =>
                 {
-                    bc.MaxSize = 25;
-                    bc.Timeout = TimeSpan.FromSeconds(1);
+                    bc.MaxSize = 1000;
+                    bc.Timeout = TimeSpan.FromSeconds(5);
                 })
                 .AddBatchConsumer<PackageSortConsumer>();
 
@@ -48,8 +55,6 @@ public static class KafkaBuilderExtensions
                         .DeadLetter()));
 
                 group.OnDeserializationError(a => a.DeadLetter());
-
-                group.RateLimit(rl => rl.TokenBucket(permitsPerSecond: 500, burstSize: 100));
 
                 group.CircuitBreaker(cb => cb
                     .FailureThreshold(5)

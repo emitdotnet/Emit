@@ -52,6 +52,7 @@ Pipeline and consumer middleware metrics.
 | `emit.pipeline.produce.completed` | Counter | `provider`, `result` | Produce operations completed |
 | `emit.pipeline.consume.duration` | Histogram (s) | `provider`, `result`, `consumer` | Time from message receipt to handler return |
 | `emit.pipeline.consume.completed` | Counter | `provider`, `result`, `consumer` | Consume operations completed |
+| `emit.pipeline.consume.messages` | Counter | `provider`, `result`, `consumer` | Individual messages processed (batch-aware: counts each item in a batch) |
 | `emit.consumer.error.actions` | Counter | `action` | Error actions taken (`retry`, `dead_letter`, `discard`) |
 | `emit.consumer.retry.attempts` | Histogram | `result` | Retry counts per sequence (`success`, `exhausted`) |
 | `emit.consumer.retry.duration` | Histogram (s) | `result` | Total time spent in retry loops |

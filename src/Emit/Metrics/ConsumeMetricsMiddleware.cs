@@ -24,12 +24,16 @@ internal sealed class ConsumeMetricsMiddleware<TMessage>(
             await next.InvokeAsync(context).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
+            var messageCount = context.Message is IBatchMessage batch ? batch.Count : 1;
             metrics.RecordConsumeCompleted(elapsed, provider, "success", consumerIdentifier);
+            metrics.RecordConsumeMessages(messageCount, provider, "success", consumerIdentifier);
         }
         catch
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
+            var messageCount = context.Message is IBatchMessage batch ? batch.Count : 1;
             metrics.RecordConsumeCompleted(elapsed, provider, "error", consumerIdentifier);
+            metrics.RecordConsumeMessages(messageCount, provider, "error", consumerIdentifier);
             throw;
         }
     }

@@ -71,10 +71,8 @@ internal sealed class BatchValidationMiddleware<TValue>(
 
         var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
         emitMetrics.RecordValidationDuration(elapsed);
-        if (validItems.Count > 0)
-            emitMetrics.RecordValidationCompleted("passed", "none");
-        if (invalidCount > 0)
-            emitMetrics.RecordValidationCompleted("failed", "filtered");
+        emitMetrics.RecordValidationCompleted("passed", "none", validItems.Count);
+        emitMetrics.RecordValidationCompleted("failed", "filtered", invalidCount);
 
         // All items invalid → short-circuit, do not invoke the handler
         if (validItems.Count == 0)

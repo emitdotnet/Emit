@@ -2,17 +2,15 @@ namespace BatchConsumer.Consumers;
 
 using System.Diagnostics;
 using BatchConsumer.Domain;
-using BatchConsumer.Repositories;
 using Emit.Abstractions;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Batch consumer that processes conveyor scan events, upserts package journeys,
-/// and produces reroute commands for mis-sorted packages via the transactional outbox.
+/// Batch consumer that processes conveyor scan events and produces reroute commands
+/// for mis-sorted packages via the transactional outbox.
 /// </summary>
 [Transactional]
 public sealed class PackageSortConsumer(
-    IPackageJourneyRepository journeyRepository,
     IEventProducer<string, RerouteCommand> rerouteProducer,
     ILogger<PackageSortConsumer> logger) : IBatchConsumer<PackageScan>
 {
@@ -29,9 +27,6 @@ public sealed class PackageSortConsumer(
         foreach (var item in batch.Items)
         {
             var scan = item.Message;
-
-            await journeyRepository.UpsertAsync(scan, cancellationToken).ConfigureAwait(false);
-
             var correctLane = DetermineCorrectLane(scan.DestinationZip);
 
             if (scan.Lane != correctLane)
@@ -39,9 +34,6 @@ public sealed class PackageSortConsumer(
                 logger.LogWarning(
                     "Mis-sorted: {Barcode} on lane {CurrentLane}, should be lane {CorrectLane} (zip {Zip})",
                     scan.Barcode, scan.Lane, correctLane, scan.DestinationZip);
-
-                await journeyRepository.MarkReroutedAsync(scan.Barcode, cancellationToken)
-                    .ConfigureAwait(false);
 
                 var command = new RerouteCommand(
                     scan.Barcode,

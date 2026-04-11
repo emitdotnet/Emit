@@ -38,6 +38,9 @@ public sealed class EmitMetrics
         ConsumeCompleted = meter.CreateCounter<long>(
             "emit.pipeline.consume.completed", "{message}", "Count of completed consume pipeline executions.");
 
+        ConsumeMessages = meter.CreateCounter<long>(
+            "emit.pipeline.consume.messages", "{message}", "Count of individual messages processed (batch-aware).");
+
         // Error handling
         ErrorActions = meter.CreateCounter<long>(
             "emit.consumer.error.actions", "{action}", "Count of error actions executed.");
@@ -89,6 +92,8 @@ public sealed class EmitMetrics
 
     internal Counter<long> ConsumeCompleted { get; }
 
+    internal Counter<long> ConsumeMessages { get; }
+
     // Error handling
     internal Counter<long> ErrorActions { get; }
 
@@ -132,6 +137,12 @@ public sealed class EmitMetrics
         ConsumeCompleted.Add(1, tags);
     }
 
+    internal void RecordConsumeMessages(long count, string provider, string result, string consumer)
+    {
+        var tags = enrichment.CreateTags([new("provider", provider), new("result", result), new("consumer", consumer)]);
+        ConsumeMessages.Add(count, tags);
+    }
+
     // ── Error handling recording methods ──
 
     internal void RecordErrorAction(string action)
@@ -160,10 +171,11 @@ public sealed class EmitMetrics
 
     // ── Validation recording methods ──
 
-    internal void RecordValidationCompleted(string result, string action)
+    internal void RecordValidationCompleted(string result, string action, long count = 1)
     {
+        if (count <= 0) return;
         var tags = enrichment.CreateTags([new("result", result), new("action", action)]);
-        ValidationCompleted.Add(1, tags);
+        ValidationCompleted.Add(count, tags);
     }
 
     internal void RecordValidationDuration(double seconds)

@@ -1,5 +1,4 @@
 using BatchConsumer.Extensions;
-using BatchConsumer.Repositories;
 using BatchConsumer.Simulation;
 using BatchConsumer.Validation;
 using Emit.DependencyInjection;
@@ -37,7 +36,6 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
     sp.GetRequiredService<IMongoClient>().GetDatabase("batch_consumer"));
 
 // ── Application services ──────────────────────────────────────────────────────
-builder.Services.AddScoped<IPackageJourneyRepository, MongoPackageJourneyRepository>();
 builder.Services.AddHostedService<ConveyorSimulatorService>();
 builder.Services.AddValidatorsFromAssemblyContaining<PackageScanValidator>();
 

@@ -35,18 +35,18 @@ public sealed class ConveyorSimulatorService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await RunPhaseAsync(Phase.Normal, normalDuration, delay: 3, stoppingToken).ConfigureAwait(false);
-            await RunPhaseAsync(Phase.Burst, burstDuration, delay: 1, stoppingToken).ConfigureAwait(false);
-            await RunPhaseAsync(Phase.Quiet, quietDuration, delay: 20, stoppingToken).ConfigureAwait(false);
+            await RunPhaseAsync(Phase.Normal, normalDuration, batchSize: 30, intervalMs: 100, stoppingToken).ConfigureAwait(false);
+            await RunPhaseAsync(Phase.Burst, burstDuration, batchSize: 100, intervalMs: 100, stoppingToken).ConfigureAwait(false);
+            await RunPhaseAsync(Phase.Quiet, quietDuration, batchSize: 5, intervalMs: 100, stoppingToken).ConfigureAwait(false);
         }
 
         logger.LogInformation("[Simulator] Simulation loop stopped");
     }
 
-    private async Task RunPhaseAsync(Phase phase, TimeSpan duration, int delay, CancellationToken ct)
+    private async Task RunPhaseAsync(Phase phase, TimeSpan duration, int batchSize, int intervalMs, CancellationToken ct)
     {
-        logger.LogInformation("[Simulator] Phase: {Phase} ({Duration}s, ~{Rate}/sec)",
-            phase, duration.TotalSeconds, 1000 / delay);
+        logger.LogInformation("[Simulator] Phase: {Phase} ({Duration}s, ~{Rate}/sec, batch={Batch})",
+            phase, duration.TotalSeconds, batchSize * 1000 / intervalMs, batchSize);
 
         using var scope = scopeFactory.CreateScope();
         var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, PackageScan>>();
@@ -57,11 +57,15 @@ public sealed class ConveyorSimulatorService(
         {
             try
             {
-                var scan = GenerateScan();
+                var tasks = new Task[batchSize];
+                for (var i = 0; i < batchSize; i++)
+                {
+                    var scan = GenerateScan();
+                    tasks[i] = producer.ProduceAsync(scan.Barcode, scan, ct);
+                }
 
-                await producer.ProduceAsync(scan.Barcode, scan, ct).ConfigureAwait(false);
-
-                await Task.Delay(delay, ct).ConfigureAwait(false);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+                await Task.Delay(intervalMs, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -69,7 +73,7 @@ public sealed class ConveyorSimulatorService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "[Simulator] Failed to produce scan — continuing");
+                logger.LogWarning(ex, "[Simulator] Failed to produce batch — continuing");
             }
         }
     }
