@@ -51,12 +51,17 @@ internal sealed class PartitionOffsets
     {
         lock (syncLock)
         {
+            long? watermark = null;
+
             foreach (var offset in offsets)
             {
-                TryCompleteOffset(offset);
+                if (TryCompleteOffset(offset))
+                {
+                    watermark = offset;
+                }
             }
 
-            return AdvanceWatermark(null);
+            return AdvanceWatermark(watermark);
         }
     }
 

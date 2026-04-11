@@ -317,6 +317,45 @@ public sealed class PartitionOffsetsTests
     }
 
     [Fact]
+    public void GivenContiguousHeadOffsets_When_MarkBatchAsProcessed_Then_WatermarkAdvancesToLast()
+    {
+        // Arrange — all batch offsets are contiguous from the head; none go through
+        // completedOutOfOrder because each one matches the head when processed.
+        var po = new PartitionOffsets();
+        po.Enqueue(0);
+        po.Enqueue(1);
+        po.Enqueue(2);
+
+        // Act
+        var watermark = po.MarkBatchAsProcessed([0, 1, 2]);
+
+        // Assert — watermark must reflect that all three offsets are complete
+        Assert.Equal(2, watermark);
+    }
+
+    [Fact]
+    public void GivenTwoBatchesBothContiguousFromHead_When_ProcessedSequentially_Then_WatermarkAdvancesEachTime()
+    {
+        // Arrange — simulates two workers on a partition where each batch is a contiguous
+        // run of head offsets (e.g. worker A gets [0,1,2], worker B gets [3,4,5]).
+        var po = new PartitionOffsets();
+        po.Enqueue(0);
+        po.Enqueue(1);
+        po.Enqueue(2);
+        po.Enqueue(3);
+        po.Enqueue(4);
+        po.Enqueue(5);
+
+        // Act
+        var w1 = po.MarkBatchAsProcessed([0, 1, 2]);
+        var w2 = po.MarkBatchAsProcessed([3, 4, 5]);
+
+        // Assert
+        Assert.Equal(2, w1);
+        Assert.Equal(5, w2);
+    }
+
+    [Fact]
     public void GivenBatchFollowedBySingle_When_MarkBatchThenMarkSingle_Then_WatermarkAdvancesCorrectly()
     {
         // Arrange
