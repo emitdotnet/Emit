@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -68,20 +69,6 @@ public abstract class ProviderPipelineCompliance
             await host.StopAsync();
             host.Dispose();
         }
-    }
-
-    /// <summary>
-    /// Thread-safe counter for tracking middleware invocations.
-    /// </summary>
-    public sealed class InvocationCounter
-    {
-        private int count;
-
-        /// <summary>Gets the total number of invocations recorded.</summary>
-        public int Count => Volatile.Read(ref count);
-
-        /// <summary>Increments the invocation counter by one.</summary>
-        public void Increment() => Interlocked.Increment(ref count);
     }
 
     /// <summary>

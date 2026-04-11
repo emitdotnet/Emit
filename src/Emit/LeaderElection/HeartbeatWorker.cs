@@ -20,10 +20,11 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
     private readonly LeaderElectionOptions options;
     private readonly ILogger<HeartbeatWorker> logger;
 
+    private enum WorkerState { Unregistered, Follower, Leader }
+
     private CancellationTokenSource? leadershipCts;
     private CancellationTokenSource? workerCts;
-    private bool isLeader;
-    private bool nodeRegistered;
+    private WorkerState workerState = WorkerState.Unregistered;
 
     public HeartbeatWorker(
         ILeaderElectionPersistence persistence,
@@ -53,7 +54,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
     public Guid NodeId { get; }
 
     /// <inheritdoc />
-    public bool IsLeader => isLeader;
+    public bool IsLeader => workerState == WorkerState.Leader;
 
     /// <inheritdoc />
     public CancellationToken LeadershipToken => leadershipCts?.Token ?? new CancellationToken(canceled: true);
@@ -105,9 +106,9 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
             var result = await persistence.HeartbeatAsync(request, queryCts.Token).ConfigureAwait(false);
 
             // Fire node registered observer on first successful heartbeat
-            if (!nodeRegistered)
+            if (workerState == WorkerState.Unregistered)
             {
-                nodeRegistered = true;
+                workerState = WorkerState.Follower;
                 logger.LogInformation("Node {NodeId} registered in cluster", NodeId);
                 await observerInvoker.OnNodeRegisteredAsync(NodeId, stoppingToken).ConfigureAwait(false);
             }
@@ -123,17 +124,17 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
 
             logger.LogDebug(
                 "Heartbeat succeeded for node {NodeId}, isLeader={IsLeader}, leaderNodeId={LeaderNodeId}",
-                NodeId, isLeader, result.LeaderNodeId);
+                NodeId, workerState == WorkerState.Leader, result.LeaderNodeId);
 
             // Leader-only: clean up dead nodes
-            if (isLeader)
+            if (workerState == WorkerState.Leader)
             {
                 await CleanupDeadNodesAsync(stoppingToken).ConfigureAwait(false);
             }
 
             // Daemon coordination: reconcile (leader) + process node assignments (all nodes)
             await daemonCoordinator.OnHeartbeatTickAsync(
-                NodeId, isLeader, workerCts.Token, stoppingToken).ConfigureAwait(false);
+                NodeId, workerState == WorkerState.Leader, workerCts.Token, stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -150,7 +151,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
                 await workerCts.CancelAsync().ConfigureAwait(false);
             }
 
-            if (isLeader)
+            if (workerState == WorkerState.Leader)
             {
                 logger.LogWarning("Node {NodeId} lost leadership due to heartbeat failure", NodeId);
                 DropLeadership();
@@ -161,21 +162,21 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
 
     private async Task HandleHeartbeatResultAsync(HeartbeatResult result, CancellationToken stoppingToken)
     {
-        if (result.IsLeader && !isLeader)
+        if (result.IsLeader && workerState != WorkerState.Leader)
         {
             // Became leader
-            isLeader = true;
+            workerState = WorkerState.Leader;
             leadershipCts?.Dispose();
             leadershipCts = new CancellationTokenSource();
 
             logger.LogInformation("Node {NodeId} elected as leader", NodeId);
             await observerInvoker.OnLeaderElectedAsync(NodeId, stoppingToken).ConfigureAwait(false);
         }
-        else if (result.IsLeader && isLeader)
+        else if (result.IsLeader && workerState == WorkerState.Leader)
         {
             logger.LogDebug("Node {NodeId} renewed leadership lease", NodeId);
         }
-        else if (!result.IsLeader && isLeader)
+        else if (!result.IsLeader && workerState == WorkerState.Leader)
         {
             // Lost leadership
             DropLeadership();
@@ -215,7 +216,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
             // Stop all daemons before resigning leadership
             await daemonCoordinator.StopAllDaemonsAsync(default).ConfigureAwait(false);
 
-            if (isLeader)
+            if (workerState == WorkerState.Leader)
             {
                 await persistence.ResignLeadershipAsync(NodeId).ConfigureAwait(false);
                 logger.LogInformation("Node {NodeId} resigned leadership", NodeId);
@@ -238,7 +239,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
 
     private void DropLeadership()
     {
-        isLeader = false;
+        workerState = WorkerState.Follower;
 
         if (leadershipCts is not null)
         {

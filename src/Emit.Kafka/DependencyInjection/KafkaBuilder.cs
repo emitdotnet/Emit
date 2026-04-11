@@ -25,7 +25,7 @@ using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 /// Configures the Kafka provider within an <see cref="Emit.DependencyInjection.EmitBuilder"/>.
 /// Provides shared client configuration and topic declarations.
 /// </summary>
-public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipelineConfigurable
+public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
 {
     private readonly IServiceCollection services;
     private readonly bool outboxEnabled;
@@ -49,17 +49,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     /// <summary>
     /// The stored client configuration action. Applied to both producer and consumer configs.
     /// </summary>
-    internal Action<KafkaClientConfig>? ClientConfigAction { get; private set; }
+    internal Action<KafkaClientOptions>? ClientConfigAction { get; private set; }
 
     /// <summary>
     /// The stored producer configuration action. Applied to the shared producer config.
     /// </summary>
-    internal Action<KafkaProducerConfig>? ProducerConfigAction { get; private set; }
+    internal Action<KafkaProducerOptions>? ProducerConfigAction { get; private set; }
 
     /// <summary>
     /// The stored schema registry configuration action.
     /// </summary>
-    internal Action<KafkaSchemaRegistryConfig>? SchemaRegistryConfigAction { get; private set; }
+    internal Action<KafkaSchemaRegistryOptions>? SchemaRegistryConfigAction { get; private set; }
 
     /// <summary>
     /// Whether auto-provisioning of missing topics is enabled.
@@ -86,7 +86,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     /// Must be called exactly once.
     /// </summary>
     /// <exception cref="InvalidOperationException">Called more than once.</exception>
-    public KafkaBuilder ConfigureClient(Action<KafkaClientConfig> configure)
+    public KafkaBuilder ConfigureClient(Action<KafkaClientOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
@@ -106,7 +106,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     /// Must be called at most once.
     /// </summary>
     /// <exception cref="InvalidOperationException">Called more than once.</exception>
-    public KafkaBuilder ConfigureProducer(Action<KafkaProducerConfig> configure)
+    public KafkaBuilder ConfigureProducer(Action<KafkaProducerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
@@ -125,7 +125,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
     /// Registers an <see cref="ConfluentSchemaRegistry.ISchemaRegistryClient"/> singleton in DI.
     /// </summary>
     /// <exception cref="InvalidOperationException">Called more than once.</exception>
-    public KafkaBuilder ConfigureSchemaRegistry(Action<KafkaSchemaRegistryConfig> configure)
+    public KafkaBuilder ConfigureSchemaRegistry(Action<KafkaSchemaRegistryOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
@@ -343,12 +343,12 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         ConfluentKafka.IAsyncSerializer<TKey>? keyAsyncSerializer,
         ConfluentKafka.IAsyncSerializer<TValue>? valueAsyncSerializer)
     {
-        var kafkaHeaders = KafkaSerializationHelper.ConvertHeaders(headers);
+        var kafkaHeaders = KafkaSerializer.ConvertHeaders(headers);
 
-        var keyBytes = await KafkaSerializationHelper.SerializeAsync(
+        var keyBytes = await KafkaSerializer.SerializeAsync(
             key, topicName, kafkaHeaders, keySerializer, keyAsyncSerializer,
             ConfluentKafka.MessageComponentType.Key).ConfigureAwait(false);
-        var valueBytes = await KafkaSerializationHelper.SerializeAsync(
+        var valueBytes = await KafkaSerializer.SerializeAsync(
             value, topicName, kafkaHeaders, valueSerializer, valueAsyncSerializer,
             ConfluentKafka.MessageComponentType.Value).ConfigureAwait(false);
 
@@ -433,9 +433,13 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         {
             var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
             var confluentProducer = context.Services.GetRequiredService<ConfluentKafka.IProducer<byte[], byte[]>>();
+            var kafkaMetrics = context.Services.GetRequiredService<Metrics.KafkaMetrics>();
 
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
                 messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
+
+            var messageSize = (keyBytes?.Length ?? 0) + (valueBytes?.Length ?? 0);
+            kafkaMetrics.RecordProduceMessageSize(messageSize, topicName);
 
             var kafkaMessage = new ConfluentKafka.Message<byte[], byte[]>
             {
@@ -451,7 +455,26 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     kafkaMessage.Headers.Add(key, System.Text.Encoding.UTF8.GetBytes(value));
             }
 
-            await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "success");
+                kafkaMetrics.RecordProduceMessage(topicName, "success");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "error");
+                kafkaMetrics.RecordProduceMessage(topicName, "error");
+                throw;
+            }
         }
     }
 
@@ -461,92 +484,11 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         string groupId,
         KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
     {
-        // Register each consumer type as scoped (idempotent)
-        foreach (var consumerType in groupBuilder.ConsumerTypes)
-        {
-            services.TryAddScoped(consumerType);
-        }
+        RegisterConsumerTypes(groupBuilder);
+        RegisterMiddleware(groupBuilder);
 
-        // Register router sub-consumer types as scoped + their per-route middleware
-        if (groupBuilder.Routers is { Count: > 0 })
-        {
-            foreach (var router in groupBuilder.Routers)
-            {
-                router.RegisterServices(services);
-            }
-        }
+        var config = BuildConsumerGroupConfig(topicName, topicBuilder, groupBuilder);
 
-        // Register per-group middleware with appropriate lifetimes
-        groupBuilder.Pipeline.RegisterServices(services);
-
-        // Register per-consumer middleware with appropriate lifetimes
-        foreach (var consumerPipeline in groupBuilder.ConsumerPipelines.Values)
-        {
-            consumerPipeline.RegisterServices(services);
-        }
-
-        // Capture factory references for the closure
-        var keyDeserializerFactory = topicBuilder.KeyAsyncDeserializerFactory;
-        var valueDeserializerFactory = topicBuilder.ValueAsyncDeserializerFactory;
-
-        // Build invokers at registration time, paired with optional per-consumer pipelines
-        var consumerPipelines = groupBuilder.ConsumerPipelines;
-        var invokerEntries = groupBuilder.ConsumerTypes
-            .Select(t => (
-                ConsumerType: t,
-                Invoker: (IMiddlewarePipeline<ConsumeContext<TValue>>)new HandlerInvoker<TValue>(t),
-                Pipeline: consumerPipelines.GetValueOrDefault(t)))
-            .ToList();
-
-        // Capture router registrations for the closure
-        var routers = groupBuilder.Routers;
-
-        // Capture build-time values for the closure
-        var workerCount = groupBuilder.WorkerCount;
-        var workerDistribution = groupBuilder.WorkerDistribution;
-        var bufferSize = groupBuilder.BufferSize;
-        var commitInterval = groupBuilder.CommitInterval;
-        var workerStopTimeout = groupBuilder.WorkerStopTimeout;
-
-        // Build transport URI for the consumer group
-        var capturedDestinationAddress = BuildDestinationAddress(topicName);
-
-        // Build error policies at registration time
-        var groupErrorPolicy = BuildErrorPolicy(groupBuilder.GroupErrorPolicyAction);
-        var deserializationErrorAction = BuildDeserializationErrorAction(groupBuilder.DeserializationErrorAction);
-        var validationModule = groupBuilder.Validation;
-        validationModule?.RegisterServices(services);
-
-        // Extract retry config from error policy (retry is now a separate middleware concern)
-        var retryConfig = ExtractRetryConfig(groupErrorPolicy);
-
-        // Build rate limiter at registration time (singleton, shared across all workers)
-        if (groupBuilder.RateLimitAction is not null)
-        {
-            var rateLimitBuilder = new RateLimiting.RateLimitBuilder();
-            groupBuilder.RateLimitAction(rateLimitBuilder);
-            var totalCapacity = workerCount * bufferSize;
-            var rateLimiter = rateLimitBuilder.Build(totalCapacity);
-            groupBuilder.Pipeline.Use(
-                sp => new RateLimitMiddleware<TValue>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
-                Abstractions.Pipeline.MiddlewareLifetime.Singleton);
-        }
-
-        // Build circuit breaker config at registration time (validated eagerly)
-        CircuitBreakerConfig? circuitBreakerConfig = null;
-        if (groupBuilder.CircuitBreakerAction is not null)
-        {
-            var cbBuilder = new CircuitBreakerBuilder();
-            groupBuilder.CircuitBreakerAction(cbBuilder);
-            circuitBreakerConfig = cbBuilder.Build();
-        }
-
-        // Capture pipeline builders for the closure
-        var kafkaInbound = InboundPipeline;
-        var groupPipeline = groupBuilder.Pipeline;
-
-        // Register the hosted service — registration is built inside the factory
-        // so that deferred deserializer factories can be resolved via the service provider.
         services.AddSingleton<IHostedService>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -557,10 +499,10 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
 
             // Create circuit breaker observer if configured (shared across all workers)
             CircuitBreakerObserver<TValue>? cbObserver = null;
-            if (circuitBreakerConfig is not null)
+            if (config.CircuitBreakerConfig is not null)
             {
                 cbObserver = new CircuitBreakerObserver<TValue>(
-                    circuitBreakerConfig,
+                    config.CircuitBreakerConfig,
                     flowControl,
                     sp.GetRequiredService<EmitMetrics>(),
                     loggerFactory.CreateLogger<CircuitBreakerObserver<TValue>>());
@@ -573,23 +515,23 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             {
                 TopicName = topicName,
                 GroupId = groupId,
-                DestinationAddress = capturedDestinationAddress,
+                DestinationAddress = config.DestinationAddress,
                 KeyDeserializer = topicBuilder.KeyDeserializer,
                 ValueDeserializer = topicBuilder.ValueDeserializer,
-                KeyAsyncDeserializer = topicBuilder.KeyAsyncDeserializer ?? keyDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
-                ValueAsyncDeserializer = topicBuilder.ValueAsyncDeserializer ?? valueDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
+                KeyAsyncDeserializer = topicBuilder.KeyAsyncDeserializer ?? config.KeyDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
+                ValueAsyncDeserializer = topicBuilder.ValueAsyncDeserializer ?? config.ValueDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
                 // Pipeline factory — called per worker for per-worker middleware isolation.
                 // Singleton middleware is shared (same DI singleton); factory middleware creates fresh instances per build.
                 BuildConsumerPipelines = () =>
                 {
                     // Build error evaluator that strips RetryAction (retry handled by RetryMiddleware)
-                    Func<Exception, ErrorAction>? errorEvaluator = groupErrorPolicy is not null
-                        ? ex => StripRetryAction(groupErrorPolicy.Evaluate(ex))
+                    Func<Exception, ErrorAction>? errorEvaluator = config.GroupErrorPolicy is not null
+                        ? ex => StripRetryAction(config.GroupErrorPolicy.Evaluate(ex))
                         : null;
 
-                    if (validationModule is { ValidationErrorAction: not null })
+                    if (config.ValidationModule is { ValidationErrorAction: not null } && !config.IsBatchMode)
                     {
-                        var validationErrorAction = validationModule.ValidationErrorAction;
+                        var validationErrorAction = config.ValidationModule.ValidationErrorAction;
                         var innerEvaluator = errorEvaluator;
                         errorEvaluator = ex => ex is MessageValidationException
                             ? validationErrorAction
@@ -602,33 +544,33 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     {
                         Services = sp,
                         LoggerFactory = loggerFactory,
-                        Validation = validationModule,
-                        RetryConfig = retryConfig,
+                        Validation = config.ValidationModule,
+                        RetryConfig = config.RetryConfig,
                         ErrorPolicy = errorEvaluator,
                         ConsumeObservers = consumeObservers,
-                        GroupPipeline = groupPipeline,
+                        GroupPipeline = config.GroupPipeline,
                         GlobalInboundPipeline = globalInboundPipeline,
-                        ProviderInboundPipeline = kafkaInbound,
+                        ProviderInboundPipeline = config.KafkaInboundPipeline,
                         CircuitBreakerNotifier = cbObserver,
                         OutboxEnabled = outboxEnabled,
                     };
 
                     var entries = new List<ConsumerPipelineEntry<TValue>>();
 
-                    foreach (var entry in invokerEntries)
+                    foreach (var entry in config.InvokerEntries)
                     {
                         entries.Add(composer.Compose(
                             entry.Invoker, entry.Pipeline,
                             entry.ConsumerType.Name, ConsumerKind.Direct, entry.ConsumerType));
                     }
 
-                    if (routers is { Count: > 0 })
+                    if (config.Routers is { Count: > 0 })
                     {
-                        foreach (var routerReg in routers)
+                        foreach (var routerReg in config.Routers)
                         {
                             // Strip retry from unmatched route action (router only checks for DiscardAction)
-                            var unmatchedAction = groupErrorPolicy is not null
-                                ? StripRetryAction(groupErrorPolicy.Evaluate(new UnmatchedRouteException(null)))
+                            var unmatchedAction = config.GroupErrorPolicy is not null
+                                ? StripRetryAction(config.GroupErrorPolicy.Evaluate(new UnmatchedRouteException(null)))
                                 : null;
 
                             var routerInvoker = routerReg.BuildInvoker(
@@ -646,20 +588,65 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
 
                     return entries;
                 },
-                WorkerCount = workerCount,
-                WorkerDistribution = workerDistribution,
-                BufferSize = bufferSize,
-                CommitInterval = commitInterval,
-                WorkerStopTimeout = workerStopTimeout,
-                ApplyClientConfig = config => ApplyClientConfigTo(config),
-                ApplyConsumerConfigOverrides = config => groupBuilder.ApplyTo(config),
-                GroupErrorPolicy = groupErrorPolicy,
-                DeserializationErrorAction = deserializationErrorAction,
-                ConsumerTypes = invokerEntries.Select(e => e.ConsumerType)
-                    .Concat(routers?.SelectMany(r => r.ConsumerTypes) ?? [])
+                WorkerCount = config.WorkerCount,
+                WorkerDistribution = config.WorkerDistribution,
+                BufferSize = config.BufferSize,
+                CommitInterval = config.CommitInterval,
+                WorkerStopTimeout = config.WorkerStopTimeout,
+                ApplyClientConfig = clientConfig => ApplyClientConfigTo(clientConfig),
+                ApplyConsumerConfigOverrides = config.ApplyConsumerConfigOverrides,
+                GroupErrorPolicy = config.GroupErrorPolicy,
+                DeserializationErrorAction = config.DeserializationErrorAction,
+                ConsumerTypes = config.InvokerEntries.Select(e => e.ConsumerType)
+                    .Concat(config.Routers?.SelectMany(r => r.ConsumerTypes) ?? [])
                     .ToList(),
-                CircuitBreakerEnabled = circuitBreakerConfig is not null,
-                RateLimitEnabled = groupBuilder.RateLimitAction is not null,
+                CircuitBreakerEnabled = config.CircuitBreakerConfig is not null,
+                RateLimitEnabled = config.RateLimitEnabled,
+                BatchOptions = config.BatchOptions,
+                BuildBatchConsumerPipelines = config.BatchInvokerEntry.HasValue
+                    ? () =>
+                    {
+                        var (adapterType, invoker, userType) = config.BatchInvokerEntry.Value;
+
+                        IMiddleware<ConsumeContext<MessageBatch<TValue>>>? preBuiltBatchValidation = null;
+
+                        if (config.ValidationModule is { IsConfigured: true })
+                        {
+                            preBuiltBatchValidation = new BatchValidationMiddleware<TValue>(
+                                config.ValidationModule,
+                                config.ValidationModule.ValidationErrorAction ?? ErrorAction.Discard(),
+                                sp.GetService<IDeadLetterSink>(),
+                                sp.GetRequiredService<EmitMetrics>(),
+                                loggerFactory.CreateLogger<BatchValidationMiddleware<TValue>>());
+                        }
+
+                        Func<Exception, ErrorAction>? batchErrorEvaluator = config.GroupErrorPolicy is not null
+                            ? ex => StripRetryAction(config.GroupErrorPolicy.Evaluate(ex))
+                            : null;
+
+                        var batchComposer = new ConsumerPipelineComposer<MessageBatch<TValue>>
+                        {
+                            Services = sp,
+                            LoggerFactory = loggerFactory,
+                            Validation = null,
+                            PreBuiltValidationMiddleware = preBuiltBatchValidation,
+                            RetryConfig = config.RetryConfig,
+                            ErrorPolicy = batchErrorEvaluator,
+                            ConsumeObservers = consumeObservers,
+                            GroupPipeline = config.GroupPipeline,
+                            GlobalInboundPipeline = globalInboundPipeline,
+                            ProviderInboundPipeline = config.KafkaInboundPipeline,
+                            CircuitBreakerNotifier = cbObserver,
+                            OutboxEnabled = outboxEnabled,
+                        };
+
+                        var batchEntry = batchComposer.Compose(
+                            invoker, null,
+                            userType.Name, ConsumerKind.Direct, userType);
+
+                        return [batchEntry];
+                    }
+                : null,
             };
 
             return new ConsumerGroupWorker<TKey, TValue>(
@@ -676,11 +663,182 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         });
     }
 
+    private void RegisterConsumerTypes<TKey, TValue>(KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
+    {
+        foreach (var consumerType in groupBuilder.ConsumerTypes)
+        {
+            services.TryAddScoped(consumerType);
+        }
+
+        if (groupBuilder.IsBatchMode && groupBuilder.BatchConsumerType is not null)
+        {
+            var batchConsumerType = groupBuilder.BatchConsumerType;
+            services.TryAddScoped(batchConsumerType);
+
+            var adapterType = typeof(BatchConsumerAdapter<,>).MakeGenericType(typeof(TValue), batchConsumerType);
+            services.TryAddScoped(adapterType);
+        }
+    }
+
+    private void RegisterMiddleware<TKey, TValue>(KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
+    {
+        if (groupBuilder.Routers is { Count: > 0 })
+        {
+            foreach (var router in groupBuilder.Routers)
+            {
+                router.RegisterServices(services);
+            }
+        }
+
+        groupBuilder.Pipeline.RegisterServices(services);
+
+        foreach (var consumerPipeline in groupBuilder.ConsumerPipelines.Values)
+        {
+            consumerPipeline.RegisterServices(services);
+        }
+    }
+
+    private ConsumerGroupConfig<TKey, TValue> BuildConsumerGroupConfig<TKey, TValue>(
+        string topicName,
+        KafkaTopicBuilder<TKey, TValue> topicBuilder,
+        KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
+    {
+        var keyDeserializerFactory = topicBuilder.KeyAsyncDeserializerFactory;
+        var valueDeserializerFactory = topicBuilder.ValueAsyncDeserializerFactory;
+
+        var consumerPipelines = groupBuilder.ConsumerPipelines;
+        var invokerEntries = groupBuilder.ConsumerTypes
+            .Select(t => (
+                ConsumerType: t,
+                Invoker: (IMiddlewarePipeline<ConsumeContext<TValue>>)new HandlerInvoker<TValue>(t),
+                Pipeline: consumerPipelines.GetValueOrDefault(t)))
+            .ToList();
+
+        (Type AdapterType, IMiddlewarePipeline<ConsumeContext<MessageBatch<TValue>>> Invoker, Type UserConsumerType)? batchInvokerEntry = null;
+
+        if (groupBuilder.IsBatchMode && groupBuilder.BatchConsumerType is not null)
+        {
+            var userType = groupBuilder.BatchConsumerType;
+            var adapterType = typeof(BatchConsumerAdapter<,>).MakeGenericType(typeof(TValue), userType);
+            var invoker = new HandlerInvoker<MessageBatch<TValue>>(adapterType);
+            batchInvokerEntry = (adapterType, invoker, userType);
+        }
+
+        var routers = groupBuilder.Routers;
+
+        var workerCount = groupBuilder.WorkerCount;
+        var workerDistribution = groupBuilder.WorkerDistribution;
+        var bufferSize = groupBuilder.BufferSize;
+        var commitInterval = groupBuilder.CommitInterval;
+        var workerStopTimeout = groupBuilder.WorkerStopTimeout;
+
+        var destinationAddress = BuildDestinationAddress(topicName);
+
+        var groupErrorPolicy = BuildErrorPolicy(groupBuilder.GroupErrorPolicyAction);
+        var deserializationErrorAction = BuildDeserializationErrorAction(groupBuilder.DeserializationErrorAction);
+        var validationModule = groupBuilder.Validation;
+        validationModule?.RegisterServices(services);
+
+        var retryConfig = ExtractRetryConfig(groupErrorPolicy);
+
+        System.Threading.RateLimiting.RateLimiter? rateLimiter = null;
+        if (groupBuilder.RateLimitAction is not null)
+        {
+            var rateLimitBuilder = new RateLimiting.RateLimitBuilder();
+            groupBuilder.RateLimitAction(rateLimitBuilder);
+            var totalCapacity = workerCount * bufferSize;
+            rateLimiter = rateLimitBuilder.Build(totalCapacity);
+
+            if (!groupBuilder.IsBatchMode)
+            {
+                groupBuilder.Pipeline.Use(
+                    sp => new RateLimitMiddleware<TValue>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
+                    Abstractions.Pipeline.MiddlewareLifetime.Singleton);
+            }
+        }
+
+        CircuitBreakerConfig? circuitBreakerConfig = null;
+        if (groupBuilder.CircuitBreakerAction is not null)
+        {
+            var cbBuilder = new CircuitBreakerBuilder();
+            groupBuilder.CircuitBreakerAction(cbBuilder);
+            circuitBreakerConfig = cbBuilder.Build();
+        }
+
+        var kafkaInbound = InboundPipeline;
+        var groupPipeline = groupBuilder.Pipeline;
+        var batchOptions = groupBuilder.BatchOptions;
+        var isBatchMode = groupBuilder.IsBatchMode;
+
+        // In batch mode, the rate limiter must be typed for MessageBatch<TValue> rather
+        // than TValue. Since batch mode and AddConsumer are mutually exclusive, the TValue-
+        // typed pipeline build never runs, so it's safe to add the batch-typed factory
+        // directly to groupPipeline.
+        if (isBatchMode && rateLimiter is not null)
+        {
+            groupPipeline.Use<ConsumeContext<MessageBatch<TValue>>>(
+                sp => new RateLimitMiddleware<MessageBatch<TValue>>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
+                Abstractions.Pipeline.MiddlewareLifetime.Singleton);
+        }
+
+        return new ConsumerGroupConfig<TKey, TValue>
+        {
+            KeyDeserializerFactory = keyDeserializerFactory,
+            ValueDeserializerFactory = valueDeserializerFactory,
+            InvokerEntries = invokerEntries,
+            BatchInvokerEntry = batchInvokerEntry,
+            Routers = routers,
+            WorkerCount = workerCount,
+            WorkerDistribution = workerDistribution,
+            BufferSize = bufferSize,
+            CommitInterval = commitInterval,
+            WorkerStopTimeout = workerStopTimeout,
+            DestinationAddress = destinationAddress,
+            GroupErrorPolicy = groupErrorPolicy,
+            DeserializationErrorAction = deserializationErrorAction,
+            ValidationModule = validationModule,
+            RetryConfig = retryConfig,
+            RateLimitEnabled = groupBuilder.RateLimitAction is not null,
+            CircuitBreakerConfig = circuitBreakerConfig,
+            KafkaInboundPipeline = kafkaInbound,
+            GroupPipeline = groupPipeline,
+            BatchOptions = batchOptions,
+            IsBatchMode = isBatchMode,
+            ApplyConsumerConfigOverrides = config => groupBuilder.ApplyTo(config),
+        };
+    }
+
+    private sealed class ConsumerGroupConfig<TKey, TValue>
+    {
+        public required Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TKey>>? KeyDeserializerFactory { get; init; }
+        public required Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TValue>>? ValueDeserializerFactory { get; init; }
+        public required List<(Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TValue>> Invoker, IMessagePipelineBuilder? Pipeline)> InvokerEntries { get; init; }
+        public required (Type AdapterType, IMiddlewarePipeline<ConsumeContext<MessageBatch<TValue>>> Invoker, Type UserConsumerType)? BatchInvokerEntry { get; init; }
+        public required List<RouterRegistration<TValue>>? Routers { get; init; }
+        public required int WorkerCount { get; init; }
+        public required WorkerDistribution WorkerDistribution { get; init; }
+        public required int BufferSize { get; init; }
+        public required TimeSpan CommitInterval { get; init; }
+        public required TimeSpan WorkerStopTimeout { get; init; }
+        public required Uri DestinationAddress { get; init; }
+        public required ErrorPolicy? GroupErrorPolicy { get; init; }
+        public required ErrorAction? DeserializationErrorAction { get; init; }
+        public required ValidationModule<TValue>? ValidationModule { get; init; }
+        public required RetryConfig? RetryConfig { get; init; }
+        public required bool RateLimitEnabled { get; init; }
+        public required CircuitBreakerConfig? CircuitBreakerConfig { get; init; }
+        public required IMessagePipelineBuilder KafkaInboundPipeline { get; init; }
+        public required IMessagePipelineBuilder GroupPipeline { get; init; }
+        public required BatchOptions? BatchOptions { get; init; }
+        public required bool IsBatchMode { get; init; }
+        public required Action<ConfluentKafka.ConsumerConfig> ApplyConsumerConfigOverrides { get; init; }
+    }
+
     private void ApplyClientConfigTo(ConfluentKafka.ClientConfig config)
     {
         if (ClientConfigAction is not null)
         {
-            var kafkaClientConfig = new KafkaClientConfig();
+            var kafkaClientConfig = new KafkaClientOptions();
             ClientConfigAction(kafkaClientConfig);
             kafkaClientConfig.ApplyTo(config);
         }
@@ -697,7 +855,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             return "localhost:9092";
         }
 
-        var config = new KafkaClientConfig();
+        var config = new KafkaClientOptions();
         ClientConfigAction(config);
         return config.BootstrapServers ?? "localhost:9092";
     }
@@ -761,11 +919,11 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         }
     }
 
-    private void RegisterSchemaRegistryClient(Action<KafkaSchemaRegistryConfig> configure)
+    private void RegisterSchemaRegistryClient(Action<KafkaSchemaRegistryOptions> configure)
     {
         services.AddSingleton<ConfluentSchemaRegistry.ISchemaRegistryClient>(_ =>
         {
-            var schemaRegistryConfig = new KafkaSchemaRegistryConfig();
+            var schemaRegistryConfig = new KafkaSchemaRegistryOptions();
             configure(schemaRegistryConfig);
 
             var confluentConfig = new ConfluentSchemaRegistry.SchemaRegistryConfig();

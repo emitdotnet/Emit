@@ -14,7 +14,7 @@ using Emit.Pipeline;
 public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<TValue>
 {
     /// <inheritdoc />
-    IMessagePipelineBuilder IInboundPipelineConfigurable.InboundPipeline => Pipeline;
+    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
 
     /// <summary>
     /// Gets the per-consumer middleware pipeline builder.

@@ -115,7 +115,7 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             var baggageHeader = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.Baggage).Value;
             if (!string.IsNullOrEmpty(baggageHeader))
             {
-                ActivityHelper.RestoreBaggage(activity, baggageHeader);
+                ActivityPropagation.RestoreBaggage(activity, baggageHeader);
             }
         }
 

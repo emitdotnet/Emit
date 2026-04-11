@@ -2,6 +2,7 @@ namespace Emit.Kafka.Tests;
 
 using Emit.Abstractions.ErrorHandling;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
@@ -38,10 +39,7 @@ public class KafkaDeadLetterCompliance(KafkaContainerFixture fixture)
             // Source topic — producer + consumer that always fails, dead-lettering to dlqTopic.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

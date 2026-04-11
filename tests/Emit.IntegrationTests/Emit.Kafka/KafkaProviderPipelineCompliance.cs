@@ -28,10 +28,7 @@ public class KafkaProviderPipelineCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

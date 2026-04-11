@@ -5,7 +5,7 @@ using ConfluentKafka = Confluent.Kafka;
 /// <summary>
 /// Consumer-specific configuration overrides layered on top of shared client config.
 /// </summary>
-public sealed class KafkaConsumerConfig
+public sealed class KafkaConsumerOptions
 {
     /// <summary>
     /// Action to take when there is no initial offset in offset store or the desired offset is out of range:

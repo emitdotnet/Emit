@@ -4,13 +4,13 @@ using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
-public sealed class KafkaSchemaRegistryConfigTests
+public sealed class KafkaSchemaRegistryOptionsTests
 {
     [Fact]
     public void GivenUrlSet_WhenApplyTo_ThenConfigUrlIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { Url = "http://localhost:8081" };
+        var config = new KafkaSchemaRegistryOptions { Url = "http://localhost:8081" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -24,7 +24,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenRequestTimeoutSet_WhenApplyTo_ThenConfigRequestTimeoutMsIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { RequestTimeout = TimeSpan.FromSeconds(10) };
+        var config = new KafkaSchemaRegistryOptions { RequestTimeout = TimeSpan.FromSeconds(10) };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -38,7 +38,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenMaxRetriesSet_WhenApplyTo_ThenConfigMaxRetriesIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { MaxRetries = 5 };
+        var config = new KafkaSchemaRegistryOptions { MaxRetries = 5 };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -52,7 +52,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenRetriesWaitSet_WhenApplyTo_ThenConfigRetriesWaitMsIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { RetriesWait = TimeSpan.FromSeconds(2) };
+        var config = new KafkaSchemaRegistryOptions { RetriesWait = TimeSpan.FromSeconds(2) };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -66,7 +66,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenRetriesMaxWaitSet_WhenApplyTo_ThenConfigRetriesMaxWaitMsIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { RetriesMaxWait = TimeSpan.FromSeconds(30) };
+        var config = new KafkaSchemaRegistryOptions { RetriesMaxWait = TimeSpan.FromSeconds(30) };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -80,7 +80,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenMaxConnectionsPerServerSet_WhenApplyTo_ThenConfigMaxConnectionsPerServerIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { MaxConnectionsPerServer = 10 };
+        var config = new KafkaSchemaRegistryOptions { MaxConnectionsPerServer = 10 };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -94,7 +94,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenMaxCachedSchemasSet_WhenApplyTo_ThenConfigMaxCachedSchemasIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { MaxCachedSchemas = 500 };
+        var config = new KafkaSchemaRegistryOptions { MaxCachedSchemas = 500 };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -108,7 +108,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenLatestCacheTtlSet_WhenApplyTo_ThenConfigLatestCacheTtlSecsIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { LatestCacheTtl = TimeSpan.FromMinutes(2) };
+        var config = new KafkaSchemaRegistryOptions { LatestCacheTtl = TimeSpan.FromMinutes(2) };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -122,7 +122,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenSslCaLocationSet_WhenApplyTo_ThenConfigSslCaLocationIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { SslCaLocation = "/certs/ca.pem" };
+        var config = new KafkaSchemaRegistryOptions { SslCaLocation = "/certs/ca.pem" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -136,7 +136,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenSslKeystoreSet_WhenApplyTo_ThenConfigSslKeystoreIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig
+        var config = new KafkaSchemaRegistryOptions
         {
             SslKeystoreLocation = "/certs/keystore.p12",
             SslKeystorePassword = "secret"
@@ -155,7 +155,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenEnableSslCertificateVerificationSet_WhenApplyTo_ThenConfigEnableSslCertificateVerificationIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { EnableSslCertificateVerification = false };
+        var config = new KafkaSchemaRegistryOptions { EnableSslCertificateVerification = false };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -169,7 +169,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBasicAuthSet_WhenApplyTo_ThenConfigBasicAuthIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig
+        var config = new KafkaSchemaRegistryOptions
         {
             BasicAuthCredentialsSource = ConfluentSchemaRegistry.AuthCredentialsSource.UserInfo,
             BasicAuthUserInfo = "user:pass"
@@ -188,7 +188,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthTokenSet_WhenApplyTo_ThenConfigBearerAuthTokenIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthToken = "my-token" };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthToken = "my-token" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -202,7 +202,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthClientIdSet_WhenApplyTo_ThenConfigBearerAuthClientIdIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthClientId = "client-id" };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthClientId = "client-id" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -216,7 +216,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthClientSecretSet_WhenApplyTo_ThenConfigBearerAuthClientSecretIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthClientSecret = "client-secret" };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthClientSecret = "client-secret" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -230,7 +230,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthCredentialsSourceSet_WhenApplyTo_ThenConfigBearerAuthCredentialsSourceIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthCredentialsSource = ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthCredentialsSource = ConfluentSchemaRegistry.BearerAuthCredentialsSource.OAuthBearer };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -244,7 +244,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthTokenEndpointUrlSet_WhenApplyTo_ThenConfigBearerAuthTokenEndpointUrlIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthTokenEndpointUrl = "https://auth.example.com/token" };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthTokenEndpointUrl = "https://auth.example.com/token" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -258,7 +258,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenBearerAuthScopeSet_WhenApplyTo_ThenConfigBearerAuthScopeIsSet()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig { BearerAuthScope = "schema-registry" };
+        var config = new KafkaSchemaRegistryOptions { BearerAuthScope = "schema-registry" };
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig();
 
         // Act
@@ -272,7 +272,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenNoPropertiesSet_WhenApplyTo_ThenConfigUnchanged()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig();
+        var config = new KafkaSchemaRegistryOptions();
         var target = new ConfluentSchemaRegistry.SchemaRegistryConfig
         {
             Url = "http://existing:8081",
@@ -291,7 +291,7 @@ public sealed class KafkaSchemaRegistryConfigTests
     public void GivenAllPropertiesSet_WhenApplyTo_ThenAllApplied()
     {
         // Arrange
-        var config = new KafkaSchemaRegistryConfig
+        var config = new KafkaSchemaRegistryOptions
         {
             Url = "http://registry:8081",
             RequestTimeout = TimeSpan.FromSeconds(15),

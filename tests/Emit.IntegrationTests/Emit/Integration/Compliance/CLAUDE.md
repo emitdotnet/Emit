@@ -6,6 +6,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
+| `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation, retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
 | `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior | Add circuit breaker tests or debug circuit breaker issues |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
 | `ConsumerObserverCompliance.cs` | IConsumerObserver lifecycle event delivery | Add consumer observer tests or debug observer invocation |

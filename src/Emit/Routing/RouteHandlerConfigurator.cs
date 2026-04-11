@@ -12,7 +12,7 @@ using Emit.Pipeline;
 internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<TMessage>
 {
     /// <inheritdoc />
-    IMessagePipelineBuilder IInboundPipelineConfigurable.InboundPipeline => Pipeline;
+    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
 
     /// <summary>
     /// Gets the per-route middleware pipeline builder.

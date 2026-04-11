@@ -23,7 +23,7 @@ public static class PipelineConfigurableExtensions
         this TBuilder builder,
         Type middlewareType,
         MiddlewareLifetime lifetime = default)
-        where TBuilder : IInboundPipelineConfigurable
+        where TBuilder : IInboundConfigurable
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.InboundPipeline.Use(middlewareType, lifetime);
@@ -45,7 +45,7 @@ public static class PipelineConfigurableExtensions
         this TBuilder builder,
         Type middlewareType,
         MiddlewareLifetime lifetime = default)
-        where TBuilder : IOutboundPipelineConfigurable
+        where TBuilder : IOutboundConfigurable
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.OutboundPipeline.Use(middlewareType, lifetime);

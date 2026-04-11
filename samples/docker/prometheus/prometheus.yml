@@ -12,3 +12,8 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:5001"]
     metrics_path: /metrics
+
+  - job_name: batch-consumer
+    static_configs:
+      - targets: ["host.docker.internal:5002"]
+    metrics_path: /metrics

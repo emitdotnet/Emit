@@ -4,6 +4,7 @@ using System.Text;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -281,13 +282,4 @@ public abstract class ErrorPolicyCompliance
         }
     }
 
-    /// <summary>
-    /// Consumer that captures dead-lettered messages for assertion.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }

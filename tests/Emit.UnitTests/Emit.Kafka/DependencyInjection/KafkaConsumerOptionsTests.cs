@@ -4,13 +4,13 @@ using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
-public sealed class KafkaConsumerConfigTests
+public sealed class KafkaConsumerOptionsTests
 {
     [Fact]
     public void GivenAutoOffsetResetSet_WhenApplyTo_ThenConfigAutoOffsetResetIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest };
+        var consumerConfig = new KafkaConsumerOptions { AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -24,7 +24,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenSessionTimeoutSet_WhenApplyTo_ThenConfigSessionTimeoutMsIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { SessionTimeout = TimeSpan.FromSeconds(10) };
+        var consumerConfig = new KafkaConsumerOptions { SessionTimeout = TimeSpan.FromSeconds(10) };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -38,7 +38,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenHeartbeatIntervalSet_WhenApplyTo_ThenConfigHeartbeatIntervalMsIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { HeartbeatInterval = TimeSpan.FromSeconds(3) };
+        var consumerConfig = new KafkaConsumerOptions { HeartbeatInterval = TimeSpan.FromSeconds(3) };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -52,7 +52,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenMaxPollIntervalSet_WhenApplyTo_ThenConfigMaxPollIntervalMsIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { MaxPollInterval = TimeSpan.FromMinutes(5) };
+        var consumerConfig = new KafkaConsumerOptions { MaxPollInterval = TimeSpan.FromMinutes(5) };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -66,7 +66,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenFetchPropertiesSet_WhenApplyTo_ThenAllFetchPropertiesApplied()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig
+        var consumerConfig = new KafkaConsumerOptions
         {
             FetchMinBytes = 1024,
             FetchMaxBytes = 52428800,
@@ -89,7 +89,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenGroupInstanceIdSet_WhenApplyTo_ThenConfigGroupInstanceIdIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { GroupInstanceId = "instance-1" };
+        var consumerConfig = new KafkaConsumerOptions { GroupInstanceId = "instance-1" };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -103,7 +103,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenPartitionAssignmentStrategySet_WhenApplyTo_ThenConfigPartitionAssignmentStrategyIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig
+        var consumerConfig = new KafkaConsumerOptions
         {
             PartitionAssignmentStrategy = ConfluentKafka.PartitionAssignmentStrategy.RoundRobin
         };
@@ -120,7 +120,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenIsolationLevelSet_WhenApplyTo_ThenConfigIsolationLevelIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { IsolationLevel = ConfluentKafka.IsolationLevel.ReadCommitted };
+        var consumerConfig = new KafkaConsumerOptions { IsolationLevel = ConfluentKafka.IsolationLevel.ReadCommitted };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -134,7 +134,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenCheckCrcsSet_WhenApplyTo_ThenConfigCheckCrcsIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { CheckCrcs = true };
+        var consumerConfig = new KafkaConsumerOptions { CheckCrcs = true };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -148,7 +148,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenGroupProtocolSet_WhenApplyTo_ThenConfigGroupProtocolIsSet()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig { GroupProtocol = ConfluentKafka.GroupProtocol.Consumer };
+        var consumerConfig = new KafkaConsumerOptions { GroupProtocol = ConfluentKafka.GroupProtocol.Consumer };
         var config = new ConfluentKafka.ConsumerConfig();
 
         // Act
@@ -162,7 +162,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenNoPropertiesSet_WhenApplyTo_ThenConsumerConfigUnchanged()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig();
+        var consumerConfig = new KafkaConsumerOptions();
         var config = new ConfluentKafka.ConsumerConfig
         {
             AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Latest,
@@ -181,7 +181,7 @@ public sealed class KafkaConsumerConfigTests
     public void GivenAllPropertiesSet_WhenApplyTo_ThenAllApplied()
     {
         // Arrange
-        var consumerConfig = new KafkaConsumerConfig
+        var consumerConfig = new KafkaConsumerOptions
         {
             AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest,
             SessionTimeout = TimeSpan.FromSeconds(10),

@@ -2,6 +2,7 @@ namespace Emit.Kafka.Tests;
 
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
@@ -27,10 +28,7 @@ public class KafkaRetryCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -71,10 +69,7 @@ public class KafkaRetryCompliance(KafkaContainerFixture fixture)
             // Source topic — producer + consumer that always fails, retries, then dead-letters.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -102,10 +97,7 @@ public class KafkaRetryCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Builder for configuring Emit services.
 /// </summary>
-public sealed class EmitBuilder : IInboundPipelineConfigurable, IOutboundPipelineConfigurable
+public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
 {
     private readonly IServiceCollection services;
 

@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/BatchConsumer/">
+    <Project Path="BatchConsumer/BatchConsumer.csproj" />
+  </Folder>
+</Solution>

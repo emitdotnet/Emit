@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -241,13 +242,4 @@ public abstract class ValidationCompliance
         }
     }
 
-    /// <summary>
-    /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }

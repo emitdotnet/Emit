@@ -111,7 +111,7 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
                 .Where(b => b.Value is not null)
                 .Select(b => new KeyValuePair<string, string>(b.Key, b.Value!));
 
-            var baggageHeader = ActivityHelper.BuildBaggageHeader(
+            var baggageHeader = ActivityPropagation.BuildBaggageHeader(
                 baggage,
                 this.options.MaxBaggageSizeBytes,
                 logger);

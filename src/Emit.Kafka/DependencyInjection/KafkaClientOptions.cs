@@ -5,7 +5,7 @@ using ConfluentKafka = Confluent.Kafka;
 /// <summary>
 /// Shared Kafka client configuration applied to both producers and consumers.
 /// </summary>
-public sealed class KafkaClientConfig
+public sealed class KafkaClientOptions
 {
     // ── Connection ──
 

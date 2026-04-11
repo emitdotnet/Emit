@@ -13,5 +13,7 @@ Runnable sample applications demonstrating real-world Emit usage patterns.
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
+| `batch-consumer/` | Package sorting facility demonstrating batch consuming, transactional outbox on consumer side, per-item validation, and OpenTelemetry | Explore batch consuming patterns or use as a reference for high-throughput consumer pipelines |
 | `building-sentinel/` | Smart building access and security hub demonstrating transactional outbox, mediator, Kafka router/simple consumers, and OpenTelemetry | Explore a complete end-to-end Emit integration or use as a reference implementation |
+| `distributed-locks/` | Inventory snapshot service demonstrating distributed locks with MongoDB and PostgreSQL backends | Explore distributed locking patterns or use as a reference for lock-based coordination |
 | `docker/` | Grafana dashboards, Prometheus config, MongoDB replica-set init, and pgAdmin server config | Customize observability dashboards or troubleshoot infrastructure configuration |

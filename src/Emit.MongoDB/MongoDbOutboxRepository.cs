@@ -61,7 +61,7 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
         var session = GetSession(emitContext.Transaction);
 
         // Sequence counter is NON-transactional to avoid snapshot isolation duplicates
-        entry.Sequence = await GetNextSequenceAsync(cancellationToken)
+        entry.Sequence = await AllocateNextSequenceAsync(cancellationToken)
             .ConfigureAwait(false);
 
         await outboxCollection.InsertOneAsync(session, entry, cancellationToken: cancellationToken)
@@ -70,7 +70,7 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
 
     private const string OutboxSequenceId = "emit.outbox";
 
-    private async Task<long> GetNextSequenceAsync(
+    private async Task<long> AllocateNextSequenceAsync(
         CancellationToken cancellationToken)
     {
         var filter = Builders<SequenceCounter>.Filter.Eq(x => x.Id, OutboxSequenceId);

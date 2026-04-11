@@ -7,11 +7,15 @@ internal sealed class EfCoreUnitOfWorkTransaction(
     DbContext dbContext,
     EfCoreTransactionContext transactionContext) : IUnitOfWorkTransaction
 {
-    /// <inheritdoc/>
-    public bool IsCommitted { get; private set; }
+    private enum TransactionState { Active, Committed, RolledBack }
+
+    private TransactionState state = TransactionState.Active;
 
     /// <inheritdoc/>
-    public bool IsRolledBack { get; private set; }
+    public bool IsCommitted => state == TransactionState.Committed;
+
+    /// <inheritdoc/>
+    public bool IsRolledBack => state == TransactionState.RolledBack;
 
     /// <inheritdoc/>
     public async Task CommitAsync(CancellationToken cancellationToken = default)
@@ -27,7 +31,7 @@ internal sealed class EfCoreUnitOfWorkTransaction(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transactionContext.CommitAsync(cancellationToken).ConfigureAwait(false);
-        IsCommitted = true;
+        state = TransactionState.Committed;
     }
 
     /// <inheritdoc/>
@@ -38,7 +42,7 @@ internal sealed class EfCoreUnitOfWorkTransaction(
             throw new InvalidOperationException("Cannot rollback a committed transaction.");
         }
 
-        IsRolledBack = true;
+        state = TransactionState.RolledBack;
         await transactionContext.RollbackAsync(cancellationToken).ConfigureAwait(false);
     }
 

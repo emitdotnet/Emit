@@ -5,7 +5,7 @@ using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 /// <summary>
 /// Schema registry configuration for connecting to a Confluent Schema Registry instance.
 /// </summary>
-public sealed class KafkaSchemaRegistryConfig
+public sealed class KafkaSchemaRegistryOptions
 {
     // ── Connection ──
 

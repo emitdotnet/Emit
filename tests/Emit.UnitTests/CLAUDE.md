@@ -1,6 +1,6 @@
 # Emit.UnitTests/
 
-Consolidated unit tests for all Emit projects (458 tests total) using xUnit, Moq, and Given-When-Then naming convention.
+Consolidated unit tests for all Emit projects using xUnit, Moq, and Given-When-Then naming convention.
 
 ## Files
 

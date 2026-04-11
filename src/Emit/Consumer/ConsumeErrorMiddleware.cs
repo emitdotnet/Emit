@@ -94,69 +94,153 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             return;
         }
 
-        // Build DLQ headers with consumer identity
-        var headers = DeadLetterHeaders.CreateBase(
-            context.TransportContext.Headers,
-            exception.GetType(),
-            exception.Message,
-            context.TransportContext.GetSourceProperties());
-
-        // Add retry count
-        headers.Add(new(DeadLetterHeaders.RetryCount, context.RetryAttempt.ToString()));
-
-        // Add baked consumer identity
-        headers.Add(new(DeadLetterHeaders.Consumer, identifier));
-        if (consumerType is not null)
+        if (context.Message is IBatchMessage batchMessage)
         {
-            headers.Add(new(DeadLetterHeaders.ConsumerType, consumerType.FullName ?? consumerType.Name));
+            await ExecuteBatchDeadLetterAsync(exception, batchMessage, context).ConfigureAwait(false);
+            return;
         }
 
-        // Resume the original trace from message headers so the DLQ span is part of the consume trace
-        ActivityContext parentContext = default;
-        var transportHeaders = context.TransportContext.Headers;
-        if (transportHeaders is { Count: > 0 })
-        {
-            var traceParent = transportHeaders.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
-            var traceState = transportHeaders.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
-
-            if (!string.IsNullOrEmpty(traceParent))
-            {
-                ActivityContext.TryParse(traceParent, traceState, out parentContext);
-            }
-        }
-
-        // Create DLQ publish activity — child of the original trace when headers are present
         var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress);
-        using var dlqActivity = EmitActivitySources.Consumer.StartActivity(
-            ActivityNames.DlqPublish,
-            ActivityKind.Producer,
-            parentContext);
-        dlqActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
-        dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
-        dlqActivity?.SetTag(ActivityTagNames.MessagingSystem,
-            EmitEndpointAddress.GetScheme(deadLetterSink.DestinationAddress) ?? "emit");
-        dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);
 
-        try
+        if (await DeadLetterItemAsync(exception, context.TransportContext, context.RetryAttempt, destinationName, context.CancellationToken).ConfigureAwait(false))
         {
-            await deadLetterSink.ProduceAsync(
-                context.TransportContext.RawKey,
-                context.TransportContext.RawValue,
-                headers,
-                context.CancellationToken).ConfigureAwait(false);
-
             emitMetrics.RecordErrorAction("dead_letter");
             logger.LogWarning(exception,
                 "Dead-lettered message {MessageId} to {Destination} for consumer {Consumer}",
                 context.MessageId, destinationName, identifier);
         }
-        catch (Exception dlqEx)
+        else
         {
-            dlqActivity?.SetStatus(ActivityStatusCode.Error, dlqEx.Message);
             emitMetrics.RecordErrorAction("dead_letter_failed");
-            logger.LogError(dlqEx,
+            logger.LogError(exception,
                 "Failed to dead-letter message {MessageId} to {Destination} for consumer {Consumer}",
                 context.MessageId, destinationName, identifier);
         }
+    }
+
+    private async Task ExecuteBatchDeadLetterAsync(
+        Exception exception,
+        IBatchMessage batchMessage,
+        ConsumeContext<TMessage> context)
+    {
+        var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink!.DestinationAddress);
+        int succeeded = 0;
+        int failed = 0;
+
+        foreach (var itemTransport in batchMessage.GetItemTransportContexts())
+        {
+            if (await DeadLetterItemAsync(exception, itemTransport, context.RetryAttempt, destinationName, context.CancellationToken).ConfigureAwait(false))
+            {
+                succeeded++;
+            }
+            else
+            {
+                failed++;
+                logger.LogError(
+                    "Failed to dead-letter batch item {Index}/{Total} to {Destination} for consumer {Consumer}",
+                    succeeded + failed, batchMessage.Count, destinationName, identifier);
+            }
+        }
+
+        if (succeeded > 0)
+        {
+            emitMetrics.RecordErrorAction("dead_letter");
+        }
+
+        if (failed > 0)
+        {
+            emitMetrics.RecordErrorAction("dead_letter_failed");
+        }
+
+        logger.LogWarning(exception,
+            "Dead-lettered {Succeeded}/{Total} batch items to {Destination} for consumer {Consumer} ({Failed} failed)",
+            succeeded, batchMessage.Count, destinationName, identifier, failed);
+    }
+
+    /// <summary>
+    /// Dead-letters a single item: builds headers, creates a DLQ activity span, and produces to the sink.
+    /// Returns <c>true</c> on success, <c>false</c> if the produce failed.
+    /// </summary>
+    private async Task<bool> DeadLetterItemAsync(
+        Exception exception,
+        TransportContext transportContext,
+        int retryAttempt,
+        string? destinationName,
+        CancellationToken cancellationToken)
+    {
+        var headers = BuildDeadLetterHeaders(exception, transportContext, retryAttempt);
+
+        var parentContext = ExtractParentContext(transportContext.Headers);
+        using var dlqActivity = StartDlqActivity(parentContext, destinationName, exception);
+
+        try
+        {
+            await deadLetterSink!.ProduceAsync(
+                transportContext.RawKey,
+                transportContext.RawValue,
+                headers,
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception dlqEx)
+        {
+            dlqActivity?.SetStatus(ActivityStatusCode.Error, dlqEx.Message);
+            return false;
+        }
+    }
+
+    private List<KeyValuePair<string, string>> BuildDeadLetterHeaders(
+        Exception exception,
+        TransportContext transportContext,
+        int retryAttempt)
+    {
+        var headers = DeadLetterHeaders.CreateBase(
+            transportContext.Headers,
+            exception.GetType(),
+            exception.Message,
+            transportContext.GetSourceProperties());
+
+        headers.Add(new(DeadLetterHeaders.RetryCount, retryAttempt.ToString()));
+        headers.Add(new(DeadLetterHeaders.Consumer, identifier));
+
+        if (consumerType is not null)
+        {
+            headers.Add(new(DeadLetterHeaders.ConsumerType, consumerType.FullName ?? consumerType.Name));
+        }
+
+        return headers;
+    }
+
+    private Activity? StartDlqActivity(
+        ActivityContext parentContext,
+        string? destinationName,
+        Exception exception)
+    {
+        var dlqActivity = EmitActivitySources.Consumer.StartActivity(
+            ActivityNames.DlqPublish,
+            ActivityKind.Producer,
+            parentContext);
+
+        dlqActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
+        dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
+        dlqActivity?.SetTag(ActivityTagNames.MessagingSystem,
+            EmitEndpointAddress.GetScheme(deadLetterSink!.DestinationAddress) ?? "emit");
+        dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);
+
+        return dlqActivity;
+    }
+
+    private static ActivityContext ExtractParentContext(IReadOnlyList<KeyValuePair<string, string>> headers)
+    {
+        if (headers is not { Count: > 0 })
+            return default;
+
+        var traceParent = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
+        var traceState = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
+
+        if (!string.IsNullOrEmpty(traceParent) && ActivityContext.TryParse(traceParent, traceState, out var ctx))
+            return ctx;
+
+        return default;
     }
 }

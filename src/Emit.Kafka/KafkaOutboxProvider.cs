@@ -38,7 +38,7 @@ internal sealed class KafkaOutboxProvider(
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        using var processActivity = OutboxActivityHelper.StartProcessActivity(OutboxActivitySource, entry, nodeIdentity.NodeId);
+        using var processActivity = OutboxActivityFactory.StartProcessActivity(OutboxActivitySource, entry, nodeIdentity.NodeId);
 
         // Extract topic from destination URI
         var topic = EmitEndpointAddress.GetEntityName(new Uri(entry.Destination));

@@ -19,11 +19,20 @@ public sealed class RateLimitMiddleware<TMessage>(
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
+        var permitCount = context.Message is IBatchMessage batch ? batch.Count : 1;
+
         var start = Stopwatch.GetTimestamp();
-        using var lease = await rateLimiter.AcquireAsync(1, context.CancellationToken).ConfigureAwait(false);
+        using var lease = await rateLimiter.AcquireAsync(permitCount, context.CancellationToken).ConfigureAwait(false);
         var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
 
         emitMetrics.RecordRateLimitWaitDuration(elapsed);
+
+        if (!lease.IsAcquired)
+        {
+            throw new InvalidOperationException(
+                $"Rate limiter rejected request for {permitCount} permits. " +
+                "Ensure the rate limiter's max permits >= BatchOptions.MaxSize.");
+        }
 
         await next.InvokeAsync(context).ConfigureAwait(false);
     }

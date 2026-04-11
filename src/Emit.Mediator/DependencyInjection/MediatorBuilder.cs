@@ -7,7 +7,7 @@ using Emit.Pipeline;
 /// <summary>
 /// Configures handler registrations for the mediator.
 /// </summary>
-public sealed class MediatorBuilder : IInboundPipelineConfigurable
+public sealed class MediatorBuilder : IInboundConfigurable
 {
     private readonly Dictionary<Type, HandlerRegistration> registrations = [];
     private readonly List<Type> observerTypes = [];

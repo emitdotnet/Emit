@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -67,7 +68,7 @@ public abstract class RetryCompliance
         var topic = $"test-retry-ok-{Guid.NewGuid():N}";
         var groupId = $"group-{Guid.NewGuid():N}";
         var sink = new MessageSink<string>();
-        var counter = new AttemptCounter();
+        var counter = new InvocationCounter();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -213,24 +214,10 @@ public abstract class RetryCompliance
     }
 
     /// <summary>
-    /// Tracks the number of times <see cref="RetrySucceedingConsumer"/> has been invoked.
-    /// </summary>
-    public sealed class AttemptCounter
-    {
-        private int count;
-
-        /// <summary>Gets the total number of invocations so far.</summary>
-        public int Count => Volatile.Read(ref count);
-
-        /// <summary>Increments the counter and returns the new value.</summary>
-        public int Increment() => Interlocked.Increment(ref count);
-    }
-
-    /// <summary>
     /// Consumer that fails for the first <see cref="FailuresBeforeSuccess"/> attempts,
     /// then succeeds and writes the message to the <see cref="MessageSink{T}"/>.
     /// </summary>
-    public sealed class RetrySucceedingConsumer(MessageSink<string> sink, AttemptCounter counter)
+    public sealed class RetrySucceedingConsumer(MessageSink<string> sink, InvocationCounter counter)
         : IConsumer<string>
     {
         /// <inheritdoc />
@@ -246,24 +233,4 @@ public abstract class RetryCompliance
         }
     }
 
-    /// <summary>
-    /// Consumer that always throws <see cref="InvalidOperationException"/>, causing all retries
-    /// to fail and triggering dead-lettering on exhaustion.
-    /// </summary>
-    public sealed class AlwaysFailingConsumer : IConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated persistent failure for retry exhaustion test.");
-    }
-
-    /// <summary>
-    /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }

@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -42,7 +43,7 @@ public abstract class PerConsumerMiddlewareCompliance
         var topic = $"test-per-consumer-mw-{Guid.NewGuid():N}";
         var groupId = $"group-{Guid.NewGuid():N}";
         var sink = new MessageSink<string>();
-        var counter = new GlobalPipelineCompliance.InvocationCounter();
+        var counter = new InvocationCounter();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -98,9 +99,9 @@ public abstract class PerConsumerMiddlewareCompliance
     }
 
     /// <summary>
-    /// Per-consumer middleware that increments the shared <see cref="GlobalPipelineCompliance.InvocationCounter"/>.
+    /// Per-consumer middleware that increments the shared <see cref="InvocationCounter"/>.
     /// </summary>
-    public sealed class PerConsumerCounterMiddleware(GlobalPipelineCompliance.InvocationCounter counter)
+    public sealed class PerConsumerCounterMiddleware(InvocationCounter counter)
         : IMiddleware<ConsumeContext<string>>
     {
         /// <inheritdoc />

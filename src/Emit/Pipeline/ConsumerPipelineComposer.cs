@@ -59,6 +59,13 @@ public sealed class ConsumerPipelineComposer<TValue>
     public ValidationModule<TValue>? Validation { get; init; }
 
     /// <summary>
+    /// Gets an optional pre-built validation middleware. When set, this middleware is used
+    /// instead of building a <see cref="ValidationMiddleware{TValue}"/> from <see cref="Validation"/>.
+    /// Used by batch consumers to supply <see cref="BatchValidationMiddleware{TValue}"/>.
+    /// </summary>
+    public IMiddleware<ConsumeContext<TValue>>? PreBuiltValidationMiddleware { get; init; }
+
+    /// <summary>
     /// Gets the optional retry configuration. When set, a retry middleware wraps the handler
     /// and per-entry middleware. On exhaustion, rethrows for error handling.
     /// </summary>
@@ -136,8 +143,14 @@ public sealed class ConsumerPipelineComposer<TValue>
         }
 
         // 4. ValidationMiddleware (if configured) — outside retry so validation failures skip retry
-        if (Validation is { IsConfigured: true })
+        if (PreBuiltValidationMiddleware is not null)
         {
+            // Batch consumers: use the pre-built BatchValidationMiddleware (per-item validation)
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(PreBuiltValidationMiddleware, terminal);
+        }
+        else if (Validation is { IsConfigured: true })
+        {
+            // Single consumers: build ValidationMiddleware as before
             var validationMw = new ValidationMiddleware<TValue>(
                 Validation,
                 Services.GetRequiredService<EmitMetrics>(),

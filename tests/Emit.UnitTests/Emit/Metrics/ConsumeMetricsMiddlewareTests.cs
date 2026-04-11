@@ -50,7 +50,7 @@ public sealed class ConsumeMetricsMiddlewareTests
 
         // Assert
         Assert.True(nextInvoked);
-        Assert.Equal(2, captured.Count);
+        Assert.Equal(3, captured.Count);
 
         var duration = captured.First(c => c.Name == "emit.pipeline.consume.duration");
         Assert.True((double)duration.Value > 0);
@@ -63,6 +63,12 @@ public sealed class ConsumeMetricsMiddlewareTests
         Assert.Contains(completed.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
         Assert.Contains(completed.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
         Assert.Contains(completed.Tags, t => t.Key == "consumer" && t.Value?.ToString() == "test-consumer");
+
+        var messages = captured.First(c => c.Name == "emit.pipeline.consume.messages");
+        Assert.Equal(1L, messages.Value);
+        Assert.Contains(messages.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(messages.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+        Assert.Contains(messages.Tags, t => t.Key == "consumer" && t.Value?.ToString() == "test-consumer");
 
         listener.Dispose();
     }
@@ -101,7 +107,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
         Assert.Same(expectedException, actualException);
 
-        Assert.Equal(2, captured.Count);
+        Assert.Equal(3, captured.Count);
 
         var duration = captured.First(c => c.Name == "emit.pipeline.consume.duration");
         Assert.True((double)duration.Value > 0);
@@ -112,6 +118,11 @@ public sealed class ConsumeMetricsMiddlewareTests
         Assert.Equal(1L, completed.Value);
         Assert.Contains(completed.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
         Assert.Contains(completed.Tags, t => t.Key == "result" && t.Value?.ToString() == "error");
+
+        var messages = captured.First(c => c.Name == "emit.pipeline.consume.messages");
+        Assert.Equal(1L, messages.Value);
+        Assert.Contains(messages.Tags, t => t.Key == "provider" && t.Value?.ToString() == "kafka");
+        Assert.Contains(messages.Tags, t => t.Key == "result" && t.Value?.ToString() == "error");
 
         listener.Dispose();
     }
@@ -154,7 +165,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         await middleware.InvokeAsync(context, next);
 
         // Assert
-        Assert.Equal(2, captured.Count);
+        Assert.Equal(3, captured.Count);
 
         foreach (var measurement in captured)
         {
@@ -200,7 +211,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         await middleware.InvokeAsync(context, next);
 
         // Assert
-        Assert.Equal(2, captured.Count);
+        Assert.Equal(3, captured.Count);
 
         foreach (var measurement in captured)
         {

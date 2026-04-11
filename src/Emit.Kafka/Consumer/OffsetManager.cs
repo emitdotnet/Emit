@@ -48,6 +48,23 @@ internal class OffsetManager
     }
 
     /// <summary>
+    /// Marks multiple offsets as processed for a single topic-partition.
+    /// Acquires the lock once per partition instead of per offset.
+    /// </summary>
+    public virtual void MarkBatchAsProcessed(string topic, int partition, ReadOnlySpan<long> offsets)
+    {
+        var key = new TopicPartitionKey(topic, partition);
+        if (!partitions.TryGetValue(key, out var tracker))
+            return;
+
+        var watermark = tracker.MarkBatchAsProcessed(offsets);
+        if (watermark.HasValue)
+        {
+            committer.RecordCommittableOffset(topic, partition, watermark.Value);
+        }
+    }
+
+    /// <summary>
     /// Removes all partition tracking state.
     /// </summary>
     public void Clear()

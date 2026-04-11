@@ -5,7 +5,7 @@ using Moq;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
-public sealed class KafkaSerializationHelperTests
+public sealed class KafkaSerializerTests
 {
     [Fact]
     public async Task GivenSyncDeserializer_WhenDeserializeAsync_ThenReturnsDeserializedValue()
@@ -14,7 +14,7 @@ public sealed class KafkaSerializationHelperTests
         var data = new ReadOnlyMemory<byte>(System.Text.Encoding.UTF8.GetBytes("hello"));
 
         // Act
-        var result = await KafkaSerializationHelper.DeserializeAsync(
+        var result = await KafkaSerializer.DeserializeAsync(
             data,
             isNull: false,
             topic: "test-topic",
@@ -40,7 +40,7 @@ public sealed class KafkaSerializationHelperTests
         var data = new ReadOnlyMemory<byte>(System.Text.Encoding.UTF8.GetBytes("test"));
 
         // Act
-        var result = await KafkaSerializationHelper.DeserializeAsync(
+        var result = await KafkaSerializer.DeserializeAsync(
             data,
             isNull: false,
             topic: "test-topic",
@@ -61,7 +61,7 @@ public sealed class KafkaSerializationHelperTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            KafkaSerializationHelper.DeserializeAsync<string>(
+            KafkaSerializer.DeserializeAsync<string>(
                 data,
                 isNull: false,
                 topic: "test-topic",
@@ -78,7 +78,7 @@ public sealed class KafkaSerializationHelperTests
         var data = ReadOnlyMemory<byte>.Empty;
 
         // Act
-        var result = await KafkaSerializationHelper.DeserializeAsync<string>(
+        var result = await KafkaSerializer.DeserializeAsync<string>(
             data,
             isNull: true,
             topic: "test-topic",
@@ -106,7 +106,7 @@ public sealed class KafkaSerializationHelperTests
         var data = new ReadOnlyMemory<byte>(System.Text.Encoding.UTF8.GetBytes("test"));
 
         // Act
-        await KafkaSerializationHelper.DeserializeAsync(
+        await KafkaSerializer.DeserializeAsync(
             data,
             isNull: false,
             topic: "test-topic",
@@ -141,7 +141,7 @@ public sealed class KafkaSerializationHelperTests
         var data = new ReadOnlyMemory<byte>(System.Text.Encoding.UTF8.GetBytes("test"));
 
         // Act
-        await KafkaSerializationHelper.DeserializeAsync(
+        await KafkaSerializer.DeserializeAsync(
             data,
             isNull: false,
             topic: "test-topic",

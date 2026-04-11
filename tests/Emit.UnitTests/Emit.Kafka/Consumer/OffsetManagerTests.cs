@@ -140,4 +140,44 @@ public sealed class OffsetManagerTests
 
         // Assert - no exception
     }
+
+    // ── MarkBatchAsProcessed tests ──
+
+    [Fact]
+    public async Task Given_TrackedPartition_When_MarkBatchAsProcessed_Then_DelegatesToPartitionOffsets()
+    {
+        // Arrange — enqueue 3 offsets; process in tail-first order so watermark advances via OOO
+        var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
+        await using var committer = CreateCommitter(mockConsumer.Object);
+        var manager = new OffsetManager(committer);
+        manager.Enqueue("topic", 0, 10);
+        manager.Enqueue("topic", 0, 11);
+        manager.Enqueue("topic", 0, 12);
+
+        // Act — tail-first: 12→OOO, 11→OOO (head=10), 10→head removed;
+        //        then while: OOO.Remove(11)→watermark=11, OOO.Remove(12)→watermark=12
+        manager.MarkBatchAsProcessed("topic", 0, [12, 11, 10]);
+        committer.Flush();
+
+        // Assert — watermark advances to 12 → commit offset should be 13
+        mockConsumer.Verify(c => c.Commit(It.Is<IEnumerable<ConfluentKafka.TopicPartitionOffset>>(
+            offsets => offsets.Any(o => o.Topic == "topic" && o.Partition.Value == 0 && o.Offset.Value == 13))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Given_UntrackedPartition_When_MarkBatchAsProcessed_Then_NoOp()
+    {
+        // Arrange
+        var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
+        await using var committer = CreateCommitter(mockConsumer.Object);
+        var manager = new OffsetManager(committer);
+
+        // Act — call MarkBatchAsProcessed on a partition that was never enqueued
+        manager.MarkBatchAsProcessed("topic", 0, [5, 6, 7]);
+        committer.Flush();
+
+        // Assert — no commit since partition was not tracked
+        mockConsumer.Verify(c => c.Commit(It.IsAny<IEnumerable<ConfluentKafka.TopicPartitionOffset>>()), Times.Never);
+    }
 }
