@@ -24,4 +24,5 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | `DependencyInjection/` | AddKafka extension methods, KafkaBuilder, and topic/consumer/producer builders | Register Kafka clusters or extend Kafka DI API |
 | `Metrics/` | Kafka provider-specific metrics and broker-level metrics | Monitor Kafka performance or debug consumer lag |
 | `Observability/` | Kafka consumer observer interface and observer invoker | Implement Kafka consumer monitoring or custom instrumentation |
+| `Producer/` | Empty; reserved for future Kafka producer implementations | Not yet populated |
 | `Serialization/` | Previously contained KafkaPayload (deleted) — outbox data now stored directly on OutboxEntry | Historical reference only |

@@ -8,6 +8,7 @@
 | `PipelineConfigurableExtensions.cs` | UseInbound, UseOutbound, and Use&lt;TMessage&gt; extension methods for middleware registration on pipeline-configurable builders | Add middleware via pipeline configuration API |
 | `InboundFilterExtensions.cs` | Extension methods for registering consumer filters on inbound pipelines | Register consumer filters or understand filter registration |
 | `ConsumerFilterMiddleware.cs` | Middleware invoking registered consumer filters in the inbound pipeline | Understand consumer filter invocation or debug filter execution |
+| `BatchConsumerAdapter.cs` | Terminal adapter resolving an IBatchConsumer from the service provider and invoking it | Understand batch handler resolution or debug batch consumer invocation |
 | `ConsumerPipelineComposer.cs` | Composes a fully-layered inbound middleware pipeline for a single consumer or router entry | Understand pipeline composition order or debug middleware layering |
 | `ConsumerPipelineEntry.cs` | Pairs consumer identity metadata with its composed pipeline delegate | Understand how consumer workers resolve and invoke pipelines |
 | `HandlerInvoker.cs` | Terminal adapter resolving a consumer handler from the service provider and invoking it | Understand handler resolution or debug consumer invocation |

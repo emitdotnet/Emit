@@ -41,6 +41,10 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `EmitEndpointAddress.cs` | Transport endpoint address as a URI with scheme, host, port, and entity name | Understand or construct endpoint addresses for producers and dead-letter sinks |
 | `WellKnownHeaders.cs` | Well-known message header name constants for trace context and address propagation | Reference header names in middleware, producers, or consumers |
 | `DeadLetterHeaders.cs` | Well-known dead-letter header constants and factory methods for failed messages | Implement dead-letter producers or read DLQ diagnostic headers |
+| `IBatchConsumer.cs` | Generic interface for handling a batch of consumed messages | Implement batch consumer handlers |
+| `IBatchMessage.cs` | Marker interface for batch-aware middleware behavior (per-item dead-lettering, rate limiting, metrics) | Implement batch-aware middleware or understand batch detection |
+| `MessageBatch.cs` | Immutable batch of BatchItem<T> flowing through the consume pipeline as the message payload | Understand batch message structure or implement batch consumers |
+| `BatchItem.cs` | Single item within a MessageBatch carrying deserialized message and original transport context | Access per-item data within a batch consumer handler |
 
 ## Subdirectories
 
