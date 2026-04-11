@@ -40,12 +40,11 @@ public static class KafkaBuilderExtensions
                 group.WorkerCount = 4;
                 group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
 
-                group.Batch(bc =>
+                group.AddBatchConsumer<PackageSortConsumer>(bc =>
                 {
                     bc.MaxSize = 1000;
                     bc.Timeout = TimeSpan.FromSeconds(5);
-                })
-                .AddBatchConsumer<PackageSortConsumer>();
+                });
 
                 group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
 

@@ -64,6 +64,7 @@ export default defineConfig({
             { label: 'Setup', link: '/kafka/setup/' },
             { label: 'Producers', link: '/kafka/producers/' },
             { label: 'Consumers', link: '/kafka/consumers/' },
+            { label: 'Batch Consuming', link: '/kafka/batch-consuming/' },
             { label: 'Content-Based Routing', link: '/kafka/routing/' },
             { label: 'Serialization', link: '/kafka/serialization/' },
           ],

@@ -40,8 +40,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<BatchSinkConsumer<string>>();
+                    group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
                 });
             });
         });
@@ -89,8 +88,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                             : Emit.Abstractions.MessageValidationResult.Fail("invalid"),
                         a => a.DeadLetter());
                     group.OnError(e => e.Default(d => d.DeadLetter()));
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<BatchSinkConsumer<string>>();
+                    group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
                 });
             });
         });
@@ -122,8 +120,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.OnError(e => e.Default(d => d.Retry(3, Backoff.None).Discard()));
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<FailNTimesBatchConsumer>();
+                    group.AddBatchConsumer<FailNTimesBatchConsumer>(batchConfig);
                 });
             });
         });
@@ -156,8 +153,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.WorkerCount = 1;
                     group.RateLimit(rl => rl.FixedWindow(2, TimeSpan.FromSeconds(2)));
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<BatchSinkConsumer<string>>();
+                    group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
                 });
             });
         });
@@ -195,8 +191,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                           .PauseDuration(TimeSpan.FromSeconds(5))
                           .TripOn<InvalidOperationException>();
                     });
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<ToggleableBatchConsumer>();
+                    group.AddBatchConsumer<ToggleableBatchConsumer>(batchConfig);
                 });
             });
         });
@@ -248,8 +243,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                             : Emit.Abstractions.MessageValidationResult.Fail("invalid"),
                         a => a.DeadLetter());
                     group.OnError(e => e.Default(d => d.Retry(1, Backoff.None).DeadLetter()));
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<AlwaysFailingBatchConsumer>();
+                    group.AddBatchConsumer<AlwaysFailingBatchConsumer>(batchConfig);
                 });
             });
         });
@@ -286,8 +280,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                     group.WorkerDistribution = distributionStrategy == nameof(WorkerDistribution.RoundRobin)
                         ? WorkerDistribution.RoundRobin
                         : WorkerDistribution.ByKeyHash;
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<BatchSinkConsumer<string>>();
+                    group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
                 });
             });
         });
@@ -318,8 +311,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.Batch(batchConfig);
-                    group.AddBatchConsumer<BatchContextInspector>();
+                    group.AddBatchConsumer<BatchContextInspector>(batchConfig);
                 });
             });
         });

@@ -352,7 +352,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     {
         if (batchConfig is not null)
             throw new InvalidOperationException(
-                "AddConsumer<T>() cannot be combined with Batch(). " +
+                $"{nameof(AddConsumer)}<T>() cannot be combined with {nameof(AddBatchConsumer)}<T>(). " +
                 "Use a separate consumer group for single-message consumption.");
 
         var type = typeof(TConsumer);
@@ -379,7 +379,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
         if (batchConfig is not null)
             throw new InvalidOperationException(
-                "AddConsumer<T>() cannot be combined with Batch(). " +
+                $"{nameof(AddConsumer)}<T>() cannot be combined with {nameof(AddBatchConsumer)}<T>(). " +
                 "Use a separate consumer group for single-message consumption.");
 
         var type = typeof(TConsumer);
@@ -431,7 +431,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
         if (batchConfig is not null)
             throw new InvalidOperationException(
-                "AddRouter() cannot be combined with Batch(). " +
+                $"{nameof(AddRouter)} cannot be combined with {nameof(AddBatchConsumer)}<T>(). " +
                 "Content-based routing and batch consumers are mutually exclusive.");
 
         if (string.IsNullOrWhiteSpace(identifier))
@@ -461,20 +461,25 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     }
 
     /// <summary>
-    /// Configures this consumer group for batch consumption.
+    /// Registers a batch consumer for this group with optional batch configuration.
     /// Mutually exclusive with <see cref="AddConsumer{TConsumer}()"/> and <c>AddRouter</c>.
+    /// Only one batch consumer per group is supported.
     /// </summary>
-    public KafkaConsumerGroupBuilder<TKey, TValue> Batch(Action<BatchConfig> configure)
+    /// <param name="configure">Optional batch configuration. When omitted, defaults are used (MaxSize = 100, Timeout = 5s).</param>
+    public KafkaConsumerGroupBuilder<TKey, TValue> AddBatchConsumer<T>(Action<BatchConfig>? configure = null)
+        where T : class, IBatchConsumer<TValue>
     {
-        ArgumentNullException.ThrowIfNull(configure);
-
         if (consumerTypes.Count > 0 || (Routers is { Count: > 0 }))
             throw new InvalidOperationException(
-                "Batch() cannot be combined with AddConsumer() or AddRouter(). " +
+                $"{nameof(AddBatchConsumer)}<T>() cannot be combined with {nameof(AddConsumer)}() or {nameof(AddRouter)}(). " +
                 "Use a separate consumer group for batch consumption.");
 
+        if (batchConsumerType is not null)
+            throw new InvalidOperationException(
+                "Only one batch consumer per consumer group is supported.");
+
         batchConfig = new BatchConfig();
-        configure(batchConfig);
+        configure?.Invoke(batchConfig);
 
         if (batchConfig.MaxSize <= 0)
         {
@@ -491,24 +496,6 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
                 batchConfig.Timeout,
                 "Batch Timeout must be greater than zero.");
         }
-
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a batch consumer for this group. Requires <see cref="Batch"/> to be called first.
-    /// Only one batch consumer per group is supported.
-    /// </summary>
-    public KafkaConsumerGroupBuilder<TKey, TValue> AddBatchConsumer<T>()
-        where T : class, IBatchConsumer<TValue>
-    {
-        if (batchConfig is null)
-            throw new InvalidOperationException(
-                "Call Batch() before AddBatchConsumer<T>() to configure batch settings.");
-
-        if (batchConsumerType is not null)
-            throw new InvalidOperationException(
-                "Only one batch consumer per consumer group is supported.");
 
         batchConsumerType = typeof(T);
         return this;

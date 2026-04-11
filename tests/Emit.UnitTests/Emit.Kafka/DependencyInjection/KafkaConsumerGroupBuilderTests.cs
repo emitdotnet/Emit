@@ -639,13 +639,12 @@ public sealed class KafkaConsumerGroupBuilderTests
     // ── Batch mode tests ──
 
     [Fact]
-    public void Given_Builder_When_BatchAndAddBatchConsumer_Then_IsBatchModeTrue()
+    public void Given_Builder_When_AddBatchConsumer_Then_IsBatchModeTrue()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act
-        builder.Batch(cfg => { });
         builder.AddBatchConsumer<TestBatchConsumer>();
 
         // Assert
@@ -658,7 +657,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
-        builder.Batch(cfg => { });
+        builder.AddBatchConsumer<TestBatchConsumer>();
 
         // Act & Assert
         Assert.Throws<InvalidOperationException>(() => builder.AddConsumer<TestConsumerA>());
@@ -669,7 +668,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
-        builder.Batch(cfg => { });
+        builder.AddBatchConsumer<TestBatchConsumer>();
 
         // Act & Assert
         Assert.Throws<InvalidOperationException>(
@@ -677,21 +676,11 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void Given_SingleMode_When_BatchCalled_Then_ThrowsInvalidOperationException()
+    public void Given_SingleMode_When_AddBatchConsumerCalled_Then_ThrowsInvalidOperationException()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
         builder.AddConsumer<TestConsumerA>();
-
-        // Act & Assert
-        Assert.Throws<InvalidOperationException>(() => builder.Batch(cfg => { }));
-    }
-
-    [Fact]
-    public void Given_NoBatchConfig_When_AddBatchConsumerCalled_Then_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act & Assert
         Assert.Throws<InvalidOperationException>(() => builder.AddBatchConsumer<TestBatchConsumer>());
@@ -702,7 +691,6 @@ public sealed class KafkaConsumerGroupBuilderTests
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
-        builder.Batch(cfg => { });
         builder.AddBatchConsumer<TestBatchConsumer>();
 
         // Act & Assert
@@ -710,25 +698,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void Given_BatchWithoutBatchConsumer_When_ConsumerGroupRegistered_Then_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var topicBuilder = new KafkaTopicBuilder<string, string>("test-topic");
-        topicBuilder.SetKeyDeserializer(Confluent.Kafka.Deserializers.Utf8);
-        topicBuilder.SetValueDeserializer(Confluent.Kafka.Deserializers.Utf8);
-
-        // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() =>
-            topicBuilder.ConsumerGroup("test-group", group =>
-            {
-                group.Batch(cfg => { });
-                // Deliberately not calling AddBatchConsumer<T>()
-            }));
-        Assert.Contains("AddBatchConsumer", ex.Message);
-    }
-
-    [Fact]
-    public void Given_BatchWithBatchConsumer_When_ConsumerGroupRegistered_Then_Succeeds()
+    public void Given_BatchConsumer_When_ConsumerGroupRegistered_Then_Succeeds()
     {
         // Arrange
         var topicBuilder = new KafkaTopicBuilder<string, string>("test-topic");
@@ -738,67 +708,66 @@ public sealed class KafkaConsumerGroupBuilderTests
         // Act — should not throw
         topicBuilder.ConsumerGroup("test-group", group =>
         {
-            group.Batch(cfg => { });
             group.AddBatchConsumer<TestBatchConsumer>();
         });
     }
 
     [Fact]
-    public void Given_BatchConfig_When_MaxSizeIsZero_Then_ThrowsArgumentOutOfRangeException()
+    public void Given_AddBatchConsumer_When_MaxSizeIsZero_Then_ThrowsArgumentOutOfRangeException()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
-            builder.Batch(cfg => cfg.MaxSize = 0));
+            builder.AddBatchConsumer<TestBatchConsumer>(cfg => cfg.MaxSize = 0));
         Assert.Contains("MaxSize", ex.Message);
     }
 
     [Fact]
-    public void Given_BatchConfig_When_MaxSizeIsNegative_Then_ThrowsArgumentOutOfRangeException()
+    public void Given_AddBatchConsumer_When_MaxSizeIsNegative_Then_ThrowsArgumentOutOfRangeException()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
-            builder.Batch(cfg => cfg.MaxSize = -1));
+            builder.AddBatchConsumer<TestBatchConsumer>(cfg => cfg.MaxSize = -1));
         Assert.Contains("MaxSize", ex.Message);
     }
 
     [Fact]
-    public void Given_BatchConfig_When_TimeoutIsZero_Then_ThrowsArgumentOutOfRangeException()
+    public void Given_AddBatchConsumer_When_TimeoutIsZero_Then_ThrowsArgumentOutOfRangeException()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
-            builder.Batch(cfg => cfg.Timeout = TimeSpan.Zero));
+            builder.AddBatchConsumer<TestBatchConsumer>(cfg => cfg.Timeout = TimeSpan.Zero));
         Assert.Contains("Timeout", ex.Message);
     }
 
     [Fact]
-    public void Given_BatchConfig_When_TimeoutIsNegative_Then_ThrowsArgumentOutOfRangeException()
+    public void Given_AddBatchConsumer_When_TimeoutIsNegative_Then_ThrowsArgumentOutOfRangeException()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
-            builder.Batch(cfg => cfg.Timeout = TimeSpan.FromSeconds(-1)));
+            builder.AddBatchConsumer<TestBatchConsumer>(cfg => cfg.Timeout = TimeSpan.FromSeconds(-1)));
         Assert.Contains("Timeout", ex.Message);
     }
 
     [Fact]
-    public void Given_BatchConfig_When_ValidValues_Then_Succeeds()
+    public void Given_AddBatchConsumer_When_ValidConfig_Then_Succeeds()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
 
         // Act — should not throw
-        builder.Batch(cfg =>
+        builder.AddBatchConsumer<TestBatchConsumer>(cfg =>
         {
             cfg.MaxSize = 50;
             cfg.Timeout = TimeSpan.FromSeconds(3);
@@ -809,5 +778,21 @@ public sealed class KafkaConsumerGroupBuilderTests
         Assert.NotNull(builder.BatchConfig);
         Assert.Equal(50, builder.BatchConfig.MaxSize);
         Assert.Equal(TimeSpan.FromSeconds(3), builder.BatchConfig.Timeout);
+    }
+
+    [Fact]
+    public void Given_AddBatchConsumer_When_NoConfigProvided_Then_UsesDefaults()
+    {
+        // Arrange
+        var builder = new KafkaConsumerGroupBuilder<string, string>();
+
+        // Act
+        builder.AddBatchConsumer<TestBatchConsumer>();
+
+        // Assert
+        Assert.True(builder.IsBatchMode);
+        Assert.NotNull(builder.BatchConfig);
+        Assert.Equal(100, builder.BatchConfig.MaxSize);
+        Assert.Equal(TimeSpan.FromSeconds(5), builder.BatchConfig.Timeout);
     }
 }

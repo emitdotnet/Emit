@@ -280,12 +280,6 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
                 $"Consumer group '{groupId}' on topic '{topicName}' must have at least one consumer registered via AddConsumer, AddRouter, or AddBatchConsumer.");
         }
 
-        if (builder.IsBatchMode && builder.BatchConsumerType is null)
-        {
-            throw new InvalidOperationException(
-                $"Consumer group '{groupId}' on topic '{topicName}' has Batch() configured but no batch consumer registered. Call AddBatchConsumer<T>() after Batch().");
-        }
-
         consumerGroups.Add((groupId, builder));
     }
 
