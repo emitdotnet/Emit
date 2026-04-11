@@ -262,4 +262,77 @@ public sealed class PartitionOffsetsTests
         // Act & Assert - no exceptions
         await Task.WhenAll(enqueueTask, processTask);
     }
+
+    // ── MarkBatchAsProcessed tests ──
+
+    [Fact]
+    public void GivenContiguousOffsets_When_MarkBatchAsProcessed_Then_WatermarkAdvancesToLast()
+    {
+        // Arrange — batch with tail-first ordering so OOO accumulates, then head resolves to last
+        var po = new PartitionOffsets();
+        po.Enqueue(10);
+        po.Enqueue(11);
+        po.Enqueue(12);
+
+        // Act — processing tail-first: 12→OOO, 11→OOO (since head=10), 10→head removed;
+        //        then while: head=11, OOO.Remove(11)→true (watermark=11, remove 11);
+        //                     head=12, OOO.Remove(12)→true (watermark=12, remove 12); done.
+        var watermark = po.MarkBatchAsProcessed([12, 11, 10]);
+
+        // Assert — watermark advances to 12
+        Assert.Equal(12, watermark);
+    }
+
+    [Fact]
+    public void GivenNonContiguousOffsets_When_MarkBatchAsProcessed_Then_WatermarkAdvancesPartially()
+    {
+        // Arrange — 5 offsets; batch skips offset 12 (not pending completion)
+        var po = new PartitionOffsets();
+        po.Enqueue(10);
+        po.Enqueue(11);
+        po.Enqueue(12);
+        po.Enqueue(13);
+
+        // Act — process 13→OOO, 11→OOO (head=10), 10→head removed;
+        //        then while: head=11, OOO.Remove(11)→true (watermark=11, remove 11);
+        //                     head=12, OOO.Remove(12)→false (12 not processed). Stop.
+        var watermark = po.MarkBatchAsProcessed([13, 11, 10]);
+
+        // Assert — watermark advances to 11 (12 is still pending)
+        Assert.Equal(11, watermark);
+    }
+
+    [Fact]
+    public void GivenEmptySpan_When_MarkBatchAsProcessed_Then_ReturnsNull()
+    {
+        // Arrange
+        var po = new PartitionOffsets();
+        po.Enqueue(5);
+
+        // Act
+        var watermark = po.MarkBatchAsProcessed([]);
+
+        // Assert — empty span: no offsets completed, watermark does not advance
+        Assert.Null(watermark);
+    }
+
+    [Fact]
+    public void GivenBatchFollowedBySingle_When_MarkBatchThenMarkSingle_Then_WatermarkAdvancesCorrectly()
+    {
+        // Arrange
+        var po = new PartitionOffsets();
+        po.Enqueue(1);
+        po.Enqueue(2);
+        po.Enqueue(3);
+        po.Enqueue(4);
+
+        // Act — batch (tail-first: 2→OOO, 1→head removed; while: head=2, OOO.Remove(2)→true watermark=2)
+        //        then single processes 3 (head removed, watermark=3)
+        var batchWatermark = po.MarkBatchAsProcessed([2, 1]);
+        var singleWatermark = po.MarkAsProcessed(3);
+
+        // Assert
+        Assert.Equal(2, batchWatermark);
+        Assert.Equal(3, singleWatermark);
+    }
 }

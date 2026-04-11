@@ -26,6 +26,8 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private readonly Channel<ConfluentKafka.ConsumeResult<byte[], byte[]>> channel;
     private readonly ConsumerGroupRegistration<TKey, TValue> registration;
     private readonly IReadOnlyList<ConsumerPipelineEntry<TValue>> consumerPipelines;
+    private readonly BatchConfig? batchConfig;
+    private readonly IReadOnlyList<ConsumerPipelineEntry<MessageBatch<TValue>>> batchConsumerPipelines;
     private readonly OffsetManager offsetManager;
     private readonly IServiceScopeFactory scopeFactory;
     private readonly string groupId;
@@ -71,6 +73,8 @@ internal sealed class ConsumerWorker<TKey, TValue>
         this.id = id;
         this.registration = registration;
         this.consumerPipelines = registration.BuildConsumerPipelines();
+        this.batchConfig = registration.BatchConfig;
+        this.batchConsumerPipelines = registration.BuildBatchConsumerPipelines?.Invoke() ?? [];
         this.offsetManager = offsetManager;
         this.scopeFactory = scopeFactory;
         this.groupId = groupId;
@@ -97,6 +101,12 @@ internal sealed class ConsumerWorker<TKey, TValue>
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        if (batchConfig is not null)
+        {
+            await RunBatchAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var reader = channel.Reader;
         logger.LogDebug("{WorkerId} started, idle", id);
         try
@@ -151,6 +161,174 @@ internal sealed class ConsumerWorker<TKey, TValue>
     public void Complete()
     {
         channel.Writer.TryComplete();
+    }
+
+    private async Task RunBatchAsync(CancellationToken cancellationToken)
+    {
+        var reader = channel.Reader;
+        var accumulator = new BatchAccumulator(batchConfig!.MaxSize, batchConfig.Timeout, reader);
+
+        logger.LogDebug("{WorkerId} started in batch mode, idle", id);
+        try
+        {
+            while (true)
+            {
+                var rawBatch = await accumulator.AccumulateAsync(cancellationToken).ConfigureAwait(false);
+                if (rawBatch is null) break; // channel completed
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    await ProcessBatchAsync(rawBatch, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "{WorkerId} error processing batch of {Count} messages",
+                        id, rawBatch.Count);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown
+        }
+    }
+
+    private async Task ProcessBatchAsync(
+        List<ConfluentKafka.ConsumeResult<byte[], byte[]>> rawBatch,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<BatchItem<TValue>>(rawBatch.Count);
+        var offsetsByPartition = new Dictionary<(string Topic, int Partition), List<long>>();
+
+        await using var itemScope = scopeFactory.CreateAsyncScope();
+
+        foreach (var raw in rawBatch)
+        {
+            var key = (raw.Topic, raw.Partition.Value);
+            if (!offsetsByPartition.TryGetValue(key, out var offsets))
+            {
+                offsets = [];
+                offsetsByPartition[key] = offsets;
+            }
+            offsets.Add(raw.Offset.Value);
+
+            DeserializedMessage<TKey, TValue> deserialized;
+            try
+            {
+                deserialized = await DeserializeAsync(raw).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                await HandleDeserializationErrorAsync(raw, ex, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            var sourceHeader = deserialized.Headers
+                .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
+            Uri? sourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null;
+
+            var itemTransport = new KafkaTransportContext<TKey>
+            {
+                MessageId = Guid.NewGuid().ToString(),
+                Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
+                CancellationToken = cancellationToken,
+                Services = itemScope.ServiceProvider,
+                RawKey = raw.Message.Key,
+                RawValue = raw.Message.Value,
+                Headers = deserialized.Headers,
+                ProviderId = "kafka",
+                Topic = deserialized.Topic,
+                Partition = deserialized.Partition,
+                Offset = deserialized.Offset,
+                GroupId = groupId,
+                Key = deserialized.Key,
+                DestinationAddress = destinationAddress,
+                SourceAddress = sourceAddress,
+            };
+
+            items.Add(new BatchItem<TValue>
+            {
+                Message = deserialized.Value,
+                TransportContext = itemTransport,
+            });
+        }
+
+        if (items.Count == 0)
+        {
+            MarkBatchOffsets(offsetsByPartition);
+            return;
+        }
+
+        var batch = new MessageBatch<TValue>(items);
+
+        var batchMessageId = Guid.NewGuid().ToString();
+        var batchTimestamp = DateTimeOffset.UtcNow;
+
+        var firstItemTransport = (KafkaTransportContext<TKey>)items[0].TransportContext;
+
+        try
+        {
+            foreach (var entry in batchConsumerPipelines)
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+
+                var batchTransport = new KafkaTransportContext<TKey>
+                {
+                    MessageId = batchMessageId,
+                    Timestamp = batchTimestamp,
+                    CancellationToken = cancellationToken,
+                    Services = scope.ServiceProvider,
+                    RawKey = null,
+                    RawValue = null,
+                    Headers = [],
+                    ProviderId = "kafka",
+                    Topic = firstItemTransport.Topic,
+                    Partition = -1,
+                    Offset = -1,
+                    GroupId = groupId,
+                    Key = default!,
+                    DestinationAddress = destinationAddress,
+                    SourceAddress = firstItemTransport.SourceAddress,
+                };
+
+                var context = new ConsumeContext<MessageBatch<TValue>>
+                {
+                    MessageId = batchMessageId,
+                    Timestamp = batchTimestamp,
+                    CancellationToken = cancellationToken,
+                    Services = scope.ServiceProvider,
+                    Message = batch,
+                    TransportContext = batchTransport,
+                    DestinationAddress = destinationAddress,
+                    SourceAddress = firstItemTransport.SourceAddress,
+                };
+
+                await entry.Pipeline.InvokeAsync(context).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            MarkBatchOffsets(offsetsByPartition);
+        }
+    }
+
+    private void MarkBatchOffsets(Dictionary<(string Topic, int Partition), List<long>> offsetsByPartition)
+    {
+        foreach (var ((topic, partition), offsets) in offsetsByPartition)
+        {
+            offsetManager.MarkBatchAsProcessed(
+                topic, partition, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(offsets));
+        }
     }
 
     private async Task HandleDeserializationErrorAsync(

@@ -23,6 +23,7 @@
     <InternalsVisibleTo Include="Emit.UnitTests" />
     <InternalsVisibleTo Include="Emit.IntegrationTests" />
     <InternalsVisibleTo Include="Emit.Mediator" />
+    <InternalsVisibleTo Include="Emit.Kafka" />
   </ItemGroup>
 
 </Project>

@@ -48,6 +48,17 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// </summary>
     public required Func<IReadOnlyList<ConsumerPipelineEntry<TValue>>> BuildConsumerPipelines { get; init; }
 
+    /// <summary>
+    /// Batch accumulation configuration, or null for single-message consumption.
+    /// </summary>
+    public BatchConfig? BatchConfig { get; init; }
+
+    /// <summary>
+    /// Factory that builds typed middleware pipeline entries for batch consumers.
+    /// Null when the group is not in batch mode.
+    /// </summary>
+    public Func<IReadOnlyList<ConsumerPipelineEntry<MessageBatch<TValue>>>>? BuildBatchConsumerPipelines { get; init; }
+
     // ── Worker config ──
 
     /// <summary>Number of worker tasks.</summary>

@@ -467,6 +467,16 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
             services.TryAddScoped(consumerType);
         }
 
+        // Register batch consumer + adapter in DI
+        if (groupBuilder.IsBatchMode && groupBuilder.BatchConsumerType is not null)
+        {
+            var batchConsumerType = groupBuilder.BatchConsumerType;
+            services.TryAddScoped(batchConsumerType);
+
+            var adapterType = typeof(BatchConsumerAdapter<,>).MakeGenericType(typeof(TValue), batchConsumerType);
+            services.TryAddScoped(adapterType);
+        }
+
         // Register router sub-consumer types as scoped + their per-route middleware
         if (groupBuilder.Routers is { Count: > 0 })
         {
@@ -498,6 +508,17 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                 Pipeline: consumerPipelines.GetValueOrDefault(t)))
             .ToList();
 
+        // Build batch invoker entry if in batch mode
+        (Type AdapterType, IMiddlewarePipeline<ConsumeContext<MessageBatch<TValue>>> Invoker, Type UserConsumerType)? batchInvokerEntry = null;
+
+        if (groupBuilder.IsBatchMode && groupBuilder.BatchConsumerType is not null)
+        {
+            var userType = groupBuilder.BatchConsumerType;
+            var adapterType = typeof(BatchConsumerAdapter<,>).MakeGenericType(typeof(TValue), userType);
+            var invoker = new HandlerInvoker<MessageBatch<TValue>>(adapterType);
+            batchInvokerEntry = (adapterType, invoker, userType);
+        }
+
         // Capture router registrations for the closure
         var routers = groupBuilder.Routers;
 
@@ -520,16 +541,24 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         // Extract retry config from error policy (retry is now a separate middleware concern)
         var retryConfig = ExtractRetryConfig(groupErrorPolicy);
 
-        // Build rate limiter at registration time (singleton, shared across all workers)
+        // Build rate limiter at registration time (singleton, shared across all workers).
+        // In batch mode, the rate limiter is composed directly into the batch pipeline
+        // (typed as MessageBatch<TValue>) rather than registered on groupBuilder.Pipeline
+        // (typed as TValue), which would cause an invalid cast at pipeline build time.
+        System.Threading.RateLimiting.RateLimiter? rateLimiter = null;
         if (groupBuilder.RateLimitAction is not null)
         {
             var rateLimitBuilder = new RateLimiting.RateLimitBuilder();
             groupBuilder.RateLimitAction(rateLimitBuilder);
             var totalCapacity = workerCount * bufferSize;
-            var rateLimiter = rateLimitBuilder.Build(totalCapacity);
-            groupBuilder.Pipeline.Use(
-                sp => new RateLimitMiddleware<TValue>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
-                Abstractions.Pipeline.MiddlewareLifetime.Singleton);
+            rateLimiter = rateLimitBuilder.Build(totalCapacity);
+
+            if (!groupBuilder.IsBatchMode)
+            {
+                groupBuilder.Pipeline.Use(
+                    sp => new RateLimitMiddleware<TValue>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
+                    Abstractions.Pipeline.MiddlewareLifetime.Singleton);
+            }
         }
 
         // Build circuit breaker config at registration time (validated eagerly)
@@ -544,6 +573,19 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
         // Capture pipeline builders for the closure
         var kafkaInbound = InboundPipeline;
         var groupPipeline = groupBuilder.Pipeline;
+        var capturedBatchConfig = groupBuilder.BatchConfig;
+        var capturedIsBatchMode = groupBuilder.IsBatchMode;
+
+        // In batch mode, the rate limiter must be typed for MessageBatch<TValue> rather
+        // than TValue. Since batch mode and AddConsumer are mutually exclusive, the TValue-
+        // typed pipeline build never runs, so it's safe to add the batch-typed factory
+        // directly to groupPipeline.
+        if (capturedIsBatchMode && rateLimiter is not null)
+        {
+            groupPipeline.Use<ConsumeContext<MessageBatch<TValue>>>(
+                sp => new RateLimitMiddleware<MessageBatch<TValue>>(rateLimiter, sp.GetRequiredService<EmitMetrics>()),
+                Abstractions.Pipeline.MiddlewareLifetime.Singleton);
+        }
 
         // Register the hosted service — registration is built inside the factory
         // so that deferred deserializer factories can be resolved via the service provider.
@@ -587,7 +629,7 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                         ? ex => StripRetryAction(groupErrorPolicy.Evaluate(ex))
                         : null;
 
-                    if (validationModule is { ValidationErrorAction: not null })
+                    if (validationModule is { ValidationErrorAction: not null } && !capturedIsBatchMode)
                     {
                         var validationErrorAction = validationModule.ValidationErrorAction;
                         var innerEvaluator = errorEvaluator;
@@ -660,6 +702,51 @@ public sealed class KafkaBuilder : IInboundPipelineConfigurable, IOutboundPipeli
                     .ToList(),
                 CircuitBreakerEnabled = circuitBreakerConfig is not null,
                 RateLimitEnabled = groupBuilder.RateLimitAction is not null,
+                BatchConfig = capturedBatchConfig,
+                BuildBatchConsumerPipelines = batchInvokerEntry.HasValue
+                    ? () =>
+                    {
+                        var (adapterType, invoker, userType) = batchInvokerEntry.Value;
+
+                        IMiddleware<ConsumeContext<MessageBatch<TValue>>>? preBuiltBatchValidation = null;
+
+                        if (validationModule is { IsConfigured: true })
+                        {
+                            preBuiltBatchValidation = new BatchValidationMiddleware<TValue>(
+                                validationModule,
+                                validationModule.ValidationErrorAction ?? ErrorAction.Discard(),
+                                sp.GetService<IDeadLetterSink>(),
+                                sp.GetRequiredService<EmitMetrics>(),
+                                loggerFactory.CreateLogger<BatchValidationMiddleware<TValue>>());
+                        }
+
+                        Func<Exception, ErrorAction>? batchErrorEvaluator = groupErrorPolicy is not null
+                            ? ex => StripRetryAction(groupErrorPolicy.Evaluate(ex))
+                            : null;
+
+                        var batchComposer = new ConsumerPipelineComposer<MessageBatch<TValue>>
+                        {
+                            Services = sp,
+                            LoggerFactory = loggerFactory,
+                            Validation = null,
+                            PreBuiltValidationMiddleware = preBuiltBatchValidation,
+                            RetryConfig = retryConfig,
+                            ErrorPolicy = batchErrorEvaluator,
+                            ConsumeObservers = consumeObservers,
+                            GroupPipeline = groupPipeline,
+                            GlobalInboundPipeline = globalInboundPipeline,
+                            ProviderInboundPipeline = kafkaInbound,
+                            CircuitBreakerNotifier = cbObserver,
+                            OutboxEnabled = outboxEnabled,
+                        };
+
+                        var batchEntry = batchComposer.Compose(
+                            invoker, null,
+                            userType.Name, ConsumerKind.Direct, userType);
+
+                        return [batchEntry];
+                    }
+                : null,
             };
 
             return new ConsumerGroupWorker<TKey, TValue>(

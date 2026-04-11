@@ -4,6 +4,7 @@ using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
+using Emit.Kafka.Consumer;
 using Emit.Pipeline;
 using Emit.Pipeline.Modules;
 using Emit.RateLimiting;
@@ -155,6 +156,8 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     internal List<RouterRegistration<TValue>>? Routers { get; private set; }
 
     private HashSet<string>? registeredRouterIdentifiers;
+    private BatchConfig? batchConfig;
+    private Type? batchConsumerType;
 
     /// <summary>
     /// Creates a new consumer group builder.
@@ -347,6 +350,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <exception cref="InvalidOperationException">Duplicate consumer type.</exception>
     public void AddConsumer<TConsumer>() where TConsumer : class, IConsumer<TValue>
     {
+        if (batchConfig is not null)
+            throw new InvalidOperationException(
+                "AddConsumer<T>() cannot be combined with Batch(). " +
+                "Use a separate consumer group for single-message consumption.");
+
         var type = typeof(TConsumer);
         if (!registeredConsumerTypes.Add(type))
         {
@@ -368,6 +376,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         where TConsumer : class, IConsumer<TValue>
     {
         ArgumentNullException.ThrowIfNull(configure);
+
+        if (batchConfig is not null)
+            throw new InvalidOperationException(
+                "AddConsumer<T>() cannot be combined with Batch(). " +
+                "Use a separate consumer group for single-message consumption.");
 
         var type = typeof(TConsumer);
         if (!registeredConsumerTypes.Add(type))
@@ -416,6 +429,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         ArgumentNullException.ThrowIfNull(selector);
         ArgumentNullException.ThrowIfNull(configure);
 
+        if (batchConfig is not null)
+            throw new InvalidOperationException(
+                "AddRouter() cannot be combined with Batch(). " +
+                "Content-based routing and batch consumers are mutually exclusive.");
+
         if (string.IsNullOrWhiteSpace(identifier))
         {
             throw new ArgumentException("Router identifier must not be empty or whitespace.", nameof(identifier));
@@ -443,12 +461,70 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     }
 
     /// <summary>
+    /// Configures this consumer group for batch consumption.
+    /// Mutually exclusive with <see cref="AddConsumer{TConsumer}()"/> and <c>AddRouter</c>.
+    /// </summary>
+    public KafkaConsumerGroupBuilder<TKey, TValue> Batch(Action<BatchConfig> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        if (consumerTypes.Count > 0 || (Routers is { Count: > 0 }))
+            throw new InvalidOperationException(
+                "Batch() cannot be combined with AddConsumer() or AddRouter(). " +
+                "Use a separate consumer group for batch consumption.");
+
+        batchConfig = new BatchConfig();
+        configure(batchConfig);
+
+        if (batchConfig.MaxSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(BatchConfig.MaxSize),
+                batchConfig.MaxSize,
+                "Batch MaxSize must be greater than zero.");
+        }
+
+        if (batchConfig.Timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(BatchConfig.Timeout),
+                batchConfig.Timeout,
+                "Batch Timeout must be greater than zero.");
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a batch consumer for this group. Requires <see cref="Batch"/> to be called first.
+    /// Only one batch consumer per group is supported.
+    /// </summary>
+    public KafkaConsumerGroupBuilder<TKey, TValue> AddBatchConsumer<T>()
+        where T : class, IBatchConsumer<TValue>
+    {
+        if (batchConfig is null)
+            throw new InvalidOperationException(
+                "Call Batch() before AddBatchConsumer<T>() to configure batch settings.");
+
+        if (batchConsumerType is not null)
+            throw new InvalidOperationException(
+                "Only one batch consumer per consumer group is supported.");
+
+        batchConsumerType = typeof(T);
+        return this;
+    }
+
+    /// <summary>
     /// Applies non-null ConsumerConfig overrides onto a <see cref="ConfluentKafka.ConsumerConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ConsumerConfig config)
     {
         consumerConfig.ApplyTo(config);
     }
+
+    internal BatchConfig? BatchConfig => batchConfig;
+    internal Type? BatchConsumerType => batchConsumerType;
+    internal bool IsBatchMode => batchConfig is not null;
 
     // ── Explicit interface implementations ──
 

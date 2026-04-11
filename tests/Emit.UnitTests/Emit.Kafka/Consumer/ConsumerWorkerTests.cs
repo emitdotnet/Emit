@@ -687,6 +687,153 @@ public sealed class ConsumerWorkerTests
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 1), Times.Once);
     }
 
+    // ── Batch mode ──
+
+    [Fact]
+    public async Task GivenBatchMode_WhenSourceAddressHeaderPresent_ThenItemTransportContextHasSourceAddress()
+    {
+        // Arrange
+        var sourceUri = "kafka://producer:9092";
+        var headers = new ConfluentKafka.Headers
+        {
+            { WellKnownHeaders.SourceAddress, System.Text.Encoding.UTF8.GetBytes(sourceUri) }
+        };
+        ConsumeContext<MessageBatch<string>>? capturedContext = null;
+        var registration = CreateBatchRegistration(ctx =>
+        {
+            capturedContext = ctx;
+            return Task.CompletedTask;
+        });
+        var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
+        var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
+        worker.Writer.TryWrite(CreateConsumeResult(headers: headers));
+        worker.Complete();
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        var item = Assert.Single(capturedContext.Message.Items);
+        Assert.Equal(new Uri(sourceUri), item.TransportContext.SourceAddress);
+    }
+
+    [Fact]
+    public async Task GivenBatchMode_WhenSourceAddressHeaderPresent_ThenBatchContextHasSourceAddress()
+    {
+        // Arrange
+        var sourceUri = "kafka://producer:9092";
+        var headers = new ConfluentKafka.Headers
+        {
+            { WellKnownHeaders.SourceAddress, System.Text.Encoding.UTF8.GetBytes(sourceUri) }
+        };
+        ConsumeContext<MessageBatch<string>>? capturedContext = null;
+        var registration = CreateBatchRegistration(ctx =>
+        {
+            capturedContext = ctx;
+            return Task.CompletedTask;
+        });
+        var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
+        var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
+        worker.Writer.TryWrite(CreateConsumeResult(headers: headers));
+        worker.Complete();
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        Assert.Equal(new Uri(sourceUri), capturedContext.SourceAddress);
+        Assert.Equal(new Uri(sourceUri), capturedContext.TransportContext.SourceAddress);
+    }
+
+    [Fact]
+    public async Task GivenBatchMode_WhenNoSourceAddressHeader_ThenSourceAddressIsNull()
+    {
+        // Arrange
+        ConsumeContext<MessageBatch<string>>? capturedContext = null;
+        var registration = CreateBatchRegistration(ctx =>
+        {
+            capturedContext = ctx;
+            return Task.CompletedTask;
+        });
+        var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
+        var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
+        worker.Writer.TryWrite(CreateConsumeResult());
+        worker.Complete();
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        var item = Assert.Single(capturedContext.Message.Items);
+        Assert.Null(item.TransportContext.SourceAddress);
+        Assert.Null(capturedContext.SourceAddress);
+    }
+
+    [Fact]
+    public async Task GivenBatchMode_WhenItemsProcessed_ThenServicesIsNotNull()
+    {
+        // Arrange
+        ConsumeContext<MessageBatch<string>>? capturedContext = null;
+        var registration = CreateBatchRegistration(ctx =>
+        {
+            capturedContext = ctx;
+            return Task.CompletedTask;
+        });
+        var scopeFactory = CreateScopeFactory(typeof(TestConsumer), new TestConsumer());
+        var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
+        worker.Writer.TryWrite(CreateConsumeResult());
+        worker.Complete();
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        var item = Assert.Single(capturedContext.Message.Items);
+        Assert.NotNull(item.TransportContext.Services);
+    }
+
+    private static ConsumerGroupRegistration<string, string> CreateBatchRegistration(
+        Func<ConsumeContext<MessageBatch<string>>, Task> onBatchConsumed)
+    {
+        return new ConsumerGroupRegistration<string, string>
+        {
+            TopicName = "test-topic",
+            GroupId = "test-group",
+            DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
+            KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
+            ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
+            BuildConsumerPipelines = () => [],
+            BatchConfig = new BatchConfig { MaxSize = 10, Timeout = TimeSpan.FromSeconds(1) },
+            BuildBatchConsumerPipelines = () =>
+            [
+                new ConsumerPipelineEntry<MessageBatch<string>>
+                {
+                    Identifier = "TestBatchConsumer",
+                    Kind = ConsumerKind.Direct,
+                    ConsumerType = typeof(TestConsumer),
+                    Pipeline = new TestPipeline<ConsumeContext<MessageBatch<string>>>(onBatchConsumed)
+                }
+            ],
+            WorkerCount = 1,
+            WorkerDistribution = WorkerDistribution.ByKeyHash,
+            BufferSize = 32,
+            CommitInterval = TimeSpan.FromSeconds(5),
+            WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            ApplyClientConfig = _ => { },
+            ApplyConsumerConfigOverrides = _ => { },
+        };
+    }
+
+    // ── Deserialization error handling ──
+
     private static ConsumerGroupRegistration<string, string> CreateRegistrationWithFailingDeserializer(
         ErrorAction? deserializationErrorAction = null)
     {

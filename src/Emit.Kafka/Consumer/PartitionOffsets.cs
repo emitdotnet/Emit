@@ -34,22 +34,61 @@ internal sealed class PartitionOffsets
                 return null;
             }
 
-            if (receivedOrder.First.Value != offset)
+            if (!TryCompleteOffset(offset))
             {
-                completedOutOfOrder.Add(offset);
                 return null;
             }
 
-            receivedOrder.RemoveFirst();
-            var watermark = offset;
+            return AdvanceWatermark(offset);
+        }
+    }
 
-            while (receivedOrder.First is not null && completedOutOfOrder.Remove(receivedOrder.First.Value))
+    /// <summary>
+    /// Marks multiple offsets as processed in a single locked operation.
+    /// Returns the new watermark if it advanced, or null.
+    /// </summary>
+    public long? MarkBatchAsProcessed(ReadOnlySpan<long> offsets)
+    {
+        lock (syncLock)
+        {
+            foreach (var offset in offsets)
             {
-                watermark = receivedOrder.First.Value;
-                receivedOrder.RemoveFirst();
+                TryCompleteOffset(offset);
             }
 
-            return watermark;
+            return AdvanceWatermark(null);
         }
+    }
+
+    /// <summary>
+    /// If the offset is the current head of the received queue, removes it and returns true.
+    /// Otherwise, records it as completed out-of-order and returns false.
+    /// Must be called under <see cref="syncLock"/>.
+    /// </summary>
+    private bool TryCompleteOffset(long offset)
+    {
+        if (receivedOrder.First is not null && receivedOrder.First.Value == offset)
+        {
+            receivedOrder.RemoveFirst();
+            return true;
+        }
+
+        completedOutOfOrder.Add(offset);
+        return false;
+    }
+
+    /// <summary>
+    /// Advances the watermark past any contiguous completed offsets at the front of the queue.
+    /// Must be called under <see cref="syncLock"/>.
+    /// </summary>
+    private long? AdvanceWatermark(long? watermark)
+    {
+        while (receivedOrder.First is not null && completedOutOfOrder.Remove(receivedOrder.First.Value))
+        {
+            watermark = receivedOrder.First.Value;
+            receivedOrder.RemoveFirst();
+        }
+
+        return watermark;
     }
 }

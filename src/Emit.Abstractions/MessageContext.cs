@@ -97,8 +97,23 @@ public abstract class MessageContext
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class MessageContext<T> : MessageContext
 {
+    private T message = default!;
+
     /// <summary>
     /// The message payload being processed.
     /// </summary>
-    public required T Message { get; init; }
+    public required T Message
+    {
+        get => message;
+        init => message = value;
+    }
+
+    /// <summary>
+    /// Replaces the message on this context. Used by batch validation middleware
+    /// to replace the batch with a filtered subset without losing Features/Services.
+    /// </summary>
+    internal void WithMessage(T message)
+    {
+        this.message = message;
+    }
 }
