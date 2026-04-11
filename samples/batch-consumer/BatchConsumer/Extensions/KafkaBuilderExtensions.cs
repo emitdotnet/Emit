@@ -1,0 +1,70 @@
+namespace BatchConsumer.Extensions;
+
+using BatchConsumer.Consumers;
+using BatchConsumer.Domain;
+using Emit.Abstractions;
+using Emit.FluentValidation;
+using Emit.Kafka.DependencyInjection;
+
+public static class KafkaBuilderExtensions
+{
+    /// <summary>
+    /// Registers the <c>sorting.scans</c> and <c>sorting.reroutes</c> topics
+    /// with their producer, batch consumer group, and middleware stack.
+    /// </summary>
+    public static KafkaBuilder AddPackageSorterTopics(this KafkaBuilder kafka)
+    {
+        kafka.AutoProvision();
+
+        kafka.DeadLetter("sorting.scans.dlt");
+
+        kafka.Topic<string, PackageScan>("sorting.scans", topic =>
+        {
+            topic.SetUtf8KeySerializer();
+            topic.SetJsonSchemaValueSerializer<string, PackageScan>();
+            topic.SetUtf8KeyDeserializer();
+            topic.SetJsonSchemaValueDeserializer<string, PackageScan>();
+
+            topic.Provisioning(p => p.NumPartitions = 16);
+            topic.Producer(p => p.UseDirect());
+
+            topic.ConsumerGroup("sorting.sorter", group =>
+            {
+                group.WorkerCount = 4;
+                group.AutoOffsetReset = Confluent.Kafka.AutoOffsetReset.Earliest;
+
+                group.Batch(bc =>
+                {
+                    bc.MaxSize = 25;
+                    bc.Timeout = TimeSpan.FromSeconds(1);
+                })
+                .AddBatchConsumer<PackageSortConsumer>();
+
+                group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
+
+                group.OnError(e => e
+                    .Default(a => a
+                        .Retry(3, Backoff.Exponential(TimeSpan.FromMilliseconds(200)))
+                        .DeadLetter()));
+
+                group.OnDeserializationError(a => a.DeadLetter());
+
+                group.RateLimit(rl => rl.TokenBucket(permitsPerSecond: 500, burstSize: 100));
+
+                group.CircuitBreaker(cb => cb
+                    .FailureThreshold(5)
+                    .SamplingWindow(TimeSpan.FromSeconds(30))
+                    .PauseDuration(TimeSpan.FromSeconds(15)));
+            });
+        });
+
+        kafka.Topic<string, RerouteCommand>("sorting.reroutes", topic =>
+        {
+            topic.SetUtf8KeySerializer();
+            topic.SetJsonSchemaValueSerializer<string, RerouteCommand>();
+            topic.Producer();
+        });
+
+        return kafka;
+    }
+}

@@ -85,7 +85,7 @@ public static class ServiceCollectionExtensions
         // Register tracing infrastructure
         services.AddSingleton<IValidateOptions<Tracing.EmitTracingOptions>, Tracing.EmitTracingOptionsValidator>();
         services.AddOptions<Tracing.EmitTracingOptions>().ValidateOnStart();
-        services.AddScoped<Tracing.ActivityEnricherInvoker>();
+        services.AddSingleton<Tracing.ActivityEnricherInvoker>();
 
         // Auto-insert tracing middleware first (outermost), then metrics, then observers
         builder.OutboundPipeline.Use(typeof(Tracing.ProduceTracingMiddleware<>));
