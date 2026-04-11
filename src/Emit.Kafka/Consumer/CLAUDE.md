@@ -20,5 +20,5 @@
 | `RoundRobinStrategy.cs` | Even round-robin message distribution across workers | Understand or modify round-robin distribution |
 | `TopicPartitionKey.cs` | Composite key record for identifying Kafka topic-partition pairs | Reference topic-partition identification |
 | `BatchAccumulator.cs` | Two-phase batch accumulation algorithm: block for first message, drain available, wait up to timeout | Understand or debug batch message accumulation |
-| `BatchConfig.cs` | Batch accumulation configuration: MaxSize (default 100) and Timeout (default 5s) per worker | Configure batch consumer sizing |
+| `BatchOptions.cs` | Batch accumulation configuration: MaxSize (default 100) and Timeout (default 5s) per worker | Configure batch consumer sizing |
 | `WorkerPoolSupervisor.cs` | Manages a pool of consumer workers: creation, health monitoring, fault detection, and graceful shutdown | Understand worker pool lifecycle or debug consumer worker management |

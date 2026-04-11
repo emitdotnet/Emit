@@ -6,7 +6,7 @@ namespace Emit.Abstractions.Pipeline;
 /// uniformly across all pipeline levels — global (<c>EmitBuilder</c>), provider (<c>KafkaBuilder</c>,
 /// <c>MediatorBuilder</c>), and leaf (<c>KafkaConsumerGroupBuilder</c>, <c>MediatorHandlerBuilder</c>).
 /// </summary>
-public interface IInboundPipelineConfigurable
+public interface IInboundConfigurable
 {
     /// <summary>
     /// Gets the inbound middleware pipeline builder.

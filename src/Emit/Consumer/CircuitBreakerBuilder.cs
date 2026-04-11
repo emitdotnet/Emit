@@ -34,12 +34,7 @@ public sealed class CircuitBreakerBuilder
     /// <returns>This builder for chaining.</returns>
     public CircuitBreakerBuilder SamplingWindow(TimeSpan window)
     {
-        if (window <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(window), window,
-                "Sampling window must be greater than zero.");
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);
         samplingWindow = window;
         return this;
     }
@@ -52,12 +47,7 @@ public sealed class CircuitBreakerBuilder
     /// <returns>This builder for chaining.</returns>
     public CircuitBreakerBuilder PauseDuration(TimeSpan duration)
     {
-        if (duration <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(duration), duration,
-                "Pause duration must be greater than zero.");
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, TimeSpan.Zero);
         pauseDuration = duration;
         return this;
     }

@@ -33,7 +33,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> source topic in batch
@@ -47,7 +47,7 @@ public abstract class BatchConsumerCompliance
         string groupId,
         string dlqTopic,
         string dlqGroupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
@@ -57,7 +57,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
@@ -68,7 +68,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
@@ -78,7 +78,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> source topic in batch
@@ -95,7 +95,7 @@ public abstract class BatchConsumerCompliance
         string validationDlqGroupId,
         string handlerDlqTopic,
         string handlerDlqGroupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
@@ -106,7 +106,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig,
+        Action<BatchOptions> batchConfig,
         string distributionStrategy,
         int workerCount);
 
@@ -118,7 +118,7 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig);
+        Action<BatchOptions> batchConfig);
 
     // ── Helper: poll until condition or timeout ──
 

@@ -8,7 +8,7 @@ using Emit.Models;
 /// <summary>
 /// Provides helpers for creating and managing distributed tracing activities during outbox processing.
 /// </summary>
-public static class OutboxActivityHelper
+public static class OutboxActivityFactory
 {
     /// <summary>
     /// Restores an <see cref="ActivityContext"/> from an <see cref="OutboxEntry"/>'s headers.

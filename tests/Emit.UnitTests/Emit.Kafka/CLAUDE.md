@@ -8,7 +8,7 @@ Unit tests for the Emit.Provider.Kafka library: producer, consumer, serializatio
 | ---- | ---- | ------------ |
 | `KafkaOutboxProviderTests.cs` | Unit tests for KafkaOutboxProvider produce behavior | Debugging Kafka outbox provider test failures |
 | `KafkaPipelineProducerTests.cs` | Unit tests for KafkaPipelineProducer message production | Debugging Kafka pipeline producer test failures |
-| `KafkaSerializationHelperTests.cs` | Unit tests for Kafka serialization helper utilities | Debugging serialization helper test failures |
+| `KafkaSerializerTests.cs` | Unit tests for Kafka serialization helper utilities | Debugging serialization helper test failures |
 | `KafkaServiceCollectionExtensionsTests.cs` | Unit tests for Kafka service collection extension registration | Debugging Kafka service registration test failures |
 | `KafkaTopicVerifierTests.cs` | Unit tests for KafkaTopicVerifier topic existence checking | Debugging topic verifier test failures |
 

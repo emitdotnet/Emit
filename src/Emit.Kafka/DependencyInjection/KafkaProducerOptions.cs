@@ -5,7 +5,7 @@ using ConfluentKafka = Confluent.Kafka;
 /// <summary>
 /// Producer-specific configuration overrides layered on top of shared client config.
 /// </summary>
-public sealed class KafkaProducerConfig
+public sealed class KafkaProducerOptions
 {
     /// <summary>
     /// The number of acknowledgements the leader broker must receive from ISR brokers before responding to the request:

@@ -14,8 +14,8 @@ Middleware pipeline abstractions: delegates, middleware interfaces, and builder 
 | `MiddlewareDescriptor.cs` | Descriptor capturing type or factory-based middleware registration with lifetime | Understand middleware registration model |
 | `MiddlewareLifetime.cs` | Enum controlling middleware instantiation: Singleton (once) or Scoped (per message) | Configure middleware lifetime |
 | `IConsumerFilter.cs` | Interface for DI-injectable message filters that gate whether a message continues through the consumer pipeline | Implement a reusable consumer filter or understand the filter contract |
-| `IPipelineConfigurable.cs` | Interface for builders exposing middleware pipeline for Use extension methods | Extend pipeline configuration |
+| `IConfigurable.cs` | Interface for builders exposing middleware pipeline for Use extension methods | Extend pipeline configuration |
 | `IMessagePipelineBuilder.cs` | Interface for collecting middleware descriptors and building typed MessageDelegate chains | Understand pipeline builder internals |
 | `IConsumerGroupConfigurable.cs` | Generic interface extending IInboundConfigurable with group-level OnError and Validate | Configure consumer group error handling and validation |
-| `IInboundPipelineConfigurable.cs` | Non-generic interface enabling uniform extension methods across inbound pipeline levels | Extend inbound pipeline configuration |
-| `IOutboundPipelineConfigurable.cs` | Non-generic interface enabling uniform extension methods across outbound pipeline levels | Extend outbound pipeline configuration |
+| `IInboundConfigurable.cs` | Non-generic interface enabling uniform extension methods across inbound pipeline levels | Extend inbound pipeline configuration |
+| `IOutboundConfigurable.cs` | Non-generic interface enabling uniform extension methods across outbound pipeline levels | Extend outbound pipeline configuration |

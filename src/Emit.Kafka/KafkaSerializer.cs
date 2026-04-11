@@ -6,7 +6,7 @@ using Confluent.Kafka;
 /// <summary>
 /// Shared serialization utilities for Kafka producers and consumers.
 /// </summary>
-internal static class KafkaSerializationHelper
+internal static class KafkaSerializer
 {
     /// <summary>
     /// Serializes a value using the configured sync or async serializer.

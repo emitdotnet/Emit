@@ -13,6 +13,10 @@ public interface IConsumerFilter<TMessage>
     /// </summary>
     /// <param name="context">The consume context containing the message, features, and scoped services.</param>
     /// <param name="cancellationToken">A token to observe for cancellation.</param>
-    /// <returns><c>true</c> to continue the pipeline and invoke the consumer; <c>false</c> to skip.</returns>
+    /// <returns>
+    /// <c>true</c> to continue the pipeline and invoke the consumer; <c>false</c> to skip.
+    /// Returns <see cref="ValueTask{TResult}"/> rather than <see cref="Task{TResult}"/>
+    /// because filters are often synchronous, avoiding unnecessary allocations.
+    /// </returns>
     ValueTask<bool> ShouldConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken);
 }

@@ -31,7 +31,7 @@ public sealed class RateLimitMiddleware<TMessage>(
         {
             throw new InvalidOperationException(
                 $"Rate limiter rejected request for {permitCount} permits. " +
-                "Ensure the rate limiter's max permits >= BatchConfig.MaxSize.");
+                "Ensure the rate limiter's max permits >= BatchOptions.MaxSize.");
         }
 
         await next.InvokeAsync(context).ConfigureAwait(false);

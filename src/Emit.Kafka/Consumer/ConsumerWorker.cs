@@ -26,7 +26,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private readonly Channel<ConfluentKafka.ConsumeResult<byte[], byte[]>> channel;
     private readonly ConsumerGroupRegistration<TKey, TValue> registration;
     private readonly IReadOnlyList<ConsumerPipelineEntry<TValue>> consumerPipelines;
-    private readonly BatchConfig? batchConfig;
+    private readonly BatchOptions? batchConfig;
     private readonly IReadOnlyList<ConsumerPipelineEntry<MessageBatch<TValue>>> batchConsumerPipelines;
     private readonly OffsetManager offsetManager;
     private readonly IServiceScopeFactory scopeFactory;
@@ -73,7 +73,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         this.id = id;
         this.registration = registration;
         this.consumerPipelines = registration.BuildConsumerPipelines();
-        this.batchConfig = registration.BatchConfig;
+        this.batchConfig = registration.BatchOptions;
         this.batchConsumerPipelines = registration.BuildBatchConsumerPipelines?.Invoke() ?? [];
         this.offsetManager = offsetManager;
         this.scopeFactory = scopeFactory;
@@ -235,7 +235,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
 
             var sourceHeader = deserialized.Headers
                 .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
-            Uri? sourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null;
+            Uri? sourceAddress = ParseSourceAddress(sourceHeader);
 
             var itemTransport = new KafkaTransportContext<TKey>
             {
@@ -422,7 +422,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         var start = Stopwatch.GetTimestamp();
         try
         {
-            key = await KafkaSerializationHelper.DeserializeAsync(
+            key = await KafkaSerializer.DeserializeAsync(
                 raw.Message.Key is not null ? new ReadOnlyMemory<byte>(raw.Message.Key) : ReadOnlyMemory<byte>.Empty,
                 raw.Message.Key is null,
                 raw.Topic,
@@ -445,7 +445,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         start = Stopwatch.GetTimestamp();
         try
         {
-            value = await KafkaSerializationHelper.DeserializeAsync(
+            value = await KafkaSerializer.DeserializeAsync(
                 raw.Message.Value is not null ? new ReadOnlyMemory<byte>(raw.Message.Value) : ReadOnlyMemory<byte>.Empty,
                 raw.Message.Value is null,
                 raw.Topic,
@@ -498,7 +498,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             // Extract source address from headers if the producer injected it
             var sourceHeader = deserialized.Headers
                 .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
-            Uri? sourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null;
+            Uri? sourceAddress = ParseSourceAddress(sourceHeader);
 
             var transportContext = new KafkaTransportContext<TKey>
             {
@@ -534,6 +534,9 @@ internal sealed class ConsumerWorker<TKey, TValue>
             await entry.Pipeline.InvokeAsync(context).ConfigureAwait(false);
         }
     }
+
+    private static Uri? ParseSourceAddress(string? header) =>
+        !string.IsNullOrEmpty(header) ? new Uri(header) : null;
 }
 
 /// <summary>

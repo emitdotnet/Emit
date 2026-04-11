@@ -8,7 +8,7 @@ using Xunit;
 
 public sealed class PipelineConfigurableExtensionsTests
 {
-    // ── UseInbound(Type) on IInboundPipelineConfigurable ──
+    // ── UseInbound(Type) on IInboundConfigurable ──
 
     [Fact]
     public void GivenInboundBuilder_WhenUseInbound_ThenMiddlewareAddedToPipeline()
@@ -81,7 +81,7 @@ public sealed class PipelineConfigurableExtensionsTests
         Assert.Same(builder, result);
     }
 
-    // ── UseOutbound(Type) on IOutboundPipelineConfigurable ──
+    // ── UseOutbound(Type) on IOutboundConfigurable ──
 
     [Fact]
     public void GivenOutboundBuilder_WhenUseOutbound_ThenMiddlewareAddedToPipeline()
@@ -160,7 +160,7 @@ public sealed class PipelineConfigurableExtensionsTests
     public void GivenNullInboundBuilder_WhenUseInbound_ThenThrowsArgumentNullException()
     {
         // Arrange
-        IInboundPipelineConfigurable builder = null!;
+        IInboundConfigurable builder = null!;
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.UseInbound(typeof(TestMiddlewareA)));
@@ -170,7 +170,7 @@ public sealed class PipelineConfigurableExtensionsTests
     public void GivenNullInboundBuilder_WhenUseInboundWithLifetime_ThenThrowsArgumentNullException()
     {
         // Arrange
-        IInboundPipelineConfigurable builder = null!;
+        IInboundConfigurable builder = null!;
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.UseInbound(typeof(TestMiddlewareA), MiddlewareLifetime.Scoped));
@@ -187,12 +187,12 @@ public sealed class PipelineConfigurableExtensionsTests
             () => builder.Use(_ => new TestMiddlewareA()));
     }
 
-    private sealed class TestInboundBuilder : IInboundPipelineConfigurable
+    private sealed class TestInboundBuilder : IInboundConfigurable
     {
         public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
     }
 
-    private sealed class TestOutboundBuilder : IOutboundPipelineConfigurable
+    private sealed class TestOutboundBuilder : IOutboundConfigurable
     {
         public IMessagePipelineBuilder OutboundPipeline { get; } = new MessagePipelineBuilder();
     }

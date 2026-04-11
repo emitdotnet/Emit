@@ -97,14 +97,14 @@ public static class KafkaEmitBuilderExtensions
 
             if (clientConfigAction is not null)
             {
-                var kafkaClientConfig = new KafkaClientConfig();
+                var kafkaClientConfig = new KafkaClientOptions();
                 clientConfigAction(kafkaClientConfig);
                 kafkaClientConfig.ApplyTo(config);
             }
 
             if (producerConfigAction is not null)
             {
-                var kafkaProducerConfig = new KafkaProducerConfig();
+                var kafkaProducerConfig = new KafkaProducerOptions();
                 producerConfigAction(kafkaProducerConfig);
                 kafkaProducerConfig.ApplyTo(config);
             }
@@ -127,7 +127,7 @@ public static class KafkaEmitBuilderExtensions
 
             if (clientConfigAction is not null)
             {
-                var kafkaClientConfig = new KafkaClientConfig();
+                var kafkaClientConfig = new KafkaClientOptions();
                 clientConfigAction(kafkaClientConfig);
                 kafkaClientConfig.ApplyTo(config);
             }

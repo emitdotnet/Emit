@@ -11,10 +11,10 @@ using Emit.Pipeline;
 /// providing compile-time type safety.
 /// </summary>
 /// <typeparam name="TRequest">The request type handled by the associated handler.</typeparam>
-public sealed class MediatorHandlerBuilder<TRequest> : IInboundPipelineConfigurable
+public sealed class MediatorHandlerBuilder<TRequest> : IInboundConfigurable
 {
     /// <inheritdoc />
-    IMessagePipelineBuilder IInboundPipelineConfigurable.InboundPipeline => Pipeline;
+    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
 
     /// <summary>
     /// Gets the per-handler middleware pipeline builder. Middleware registered here

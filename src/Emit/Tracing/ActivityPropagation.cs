@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Internal helper for Activity management operations.
 /// </summary>
-internal static class ActivityHelper
+internal static class ActivityPropagation
 {
     /// <summary>
     /// Creates an Activity from a W3C traceparent string with parsed parent context.

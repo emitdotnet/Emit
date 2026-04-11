@@ -7,7 +7,7 @@ namespace Emit.Kafka.Consumer;
 /// size depends on message arrival rate and worker count, and may be smaller than
 /// <see cref="MaxSize"/> even when more messages are available across other workers.
 /// </summary>
-public sealed class BatchConfig
+public sealed class BatchOptions
 {
     /// <summary>
     /// Maximum number of messages per worker batch. Default: 100.

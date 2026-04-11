@@ -12,7 +12,7 @@ using Emit.Pipeline;
 public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<TValue>
 {
     /// <inheritdoc />
-    IMessagePipelineBuilder IOutboundPipelineConfigurable.OutboundPipeline => Pipeline;
+    IMessagePipelineBuilder IOutboundConfigurable.OutboundPipeline => Pipeline;
 
     /// <summary>
     /// Gets the per-producer outbound middleware pipeline builder. Middleware registered here

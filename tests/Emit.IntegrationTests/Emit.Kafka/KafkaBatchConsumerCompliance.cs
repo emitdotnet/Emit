@@ -19,7 +19,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {
@@ -52,7 +52,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         string groupId,
         string dlqTopic,
         string dlqGroupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {
@@ -98,7 +98,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {
@@ -130,7 +130,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {
@@ -163,7 +163,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {
@@ -205,7 +205,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         string validationDlqGroupId,
         string handlerDlqTopic,
         string handlerDlqGroupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         // Kafka supports a single DLQ destination per registration; both validation
         // failures and handler failures route to the same DLQ topic.
@@ -253,7 +253,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig,
+        Action<BatchOptions> batchConfig,
         string distributionStrategy,
         int workerCount)
     {
@@ -290,7 +290,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
-        Action<BatchConfig> batchConfig)
+        Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
         {

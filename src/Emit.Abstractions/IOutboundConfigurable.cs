@@ -8,7 +8,7 @@ using Emit.Abstractions.Pipeline;
 /// the middleware implements <see cref="IMiddleware{TContext}"/> for <see cref="SendContext{T}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The message type processed by this builder's pipeline.</typeparam>
-public interface IOutboundConfigurable<TMessage> : IOutboundPipelineConfigurable
+public interface IOutboundConfigurable<TMessage> : IOutboundConfigurable
 {
     /// <summary>
     /// Registers a middleware type on this outbound pipeline.

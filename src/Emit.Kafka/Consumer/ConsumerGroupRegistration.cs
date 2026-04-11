@@ -51,7 +51,7 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// <summary>
     /// Batch accumulation configuration, or null for single-message consumption.
     /// </summary>
-    public BatchConfig? BatchConfig { get; init; }
+    public BatchOptions? BatchOptions { get; init; }
 
     /// <summary>
     /// Factory that builds typed middleware pipeline entries for batch consumers.

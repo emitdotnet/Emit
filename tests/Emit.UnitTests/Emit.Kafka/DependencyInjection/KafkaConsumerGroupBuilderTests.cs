@@ -775,9 +775,9 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Assert
         Assert.True(builder.IsBatchMode);
-        Assert.NotNull(builder.BatchConfig);
-        Assert.Equal(50, builder.BatchConfig.MaxSize);
-        Assert.Equal(TimeSpan.FromSeconds(3), builder.BatchConfig.Timeout);
+        Assert.NotNull(builder.BatchOptions);
+        Assert.Equal(50, builder.BatchOptions.MaxSize);
+        Assert.Equal(TimeSpan.FromSeconds(3), builder.BatchOptions.Timeout);
     }
 
     [Fact]
@@ -791,8 +791,8 @@ public sealed class KafkaConsumerGroupBuilderTests
 
         // Assert
         Assert.True(builder.IsBatchMode);
-        Assert.NotNull(builder.BatchConfig);
-        Assert.Equal(100, builder.BatchConfig.MaxSize);
-        Assert.Equal(TimeSpan.FromSeconds(5), builder.BatchConfig.Timeout);
+        Assert.NotNull(builder.BatchOptions);
+        Assert.Equal(100, builder.BatchOptions.MaxSize);
+        Assert.Equal(TimeSpan.FromSeconds(5), builder.BatchOptions.Timeout);
     }
 }

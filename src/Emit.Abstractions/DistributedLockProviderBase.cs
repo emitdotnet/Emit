@@ -42,10 +42,7 @@ public abstract class DistributedLockProviderBase : IDistributedLockProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (ttl <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ttl), ttl, "TTL must be greater than zero.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
 
         if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
         {

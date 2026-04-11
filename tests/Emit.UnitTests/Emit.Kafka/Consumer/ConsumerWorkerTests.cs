@@ -811,7 +811,7 @@ public sealed class ConsumerWorkerTests
             KeyDeserializer = ConfluentKafka.Deserializers.Utf8,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () => [],
-            BatchConfig = new BatchConfig { MaxSize = 10, Timeout = TimeSpan.FromSeconds(1) },
+            BatchOptions = new BatchOptions { MaxSize = 10, Timeout = TimeSpan.FromSeconds(1) },
             BuildBatchConsumerPipelines = () =>
             [
                 new ConsumerPipelineEntry<MessageBatch<string>>

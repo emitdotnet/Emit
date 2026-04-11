@@ -22,81 +22,81 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     private readonly List<Type> consumerTypes = [];
     private readonly HashSet<Type> registeredConsumerTypes = [];
     private readonly Dictionary<Type, IMessagePipelineBuilder> consumerPipelines = new();
-    private readonly KafkaConsumerConfig consumerConfig = new();
+    private readonly KafkaConsumerOptions consumerConfig = new();
 
-    // ── Consumer config (delegates to KafkaConsumerConfig) ──
+    // ── Consumer config (delegates to KafkaConsumerOptions) ──
 
-    /// <inheritdoc cref="KafkaConsumerConfig.AutoOffsetReset"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.AutoOffsetReset"/>
     public ConfluentKafka.AutoOffsetReset? AutoOffsetReset
     {
         get => consumerConfig.AutoOffsetReset;
         set => consumerConfig.AutoOffsetReset = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.SessionTimeout"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.SessionTimeout"/>
     public TimeSpan? SessionTimeout
     {
         get => consumerConfig.SessionTimeout;
         set => consumerConfig.SessionTimeout = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.HeartbeatInterval"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.HeartbeatInterval"/>
     public TimeSpan? HeartbeatInterval
     {
         get => consumerConfig.HeartbeatInterval;
         set => consumerConfig.HeartbeatInterval = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.MaxPollInterval"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.MaxPollInterval"/>
     public TimeSpan? MaxPollInterval
     {
         get => consumerConfig.MaxPollInterval;
         set => consumerConfig.MaxPollInterval = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.FetchMinBytes"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.FetchMinBytes"/>
     public int? FetchMinBytes
     {
         get => consumerConfig.FetchMinBytes;
         set => consumerConfig.FetchMinBytes = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.FetchMaxBytes"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.FetchMaxBytes"/>
     public int? FetchMaxBytes
     {
         get => consumerConfig.FetchMaxBytes;
         set => consumerConfig.FetchMaxBytes = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.FetchWaitMax"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.FetchWaitMax"/>
     public TimeSpan? FetchWaitMax
     {
         get => consumerConfig.FetchWaitMax;
         set => consumerConfig.FetchWaitMax = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.MaxPartitionFetchBytes"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.MaxPartitionFetchBytes"/>
     public int? MaxPartitionFetchBytes
     {
         get => consumerConfig.MaxPartitionFetchBytes;
         set => consumerConfig.MaxPartitionFetchBytes = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.GroupInstanceId"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.GroupInstanceId"/>
     public string? GroupInstanceId
     {
         get => consumerConfig.GroupInstanceId;
         set => consumerConfig.GroupInstanceId = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.PartitionAssignmentStrategy"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.PartitionAssignmentStrategy"/>
     public ConfluentKafka.PartitionAssignmentStrategy? PartitionAssignmentStrategy
     {
         get => consumerConfig.PartitionAssignmentStrategy;
         set => consumerConfig.PartitionAssignmentStrategy = value;
     }
 
-    /// <inheritdoc cref="KafkaConsumerConfig.IsolationLevel"/>
+    /// <inheritdoc cref="KafkaConsumerOptions.IsolationLevel"/>
     public ConfluentKafka.IsolationLevel? IsolationLevel
     {
         get => consumerConfig.IsolationLevel;
@@ -104,7 +104,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     }
 
     /// <inheritdoc />
-    IMessagePipelineBuilder IInboundPipelineConfigurable.InboundPipeline => Pipeline;
+    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
 
     /// <summary>
     /// Gets the per-consumer-group middleware pipeline builder. Middleware registered here
@@ -156,7 +156,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     internal List<RouterRegistration<TValue>>? Routers { get; private set; }
 
     private HashSet<string>? registeredRouterIdentifiers;
-    private BatchConfig? batchConfig;
+    private BatchOptions? batchConfig;
     private Type? batchConsumerType;
 
     /// <summary>
@@ -466,7 +466,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// Only one batch consumer per group is supported.
     /// </summary>
     /// <param name="configure">Optional batch configuration. When omitted, defaults are used (MaxSize = 100, Timeout = 5s).</param>
-    public KafkaConsumerGroupBuilder<TKey, TValue> AddBatchConsumer<T>(Action<BatchConfig>? configure = null)
+    public KafkaConsumerGroupBuilder<TKey, TValue> AddBatchConsumer<T>(Action<BatchOptions>? configure = null)
         where T : class, IBatchConsumer<TValue>
     {
         if (consumerTypes.Count > 0 || (Routers is { Count: > 0 }))
@@ -478,24 +478,18 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
             throw new InvalidOperationException(
                 "Only one batch consumer per consumer group is supported.");
 
-        batchConfig = new BatchConfig();
+        batchConfig = new BatchOptions();
         configure?.Invoke(batchConfig);
 
         if (batchConfig.MaxSize <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(BatchConfig.MaxSize),
+                nameof(BatchOptions.MaxSize),
                 batchConfig.MaxSize,
                 "Batch MaxSize must be greater than zero.");
         }
 
-        if (batchConfig.Timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(BatchConfig.Timeout),
-                batchConfig.Timeout,
-                "Batch Timeout must be greater than zero.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(batchConfig.Timeout, TimeSpan.Zero, nameof(BatchOptions.Timeout));
 
         batchConsumerType = typeof(T);
         return this;
@@ -509,7 +503,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         consumerConfig.ApplyTo(config);
     }
 
-    internal BatchConfig? BatchConfig => batchConfig;
+    internal BatchOptions? BatchOptions => batchConfig;
     internal Type? BatchConsumerType => batchConsumerType;
     internal bool IsBatchMode => batchConfig is not null;
 

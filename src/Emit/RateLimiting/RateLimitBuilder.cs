@@ -132,10 +132,6 @@ public sealed class RateLimitBuilder
 
     private static void ThrowIfInvalidWindow(TimeSpan window)
     {
-        if (window <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(window), window,
-                "Window duration must be greater than zero.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);
     }
 }

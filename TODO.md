@@ -18,4 +18,4 @@
 
 ## Kafka Producers
 
-- **Support tombstone events (null values) and null keys** — Kafka uses null-valued messages as tombstones to signal deletion in log-compacted topics. Producers should support sending messages with a null value and/or a null key. This likely requires allowing `TValue` (and `TKey`) to be nullable in `IEventProducer<TKey, TValue>` and `EventMessage<TKey, TValue>`, and ensuring the serialization pipeline handles nulls correctly.
+- **Support tombstone events (null values) and null keys** — Kafka uses null-valued messages as tombstones to signal deletion in log-compacted topics. Producers should support sending messages with a null value. This likely requires allowing `TValue` to be nullable in `IEventProducer<TKey, TValue>` and `EventMessage<TKey, TValue>`, and ensuring the serialization pipeline handles nulls correctly.

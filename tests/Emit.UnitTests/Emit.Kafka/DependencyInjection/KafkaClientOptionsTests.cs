@@ -4,13 +4,13 @@ using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
-public sealed class KafkaClientConfigTests
+public sealed class KafkaClientOptionsTests
 {
     [Fact]
     public void GivenBootstrapServersSet_WhenApplyTo_ThenConfigBootstrapServersIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { BootstrapServers = "localhost:9092" };
+        var clientConfig = new KafkaClientOptions { BootstrapServers = "localhost:9092" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -24,7 +24,7 @@ public sealed class KafkaClientConfigTests
     public void GivenClientIdSet_WhenApplyTo_ThenConfigClientIdIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ClientId = "my-app" };
+        var clientConfig = new KafkaClientOptions { ClientId = "my-app" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -38,7 +38,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSecurityProtocolSet_WhenApplyTo_ThenConfigSecurityProtocolIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SecurityProtocol = ConfluentKafka.SecurityProtocol.SaslSsl };
+        var clientConfig = new KafkaClientOptions { SecurityProtocol = ConfluentKafka.SecurityProtocol.SaslSsl };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -52,7 +52,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslMechanismSet_WhenApplyTo_ThenConfigSaslMechanismIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslMechanism = ConfluentKafka.SaslMechanism.Plain };
+        var clientConfig = new KafkaClientOptions { SaslMechanism = ConfluentKafka.SaslMechanism.Plain };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -66,7 +66,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslCredentialsSet_WhenApplyTo_ThenConfigSaslCredentialsAreSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig
+        var clientConfig = new KafkaClientOptions
         {
             SaslUsername = "user",
             SaslPassword = "pass"
@@ -85,7 +85,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSslLocationsSet_WhenApplyTo_ThenConfigSslLocationsAreSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig
+        var clientConfig = new KafkaClientOptions
         {
             SslCaLocation = "/certs/ca.pem",
             SslCertificateLocation = "/certs/cert.pem",
@@ -108,7 +108,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSocketTimeoutSet_WhenApplyTo_ThenConfigSocketTimeoutMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SocketTimeout = TimeSpan.FromSeconds(30) };
+        var clientConfig = new KafkaClientOptions { SocketTimeout = TimeSpan.FromSeconds(30) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -122,7 +122,7 @@ public sealed class KafkaClientConfigTests
     public void GivenConnectionsMaxIdleSet_WhenApplyTo_ThenConfigConnectionsMaxIdleMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ConnectionsMaxIdle = TimeSpan.FromMinutes(9) };
+        var clientConfig = new KafkaClientOptions { ConnectionsMaxIdle = TimeSpan.FromMinutes(9) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -136,7 +136,7 @@ public sealed class KafkaClientConfigTests
     public void GivenMetadataMaxAgeSet_WhenApplyTo_ThenConfigMetadataMaxAgeMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { MetadataMaxAge = TimeSpan.FromMinutes(5) };
+        var clientConfig = new KafkaClientOptions { MetadataMaxAge = TimeSpan.FromMinutes(5) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -150,7 +150,7 @@ public sealed class KafkaClientConfigTests
     public void GivenReconnectBackoffSet_WhenApplyTo_ThenConfigReconnectBackoffMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ReconnectBackoff = TimeSpan.FromMilliseconds(100) };
+        var clientConfig = new KafkaClientOptions { ReconnectBackoff = TimeSpan.FromMilliseconds(100) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -164,7 +164,7 @@ public sealed class KafkaClientConfigTests
     public void GivenReconnectBackoffMaxSet_WhenApplyTo_ThenConfigReconnectBackoffMaxMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ReconnectBackoffMax = TimeSpan.FromSeconds(10) };
+        var clientConfig = new KafkaClientOptions { ReconnectBackoffMax = TimeSpan.FromSeconds(10) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -178,7 +178,7 @@ public sealed class KafkaClientConfigTests
     public void GivenStatisticsIntervalSet_WhenApplyTo_ThenConfigStatisticsIntervalMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { StatisticsInterval = TimeSpan.FromSeconds(5) };
+        var clientConfig = new KafkaClientOptions { StatisticsInterval = TimeSpan.FromSeconds(5) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -192,7 +192,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSocketKeepaliveEnableSet_WhenApplyTo_ThenConfigSocketKeepaliveEnableIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SocketKeepaliveEnable = true };
+        var clientConfig = new KafkaClientOptions { SocketKeepaliveEnable = true };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -206,7 +206,7 @@ public sealed class KafkaClientConfigTests
     public void GivenMessageMaxBytesSet_WhenApplyTo_ThenConfigMessageMaxBytesIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { MessageMaxBytes = 2097152 };
+        var clientConfig = new KafkaClientOptions { MessageMaxBytes = 2097152 };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -220,7 +220,7 @@ public sealed class KafkaClientConfigTests
     public void GivenClientRackSet_WhenApplyTo_ThenConfigClientRackIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ClientRack = "rack-1" };
+        var clientConfig = new KafkaClientOptions { ClientRack = "rack-1" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -234,7 +234,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerMethodSet_WhenApplyTo_ThenConfigSaslOauthbearerMethodIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerMethod = ConfluentKafka.SaslOauthbearerMethod.Oidc };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerMethod = ConfluentKafka.SaslOauthbearerMethod.Oidc };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -248,7 +248,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerClientIdSet_WhenApplyTo_ThenConfigSaslOauthbearerClientIdIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerClientId = "my-client-id" };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerClientId = "my-client-id" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -262,7 +262,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerClientSecretSet_WhenApplyTo_ThenConfigSaslOauthbearerClientSecretIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerClientSecret = "my-secret" };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerClientSecret = "my-secret" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -276,7 +276,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerTokenEndpointUrlSet_WhenApplyTo_ThenConfigSaslOauthbearerTokenEndpointUrlIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerTokenEndpointUrl = "https://idp.example.com/token" };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerTokenEndpointUrl = "https://idp.example.com/token" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -290,7 +290,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerScopeSet_WhenApplyTo_ThenConfigSaslOauthbearerScopeIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerScope = "openid profile" };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerScope = "openid profile" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -304,7 +304,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSaslOauthbearerExtensionsSet_WhenApplyTo_ThenConfigSaslOauthbearerExtensionsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SaslOauthbearerExtensions = "key1=val1,key2=val2" };
+        var clientConfig = new KafkaClientOptions { SaslOauthbearerExtensions = "key1=val1,key2=val2" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -318,7 +318,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSslEndpointIdentificationAlgorithmSet_WhenApplyTo_ThenConfigSslEndpointIdentificationAlgorithmIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SslEndpointIdentificationAlgorithm = ConfluentKafka.SslEndpointIdentificationAlgorithm.Https };
+        var clientConfig = new KafkaClientOptions { SslEndpointIdentificationAlgorithm = ConfluentKafka.SslEndpointIdentificationAlgorithm.Https };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -332,7 +332,7 @@ public sealed class KafkaClientConfigTests
     public void GivenEnableSslCertificateVerificationSet_WhenApplyTo_ThenConfigEnableSslCertificateVerificationIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { EnableSslCertificateVerification = true };
+        var clientConfig = new KafkaClientOptions { EnableSslCertificateVerification = true };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -346,7 +346,7 @@ public sealed class KafkaClientConfigTests
     public void GivenSocketConnectionSetupTimeoutSet_WhenApplyTo_ThenConfigSocketConnectionSetupTimeoutMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { SocketConnectionSetupTimeout = TimeSpan.FromSeconds(15) };
+        var clientConfig = new KafkaClientOptions { SocketConnectionSetupTimeout = TimeSpan.FromSeconds(15) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -360,7 +360,7 @@ public sealed class KafkaClientConfigTests
     public void GivenTopicMetadataRefreshIntervalSet_WhenApplyTo_ThenConfigTopicMetadataRefreshIntervalMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { TopicMetadataRefreshInterval = TimeSpan.FromMinutes(5) };
+        var clientConfig = new KafkaClientOptions { TopicMetadataRefreshInterval = TimeSpan.FromMinutes(5) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -374,7 +374,7 @@ public sealed class KafkaClientConfigTests
     public void GivenRetryBackoffSet_WhenApplyTo_ThenConfigRetryBackoffMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { RetryBackoff = TimeSpan.FromMilliseconds(200) };
+        var clientConfig = new KafkaClientOptions { RetryBackoff = TimeSpan.FromMilliseconds(200) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -388,7 +388,7 @@ public sealed class KafkaClientConfigTests
     public void GivenRetryBackoffMaxSet_WhenApplyTo_ThenConfigRetryBackoffMaxMsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { RetryBackoffMax = TimeSpan.FromSeconds(5) };
+        var clientConfig = new KafkaClientOptions { RetryBackoffMax = TimeSpan.FromSeconds(5) };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -402,7 +402,7 @@ public sealed class KafkaClientConfigTests
     public void GivenReceiveMessageMaxBytesSet_WhenApplyTo_ThenConfigReceiveMessageMaxBytesIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { ReceiveMessageMaxBytes = 104857600 };
+        var clientConfig = new KafkaClientOptions { ReceiveMessageMaxBytes = 104857600 };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -416,7 +416,7 @@ public sealed class KafkaClientConfigTests
     public void GivenMaxInFlightRequestsPerConnectionSet_WhenApplyTo_ThenConfigMaxInFlightIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { MaxInFlightRequestsPerConnection = 5 };
+        var clientConfig = new KafkaClientOptions { MaxInFlightRequestsPerConnection = 5 };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -430,7 +430,7 @@ public sealed class KafkaClientConfigTests
     public void GivenBrokerAddressFamilySet_WhenApplyTo_ThenConfigBrokerAddressFamilyIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { BrokerAddressFamily = ConfluentKafka.BrokerAddressFamily.V4 };
+        var clientConfig = new KafkaClientOptions { BrokerAddressFamily = ConfluentKafka.BrokerAddressFamily.V4 };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -444,7 +444,7 @@ public sealed class KafkaClientConfigTests
     public void GivenAllowAutoCreateTopicsSet_WhenApplyTo_ThenConfigAllowAutoCreateTopicsIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { AllowAutoCreateTopics = false };
+        var clientConfig = new KafkaClientOptions { AllowAutoCreateTopics = false };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -458,7 +458,7 @@ public sealed class KafkaClientConfigTests
     public void GivenDebugSet_WhenApplyTo_ThenConfigDebugIsSet()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { Debug = "broker,topic" };
+        var clientConfig = new KafkaClientOptions { Debug = "broker,topic" };
         var config = new ConfluentKafka.ClientConfig();
 
         // Act
@@ -472,7 +472,7 @@ public sealed class KafkaClientConfigTests
     public void GivenNoPropertiesSet_WhenApplyTo_ThenConfigUnchanged()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig();
+        var clientConfig = new KafkaClientOptions();
         var config = new ConfluentKafka.ClientConfig
         {
             BootstrapServers = "existing:9092",
@@ -491,7 +491,7 @@ public sealed class KafkaClientConfigTests
     public void GivenAllPropertiesSet_WhenApplyTo_ThenAllApplied()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig
+        var clientConfig = new KafkaClientOptions
         {
             BootstrapServers = "broker1:9092,broker2:9092",
             ClientId = "my-app",
@@ -578,7 +578,7 @@ public sealed class KafkaClientConfigTests
     public void GivenApplyToProducerConfig_WhenCalled_ThenProducerConfigInheritsSettings()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { BootstrapServers = "localhost:9092" };
+        var clientConfig = new KafkaClientOptions { BootstrapServers = "localhost:9092" };
         var producerConfig = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -592,7 +592,7 @@ public sealed class KafkaClientConfigTests
     public void GivenApplyToConsumerConfig_WhenCalled_ThenConsumerConfigInheritsSettings()
     {
         // Arrange
-        var clientConfig = new KafkaClientConfig { BootstrapServers = "localhost:9092" };
+        var clientConfig = new KafkaClientOptions { BootstrapServers = "localhost:9092" };
         var consumerConfig = new ConfluentKafka.ConsumerConfig();
 
         // Act

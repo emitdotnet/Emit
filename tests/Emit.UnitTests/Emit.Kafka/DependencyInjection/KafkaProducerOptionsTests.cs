@@ -4,13 +4,13 @@ using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
-public sealed class KafkaProducerConfigTests
+public sealed class KafkaProducerOptionsTests
 {
     [Fact]
     public void GivenAcksSet_WhenApplyTo_ThenProducerConfigAcksIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { Acks = ConfluentKafka.Acks.All };
+        var producerConfig = new KafkaProducerOptions { Acks = ConfluentKafka.Acks.All };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -24,7 +24,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenLingerSet_WhenApplyTo_ThenProducerConfigLingerMsIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { Linger = TimeSpan.FromMilliseconds(50) };
+        var producerConfig = new KafkaProducerOptions { Linger = TimeSpan.FromMilliseconds(50) };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -38,7 +38,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenBatchSizeSet_WhenApplyTo_ThenProducerConfigBatchSizeIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { BatchSize = 65536 };
+        var producerConfig = new KafkaProducerOptions { BatchSize = 65536 };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -52,7 +52,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenEnableIdempotenceSet_WhenApplyTo_ThenProducerConfigEnableIdempotenceIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { EnableIdempotence = true };
+        var producerConfig = new KafkaProducerOptions { EnableIdempotence = true };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -66,7 +66,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenCompressionTypeSet_WhenApplyTo_ThenProducerConfigCompressionTypeIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { CompressionType = ConfluentKafka.CompressionType.Snappy };
+        var producerConfig = new KafkaProducerOptions { CompressionType = ConfluentKafka.CompressionType.Snappy };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -80,7 +80,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenBatchNumMessagesSet_WhenApplyTo_ThenProducerConfigBatchNumMessagesIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { BatchNumMessages = 10000 };
+        var producerConfig = new KafkaProducerOptions { BatchNumMessages = 10000 };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -94,7 +94,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenMessageTimeoutSet_WhenApplyTo_ThenProducerConfigMessageTimeoutMsIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { MessageTimeout = TimeSpan.FromMinutes(5) };
+        var producerConfig = new KafkaProducerOptions { MessageTimeout = TimeSpan.FromMinutes(5) };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -108,7 +108,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenRequestTimeoutSet_WhenApplyTo_ThenProducerConfigRequestTimeoutMsIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { RequestTimeout = TimeSpan.FromSeconds(30) };
+        var producerConfig = new KafkaProducerOptions { RequestTimeout = TimeSpan.FromSeconds(30) };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -122,7 +122,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenTransactionTimeoutSet_WhenApplyTo_ThenProducerConfigTransactionTimeoutMsIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { TransactionTimeout = TimeSpan.FromMinutes(1) };
+        var producerConfig = new KafkaProducerOptions { TransactionTimeout = TimeSpan.FromMinutes(1) };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -136,7 +136,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenTransactionalIdSet_WhenApplyTo_ThenProducerConfigTransactionalIdIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { TransactionalId = "my-txn-id" };
+        var producerConfig = new KafkaProducerOptions { TransactionalId = "my-txn-id" };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -150,7 +150,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenQueueBufferingMaxMessagesSet_WhenApplyTo_ThenProducerConfigQueueBufferingMaxMessagesIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { QueueBufferingMaxMessages = 100000 };
+        var producerConfig = new KafkaProducerOptions { QueueBufferingMaxMessages = 100000 };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -164,7 +164,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenQueueBufferingMaxKbytesSet_WhenApplyTo_ThenProducerConfigQueueBufferingMaxKbytesIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { QueueBufferingMaxKbytes = 1048576 };
+        var producerConfig = new KafkaProducerOptions { QueueBufferingMaxKbytes = 1048576 };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -178,7 +178,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenPartitionerSet_WhenApplyTo_ThenProducerConfigPartitionerIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { Partitioner = ConfluentKafka.Partitioner.Murmur2Random };
+        var producerConfig = new KafkaProducerOptions { Partitioner = ConfluentKafka.Partitioner.Murmur2Random };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -192,7 +192,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenMessageSendMaxRetriesSet_WhenApplyTo_ThenProducerConfigMessageSendMaxRetriesIsSet()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig { MessageSendMaxRetries = 3 };
+        var producerConfig = new KafkaProducerOptions { MessageSendMaxRetries = 3 };
         var config = new ConfluentKafka.ProducerConfig();
 
         // Act
@@ -206,7 +206,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenNoPropertiesSet_WhenApplyTo_ThenProducerConfigUnchanged()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig();
+        var producerConfig = new KafkaProducerOptions();
         var config = new ConfluentKafka.ProducerConfig
         {
             Acks = ConfluentKafka.Acks.Leader,
@@ -225,7 +225,7 @@ public sealed class KafkaProducerConfigTests
     public void GivenAllPropertiesSet_WhenApplyTo_ThenAllApplied()
     {
         // Arrange
-        var producerConfig = new KafkaProducerConfig
+        var producerConfig = new KafkaProducerOptions
         {
             Acks = ConfluentKafka.Acks.All,
             Linger = TimeSpan.FromMilliseconds(50),

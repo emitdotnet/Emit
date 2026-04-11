@@ -134,7 +134,7 @@ Kafka producer and consumer client metrics.
 
 Low-level librdkafka broker statistics. These come directly from Confluent's statistics callback and reflect the health of the underlying native client.
 
-**Prerequisite:** these instruments are only populated when `KafkaClientConfig.StatisticsInterval` is set to a non-zero value (e.g. `TimeSpan.FromSeconds(5)`). Without it, the callback never fires and all broker meter values remain zero.
+**Prerequisite:** these instruments are only populated when `KafkaClientOptions.StatisticsInterval` is set to a non-zero value (e.g. `TimeSpan.FromSeconds(5)`). Without it, the callback never fires and all broker meter values remain zero.
 
 ### Broker health
 
