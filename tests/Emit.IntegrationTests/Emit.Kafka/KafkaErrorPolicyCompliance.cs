@@ -1,6 +1,7 @@
 namespace Emit.Kafka.Tests;
 
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
@@ -37,10 +38,7 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
             // Source topic — producer + consumer with typed exception clause.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -82,10 +80,7 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
             // Source topic — producer + consumer that always throws; predicate filters by message content.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

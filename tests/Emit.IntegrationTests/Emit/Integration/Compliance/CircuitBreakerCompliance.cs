@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using Emit.Abstractions;
 using Emit.Consumer;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -276,33 +277,4 @@ public abstract class CircuitBreakerCompliance
         }
     }
 
-    /// <summary>
-    /// Toggle that controls whether <see cref="ToggleableConsumer"/> throws.
-    /// </summary>
-    public sealed class ConsumerToggle
-    {
-        /// <summary>
-        /// When <see langword="true"/>, the consumer throws <see cref="InvalidOperationException"/>.
-        /// </summary>
-        public volatile bool ShouldThrow;
-    }
-
-    /// <summary>
-    /// Consumer that either throws or writes to a <see cref="MessageSink{TMessage}"/>
-    /// based on <see cref="ConsumerToggle.ShouldThrow"/>.
-    /// </summary>
-    public sealed class ToggleableConsumer(MessageSink<string> sink, ConsumerToggle toggle)
-        : IConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
-        {
-            if (toggle.ShouldThrow)
-            {
-                throw new InvalidOperationException("Simulated failure for circuit breaker test");
-            }
-
-            return sink.WriteAsync(context, cancellationToken);
-        }
-    }
 }

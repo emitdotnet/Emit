@@ -3,6 +3,7 @@ namespace Emit.Kafka.Tests;
 using Emit.Abstractions;
 using Emit.Consumer;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.DependencyInjection;
@@ -31,10 +32,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -73,10 +71,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -110,10 +105,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -142,10 +134,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -175,10 +164,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -228,10 +214,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(sourceTopic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -267,10 +250,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>
@@ -302,10 +282,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
 
             kafka.Topic<string, string>(topic, t =>
             {
-                t.SetUtf8KeySerializer();
-                t.SetUtf8ValueSerializer();
-                t.SetUtf8KeyDeserializer();
-                t.SetUtf8ValueDeserializer();
+                t.UseUtf8Serialization();
 
                 t.Producer();
                 t.ConsumerGroup(groupId, group =>

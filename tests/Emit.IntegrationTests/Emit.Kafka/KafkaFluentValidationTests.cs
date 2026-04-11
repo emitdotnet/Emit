@@ -4,6 +4,7 @@ using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.FluentValidation;
+using Emit.IntegrationTests.Integration;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
 using Emit.Testing;
@@ -49,10 +50,7 @@ public sealed class KafkaFluentValidationTests(KafkaContainerFixture fixture)
 
                         kafka.Topic<string, string>(topic, t =>
                         {
-                            t.SetUtf8KeySerializer();
-                            t.SetUtf8ValueSerializer();
-                            t.SetUtf8KeyDeserializer();
-                            t.SetUtf8ValueDeserializer();
+                            t.UseUtf8Serialization();
 
                             t.Producer();
                             t.ConsumerGroup(groupId, group =>
@@ -117,10 +115,7 @@ public sealed class KafkaFluentValidationTests(KafkaContainerFixture fixture)
 
                         kafka.Topic<string, string>(topic, t =>
                         {
-                            t.SetUtf8KeySerializer();
-                            t.SetUtf8ValueSerializer();
-                            t.SetUtf8KeyDeserializer();
-                            t.SetUtf8ValueDeserializer();
+                            t.UseUtf8Serialization();
 
                             t.Producer();
                             t.ConsumerGroup(groupId, group =>
@@ -198,10 +193,7 @@ public sealed class KafkaFluentValidationTests(KafkaContainerFixture fixture)
 
                         kafka.Topic<string, string>(sourceTopic, t =>
                         {
-                            t.SetUtf8KeySerializer();
-                            t.SetUtf8ValueSerializer();
-                            t.SetUtf8KeyDeserializer();
-                            t.SetUtf8ValueDeserializer();
+                            t.UseUtf8Serialization();
 
                             t.Producer();
                             t.ConsumerGroup(groupId, group =>
@@ -246,13 +238,4 @@ public sealed class KafkaFluentValidationTests(KafkaContainerFixture fixture)
         }
     }
 
-    /// <summary>
-    /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }

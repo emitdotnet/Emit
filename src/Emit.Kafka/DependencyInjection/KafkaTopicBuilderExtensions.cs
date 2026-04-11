@@ -10,6 +10,19 @@ public static class KafkaTopicBuilderExtensions
 {
     // ── Built-in: Utf8 (string) ──
 
+    /// <summary>
+    /// Configures UTF-8 serializers and deserializers for both key and value in a single call.
+    /// Shorthand for calling <c>SetUtf8KeySerializer</c>, <c>SetUtf8ValueSerializer</c>,
+    /// <c>SetUtf8KeyDeserializer</c>, and <c>SetUtf8ValueDeserializer</c>.
+    /// </summary>
+    public static void UseUtf8Serialization(this KafkaTopicBuilder<string, string> builder)
+    {
+        builder.SetUtf8KeySerializer();
+        builder.SetUtf8ValueSerializer();
+        builder.SetUtf8KeyDeserializer();
+        builder.SetUtf8ValueDeserializer();
+    }
+
     /// <summary>Sets the built-in UTF-8 key serializer.</summary>
     public static void SetUtf8KeySerializer<TValue>(this KafkaTopicBuilder<string, TValue> builder)
         => builder.SetKeySerializer(ConfluentKafka.Serializers.Utf8);

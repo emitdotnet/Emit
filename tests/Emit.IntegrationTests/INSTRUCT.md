@@ -66,6 +66,64 @@ public class MongoDbDistributedLockCompliance
 
 ---
 
+## Shared Test Utilities
+
+Use existing shared types — **never redefine** these in compliance or test files.
+
+Types from `Emit.Testing` (package reference, `using Emit.Testing;`):
+
+| Type | Purpose |
+|------|---------|
+| `MessageSink<T>` + `SinkConsumer<T>` | Capture individual consumed messages |
+| `BatchSinkConsumer<T>` | Capture batch consumed messages |
+
+Types from `Emit.IntegrationTests.Integration` (`using Emit.IntegrationTests.Integration;`):
+
+| Type | Purpose |
+|------|---------|
+| `DlqCaptureConsumer` | Capture dead-lettered `byte[]` messages on DLQ topics |
+| `AlwaysFailingConsumer` | `IConsumer<string>` that always throws — for error policy / DLQ tests |
+| `AlwaysFailingBatchConsumer` | `IBatchConsumer<string>` that always throws — for batch error tests |
+| `InvocationCounter` | Thread-safe counter for tracking handler invocations |
+| `ConsumerToggle` | Toggle controlling `ToggleableConsumer` / `ToggleableBatchConsumer` failure |
+| `ToggleableConsumer` | `IConsumer<string>` that throws or succeeds based on toggle — for circuit breaker tests |
+| `ToggleableBatchConsumer` | `IBatchConsumer<string>` that throws or succeeds based on toggle — for batch circuit breaker tests |
+
+```csharp
+using Emit.IntegrationTests.Integration;  // for DlqCaptureConsumer, InvocationCounter, etc.
+```
+
+Use the shared polling helper from `Emit.IntegrationTests.Integration.TestHelpers`:
+
+```csharp
+using static Emit.IntegrationTests.Integration.TestHelpers;
+
+await WaitUntilAsync(() => sink.ReceivedMessages.Count >= expected, "Messages not received");
+```
+
+For Kafka `string, string` topics, use `UseUtf8Serialization()` instead of 4 separate calls:
+
+```csharp
+kafka.Topic<string, string>(topic, t =>
+{
+    t.UseUtf8Serialization();
+    t.Producer();
+    t.ConsumerGroup(groupId, group => { ... });
+});
+```
+
+For Kafka offset-commit synchronization, use `CommitAwaiter` from `Emit.Kafka.Tests.TestInfrastructure`.
+
+---
+
+## EF Core Test Naming Convention
+
+Files in `Emit.EntityFrameworkCore/` use two prefixes:
+- **`EfCore` prefix** — ORM-level features (outbox, transactions, unit of work, middleware)
+- **`PostgreSql` prefix** — raw SQL persistence features (distributed locks, leader election, daemon assignment)
+
+---
+
 ## Key Constraints
 
 - **Real dependencies only** — never mock databases or message brokers

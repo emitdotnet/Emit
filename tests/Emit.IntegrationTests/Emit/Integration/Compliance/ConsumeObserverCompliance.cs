@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using Emit.Abstractions;
 using Emit.Abstractions.Observability;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -193,13 +194,4 @@ public abstract class ConsumeObserverCompliance
         }
     }
 
-    /// <summary>
-    /// Consumer that always throws <see cref="InvalidOperationException"/>.
-    /// </summary>
-    public sealed class AlwaysFailingConsumer : IConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated consumer failure for observer test.");
-    }
 }

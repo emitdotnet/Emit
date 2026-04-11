@@ -4,11 +4,13 @@ using System.Collections.Concurrent;
 using Emit.Abstractions;
 using Emit.Consumer;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Kafka.Consumer;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 
 /// <summary>
 /// Compliance tests for the batch consumer feature. Derived classes configure a
@@ -119,24 +121,6 @@ public abstract class BatchConsumerCompliance
         string topic,
         string groupId,
         Action<BatchOptions> batchConfig);
-
-    // ── Helper: poll until condition or timeout ──
-
-    private static async Task WaitUntilAsync(Func<bool> condition, string failMessage)
-    {
-        var deadline = DateTime.UtcNow + PollTimeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(PollInterval);
-        }
-
-        throw new TimeoutException(failMessage);
-    }
 
     // ── Test 1 ──
 
@@ -573,7 +557,7 @@ public abstract class BatchConsumerCompliance
         // Arrange
         var topic = $"batch-t8-{Guid.NewGuid():N}";
         var groupId = $"batch-g8-{Guid.NewGuid():N}";
-        var toggle = new BatchConsumerToggle();
+        var toggle = new ConsumerToggle();
         var sink = new BatchSinkConsumer<string>();
 
         var host = Host.CreateDefaultBuilder()
@@ -1096,7 +1080,7 @@ public abstract class BatchConsumerCompliance
         // Arrange — failure threshold 2; pause duration 10s so circuit remains open during test.
         var topic = $"batch-t17-{Guid.NewGuid():N}";
         var groupId = $"batch-g17-{Guid.NewGuid():N}";
-        var toggle = new BatchConsumerToggle { ShouldThrow = true };
+        var toggle = new ConsumerToggle { ShouldThrow = true };
         var sink = new BatchSinkConsumer<string>();
 
         var host = Host.CreateDefaultBuilder()
@@ -1669,31 +1653,6 @@ public abstract class BatchConsumerCompliance
     // ── Helper consumer types ──
 
     /// <summary>
-    /// Tracks the number of times any batch consumer handler has been invoked.
-    /// </summary>
-    public sealed class InvocationCounter
-    {
-        private int count;
-
-        /// <summary>Gets the total invocation count so far.</summary>
-        public int Count => Volatile.Read(ref count);
-
-        /// <summary>Increments and returns the new count.</summary>
-        public int Increment() => Interlocked.Increment(ref count);
-    }
-
-    /// <summary>
-    /// Controls whether <see cref="ToggleableBatchConsumer"/> throws.
-    /// </summary>
-    public sealed class BatchConsumerToggle
-    {
-        /// <summary>
-        /// When <see langword="true"/>, the consumer throws <see cref="InvalidOperationException"/>.
-        /// </summary>
-        public volatile bool ShouldThrow;
-    }
-
-    /// <summary>
     /// Batch consumer that fails for the first <c>FailuresBeforeSuccess</c> invocations then
     /// succeeds, forwarding messages to the registered <see cref="BatchSinkConsumer{T}"/>.
     /// </summary>
@@ -1709,36 +1668,6 @@ public abstract class BatchConsumerCompliance
             {
                 throw new InvalidOperationException(
                     $"Simulated batch failure (attempt {counter.Count} of {FailuresBeforeSuccess}).");
-            }
-
-            return sink.ConsumeAsync(context, cancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// Batch consumer that always throws <see cref="InvalidOperationException"/>, used for
-    /// testing DLQ routing after retry exhaustion.
-    /// </summary>
-    public sealed class AlwaysFailingBatchConsumer : IBatchConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<MessageBatch<string>> context, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated persistent batch consumer failure.");
-    }
-
-    /// <summary>
-    /// Batch consumer that either throws or forwards the batch to <see cref="BatchSinkConsumer{T}"/>
-    /// based on <see cref="BatchConsumerToggle.ShouldThrow"/>.
-    /// </summary>
-    public sealed class ToggleableBatchConsumer(BatchSinkConsumer<string> sink, BatchConsumerToggle toggle)
-        : IBatchConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<MessageBatch<string>> context, CancellationToken cancellationToken)
-        {
-            if (toggle.ShouldThrow)
-            {
-                throw new InvalidOperationException("Simulated batch failure for circuit breaker test.");
             }
 
             return sink.ConsumeAsync(context, cancellationToken);
@@ -1764,13 +1693,4 @@ public abstract class BatchConsumerCompliance
         public IReadOnlyList<IReadOnlyList<BatchItem<string>>> ReceivedBatches => [.. batches];
     }
 
-    /// <summary>
-    /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }

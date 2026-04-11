@@ -3,6 +3,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -264,26 +265,4 @@ public abstract class DeadLetterCompliance
         }
     }
 
-    /// <summary>
-    /// Consumer that always throws <see cref="InvalidOperationException"/>, triggering
-    /// the configured dead letter policy on every invocation.
-    /// </summary>
-    public sealed class AlwaysFailingConsumer : IConsumer<string>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated consumer failure for dead letter test.");
-    }
-
-    /// <summary>
-    /// Consumer that forwards dead-lettered messages to a <see cref="MessageSink{T}"/>.
-    /// Registered on the DLQ topic; the sink must be the only <see cref="MessageSink{T}"/>
-    /// registered as a singleton so DI resolves it correctly.
-    /// </summary>
-    public sealed class DlqCaptureConsumer(MessageSink<byte[]> sink) : IConsumer<byte[]>
-    {
-        /// <inheritdoc />
-        public Task ConsumeAsync(ConsumeContext<byte[]> context, CancellationToken cancellationToken)
-            => sink.WriteAsync(context, cancellationToken);
-    }
 }
