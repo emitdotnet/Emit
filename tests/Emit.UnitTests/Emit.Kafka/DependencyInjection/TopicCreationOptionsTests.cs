@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using System.Globalization;
 using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 
@@ -178,6 +179,28 @@ public sealed class TopicCreationOptionsTests
         Assert.Equal("gzip", spec.Configs["compression.type"]);
         Assert.True(spec.Configs.ContainsKey("compression.gzip.level"));
         Assert.Equal(options.GzipCompressionLevel.ToString(), spec.Configs["compression.gzip.level"]);
+    }
+
+    [Fact]
+    public void GivenFrenchCulture_WhenBuildSpecification_ThenNumericConfigsUseDotDecimalSeparator()
+    {
+        // Arrange
+        var options = new TopicCreationOptions { MinCleanableDirtyRatio = 0.5 };
+        var previousCulture = Thread.CurrentThread.CurrentCulture;
+        Thread.CurrentThread.CurrentCulture = new CultureInfo("fr-FR");
+
+        try
+        {
+            // Act
+            var spec = options.BuildSpecification("my-topic");
+
+            // Assert
+            Assert.Equal("0.50", spec.Configs["min.cleanable.dirty.ratio"]);
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = previousCulture;
+        }
     }
 
     [Fact]
