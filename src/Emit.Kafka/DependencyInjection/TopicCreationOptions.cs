@@ -1,5 +1,6 @@
 namespace Emit.Kafka.DependencyInjection;
 
+using System.Globalization;
 using Confluent.Kafka.Admin;
 
 /// <summary>
@@ -80,13 +81,14 @@ public sealed class TopicCreationOptions
     /// <param name="topicName">The topic name.</param>
     internal TopicSpecification BuildSpecification(string topicName)
     {
+        var inv = CultureInfo.InvariantCulture;
         var configs = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["retention.ms"] = Retention.HasValue
-                ? ((long)Retention.Value.TotalMilliseconds).ToString()
+                ? ((long)Retention.Value.TotalMilliseconds).ToString(inv)
                 : "-1",
             ["retention.bytes"] = RetentionBytes.HasValue
-                ? RetentionBytes.Value.ToString()
+                ? RetentionBytes.Value.ToString(inv)
                 : "-1",
             ["cleanup.policy"] = CleanupPolicy switch
             {
@@ -95,7 +97,7 @@ public sealed class TopicCreationOptions
                 TopicCleanupPolicy.DeleteAndCompact => "delete,compact",
                 _ => "delete",
             },
-            ["delete.retention.ms"] = ((long)DeleteRetention.TotalMilliseconds).ToString(),
+            ["delete.retention.ms"] = ((long)DeleteRetention.TotalMilliseconds).ToString(inv),
             ["compression.type"] = CompressionType switch
             {
                 TopicCompressionType.Producer => "producer",
@@ -106,27 +108,27 @@ public sealed class TopicCreationOptions
                 TopicCompressionType.Zstd => "zstd",
                 _ => "producer",
             },
-            ["min.cleanable.dirty.ratio"] = MinCleanableDirtyRatio.ToString("F2"),
-            ["min.compaction.lag.ms"] = ((long)MinCompactionLag.TotalMilliseconds).ToString(),
+            ["min.cleanable.dirty.ratio"] = MinCleanableDirtyRatio.ToString("F2", inv),
+            ["min.compaction.lag.ms"] = ((long)MinCompactionLag.TotalMilliseconds).ToString(inv),
         };
 
         // Compression levels
         switch (CompressionType)
         {
             case TopicCompressionType.Gzip:
-                configs["compression.gzip.level"] = GzipCompressionLevel.ToString();
+                configs["compression.gzip.level"] = GzipCompressionLevel.ToString(inv);
                 break;
             case TopicCompressionType.Lz4:
-                configs["compression.lz4.level"] = Lz4CompressionLevel.ToString();
+                configs["compression.lz4.level"] = Lz4CompressionLevel.ToString(inv);
                 break;
             case TopicCompressionType.Zstd:
-                configs["compression.zstd.level"] = ZstdCompressionLevel.ToString();
+                configs["compression.zstd.level"] = ZstdCompressionLevel.ToString(inv);
                 break;
         }
 
         if (MaxCompactionLag.HasValue)
         {
-            configs["max.compaction.lag.ms"] = ((long)MaxCompactionLag.Value.TotalMilliseconds).ToString();
+            configs["max.compaction.lag.ms"] = ((long)MaxCompactionLag.Value.TotalMilliseconds).ToString(inv);
         }
 
         return new TopicSpecification
