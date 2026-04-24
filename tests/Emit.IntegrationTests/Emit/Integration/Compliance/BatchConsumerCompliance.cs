@@ -6,6 +6,7 @@ using Emit.Consumer;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration;
 using Emit.Kafka.Consumer;
+using Emit.RateLimiting;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -70,6 +71,8 @@ public abstract class BatchConsumerCompliance
         EmitBuilder emit,
         string topic,
         string groupId,
+        int workerCount,
+        Action<RateLimitBuilder> rateLimitConfig,
         Action<BatchOptions> batchConfig);
 
     /// <summary>
@@ -502,6 +505,8 @@ public abstract class BatchConsumerCompliance
                 services.AddSingleton(sink);
                 services.AddEmit(emit => ConfigureEmitBatchWithRateLimit(
                     emit, topic, groupId,
+                    workerCount: 1,
+                    rl => rl.FixedWindow(2, TimeSpan.FromSeconds(2)),
                     b =>
                     {
                         b.MaxSize = 2;
@@ -537,6 +542,142 @@ public abstract class BatchConsumerCompliance
             Assert.True(
                 sw.Elapsed >= TimeSpan.FromSeconds(2),
                 $"Expected elapsed >= 2s due to rate limiting, got {sw.Elapsed}.");
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    // ── Test 7b ──
+
+    /// <summary>
+    /// Verifies that a TokenBucket rate limiter does not reject batch permit requests when
+    /// <c>MaxSize</c> exceeds the internal <c>QueueLimit</c>. With <c>WorkerCount=1</c> the
+    /// internal queue limit is <c>1 × bufferSize(32) = 32</c>. Setting <c>MaxSize=40</c> means
+    /// any batch of 33–40 items that needs queuing will be rejected by the buggy code path.
+    /// Messages are produced concurrently to build a Kafka backlog, ensuring the accumulator
+    /// builds full-sized batches. The token bucket depletes after the first batch, forcing
+    /// subsequent batches to queue.
+    /// </summary>
+    [Fact]
+    public async Task GivenBatchConsumer_WhenTokenBucketWithMaxSizeExceedingQueueLimit_ThenAllMessagesConsumed()
+    {
+        // Arrange — 500 messages, single key, MaxSize=40, burst=40.
+        // First batch drains the bucket; batch 2+ must queue 33–40 permits.
+        // Bug: QueueLimit = 1*32 = 32 < 33 → rejected.
+        const int messageCount = 500;
+        var topic = $"batch-rl-tb-{Guid.NewGuid():N}";
+        var groupId = $"batch-rl-tbg-{Guid.NewGuid():N}";
+        var sink = new BatchSinkConsumer<string>();
+
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddEmit(emit => ConfigureEmitBatchWithRateLimit(
+                    emit, topic, groupId,
+                    workerCount: 1,
+                    rl => rl.TokenBucket(permitsPerSecond: 500, burstSize: 40),
+                    b =>
+                    {
+                        b.MaxSize = 40;
+                        b.Timeout = TimeSpan.FromSeconds(2);
+                    }));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act — produce concurrently to build a Kafka backlog so batches fill to MaxSize.
+            using var scope = host.Services.CreateScope();
+            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+            var produceTasks = new Task[messageCount];
+            for (var i = 0; i < messageCount; i++)
+            {
+                produceTasks[i] = producer.ProduceAsync(new EventMessage<string, string>("same-key", $"rl-tb-{i}"));
+            }
+
+            await Task.WhenAll(produceTasks);
+
+            await WaitUntilAsync(
+                () => sink.Messages.Count >= messageCount,
+                $"Expected {messageCount} messages with TokenBucket rate limiting.",
+                timeout: TimeSpan.FromSeconds(60));
+
+            // Assert
+            Assert.True(sink.Messages.Count >= messageCount);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    // ── Test 7c ──
+
+    /// <summary>
+    /// Verifies that a FixedWindow rate limiter does not reject batch permit requests when
+    /// <c>MaxSize</c> exceeds the internal <c>QueueLimit</c>. With <c>WorkerCount=1</c> the
+    /// internal queue limit is <c>1 × bufferSize(32) = 32</c>. Setting <c>MaxSize=40</c> means
+    /// any batch of 33–40 items that needs queuing will be rejected by the buggy code path.
+    /// Messages are produced concurrently to build a Kafka backlog, ensuring the accumulator
+    /// builds full-sized batches. The fixed window depletes after the first batch, forcing
+    /// subsequent batches to queue.
+    /// </summary>
+    [Fact]
+    public async Task GivenBatchConsumer_WhenFixedWindowWithMaxSizeExceedingQueueLimit_ThenAllMessagesConsumed()
+    {
+        // Arrange — 500 messages, single key, MaxSize=40, permits=40 per 200ms window.
+        // First batch uses all 40 permits; batch 2+ must queue 33–40 permits.
+        // Bug: QueueLimit = 1*32 = 32 < 33 → rejected.
+        const int messageCount = 500;
+        var topic = $"batch-rl-fw-{Guid.NewGuid():N}";
+        var groupId = $"batch-rl-fwg-{Guid.NewGuid():N}";
+        var sink = new BatchSinkConsumer<string>();
+
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddEmit(emit => ConfigureEmitBatchWithRateLimit(
+                    emit, topic, groupId,
+                    workerCount: 1,
+                    rl => rl.FixedWindow(permits: 40, window: TimeSpan.FromMilliseconds(200)),
+                    b =>
+                    {
+                        b.MaxSize = 40;
+                        b.Timeout = TimeSpan.FromSeconds(2);
+                    }));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act — produce concurrently to build a Kafka backlog so batches fill to MaxSize.
+            using var scope = host.Services.CreateScope();
+            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+            var produceTasks = new Task[messageCount];
+            for (var i = 0; i < messageCount; i++)
+            {
+                produceTasks[i] = producer.ProduceAsync(new EventMessage<string, string>("same-key", $"rl-fw-{i}"));
+            }
+
+            await Task.WhenAll(produceTasks);
+
+            await WaitUntilAsync(
+                () => sink.Messages.Count >= messageCount,
+                $"Expected {messageCount} messages with FixedWindow rate limiting.",
+                timeout: TimeSpan.FromSeconds(60));
+
+            // Assert
+            Assert.True(sink.Messages.Count >= messageCount);
         }
         finally
         {

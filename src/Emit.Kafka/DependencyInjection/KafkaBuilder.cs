@@ -746,7 +746,9 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         {
             var rateLimitBuilder = new RateLimiting.RateLimitBuilder();
             groupBuilder.RateLimitAction(rateLimitBuilder);
-            var totalCapacity = workerCount * bufferSize;
+            var totalCapacity = groupBuilder.IsBatchMode
+                ? workerCount * groupBuilder.BatchOptions!.MaxSize
+                : workerCount * bufferSize;
             rateLimiter = rateLimitBuilder.Build(totalCapacity);
 
             if (!groupBuilder.IsBatchMode)
