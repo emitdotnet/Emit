@@ -8,6 +8,7 @@ using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
+using Emit.RateLimiting;
 using Emit.Testing;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
@@ -122,6 +123,8 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         EmitBuilder emit,
         string topic,
         string groupId,
+        int workerCount,
+        Action<RateLimitBuilder> rateLimitConfig,
         Action<BatchOptions> batchConfig)
     {
         emit.AddKafka(kafka =>
@@ -140,8 +143,8 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.WorkerCount = 1;
-                    group.RateLimit(rl => rl.FixedWindow(2, TimeSpan.FromSeconds(2)));
+                    group.WorkerCount = workerCount;
+                    group.RateLimit(rateLimitConfig);
                     group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
                 });
             });
