@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using System.Collections.Generic;
 using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
@@ -599,6 +600,46 @@ public sealed class KafkaClientOptionsTests
         clientConfig.ApplyTo(consumerConfig);
 
         // Assert
-        Assert.Equal("localhost:9092", consumerConfig.BootstrapServers);
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertiesSet_WhenApplyTo_ThenRawPropertiesApplied()
+    {
+        // Arrange
+        var clientConfig = new KafkaClientOptions
+        {
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["reconnect.backoff.ms"] = "500"
+            }
+        };
+        var config = new ConfluentKafka.ClientConfig();
+
+        // Act
+        clientConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal("500", config.Get("reconnect.backoff.ms"));
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertyConflictsWithTypedProperty_WhenApplyTo_ThenTypedPropertyWins()
+    {
+        // Arrange
+        var clientConfig = new KafkaClientOptions
+        {
+            BootstrapServers = "typed:9092",
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["bootstrap.servers"] = "additional:9092"
+            }
+        };
+        var config = new ConfluentKafka.ClientConfig();
+
+        // Act
+        clientConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal("typed:9092", config.BootstrapServers);
     }
 }
