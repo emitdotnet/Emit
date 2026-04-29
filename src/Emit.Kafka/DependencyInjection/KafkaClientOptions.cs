@@ -227,10 +227,24 @@ public sealed class KafkaClientOptions
     public string? Debug { get; set; }
 
     /// <summary>
+    /// Additional librdkafka configuration properties to pass through as raw key-value pairs.
+    /// Use this for settings not exposed as typed properties.
+    /// Invalid keys will cause an exception when the client is built.
+    /// Typed properties take precedence over entries in this dictionary.
+    /// </summary>
+    public Dictionary<string, string>? AdditionalProperties { get; set; }
+
+    /// <summary>
     /// Applies non-null settings onto a <see cref="ConfluentKafka.ClientConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ClientConfig config)
     {
+        if (AdditionalProperties is { Count: > 0 })
+        {
+            foreach (var (key, value) in AdditionalProperties)
+                config.Set(key, value);
+        }
+
         // Connection
         if (BootstrapServers is not null) config.BootstrapServers = BootstrapServers;
         if (ClientId is not null) config.ClientId = ClientId;

@@ -98,10 +98,37 @@ public sealed class KafkaConsumerOptions
     public ConfluentKafka.GroupProtocol? GroupProtocol { get; set; }
 
     /// <summary>
+    /// Maximum number of kilobytes of queued pre-fetched messages in the local consumer queue.
+    /// If using the high-level consumer this setting applies to the single consumer queue,
+    /// regardless of the number of partitions. This property has higher priority than
+    /// <see cref="QueuedMinMessages"/>.
+    /// </summary>
+    public int? QueuedMaxMessagesKbytes { get; set; }
+
+    /// <summary>
+    /// Minimum number of messages per topic+partition librdkafka tries to maintain in the local consumer queue.
+    /// </summary>
+    public int? QueuedMinMessages { get; set; }
+
+    /// <summary>
+    /// Additional librdkafka configuration properties to pass through as raw key-value pairs.
+    /// Use this for settings not exposed as typed properties.
+    /// Invalid keys will cause an exception when the consumer is built.
+    /// Typed properties take precedence over entries in this dictionary.
+    /// </summary>
+    public Dictionary<string, string>? AdditionalProperties { get; set; }
+
+    /// <summary>
     /// Applies non-null overrides onto a <see cref="ConfluentKafka.ConsumerConfig"/>.
     /// </summary>
     internal void ApplyTo(ConfluentKafka.ConsumerConfig config)
     {
+        if (AdditionalProperties is { Count: > 0 })
+        {
+            foreach (var (key, value) in AdditionalProperties)
+                config.Set(key, value);
+        }
+
         if (AutoOffsetReset.HasValue) config.AutoOffsetReset = AutoOffsetReset.Value;
         if (SessionTimeout.HasValue) config.SessionTimeoutMs = (int)SessionTimeout.Value.TotalMilliseconds;
         if (HeartbeatInterval.HasValue) config.HeartbeatIntervalMs = (int)HeartbeatInterval.Value.TotalMilliseconds;
@@ -115,5 +142,7 @@ public sealed class KafkaConsumerOptions
         if (IsolationLevel.HasValue) config.IsolationLevel = IsolationLevel.Value;
         if (CheckCrcs.HasValue) config.CheckCrcs = CheckCrcs.Value;
         if (GroupProtocol.HasValue) config.GroupProtocol = GroupProtocol.Value;
+        if (QueuedMaxMessagesKbytes.HasValue) config.QueuedMaxMessagesKbytes = QueuedMaxMessagesKbytes.Value;
+        if (QueuedMinMessages.HasValue) config.QueuedMinMessages = QueuedMinMessages.Value;
     }
 }

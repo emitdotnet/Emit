@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using System.Collections.Generic;
 using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
@@ -262,5 +263,46 @@ public sealed class KafkaProducerOptionsTests
         Assert.Equal(1048576, config.QueueBufferingMaxKbytes);
         Assert.Equal(ConfluentKafka.Partitioner.Murmur2Random, config.Partitioner);
         Assert.Equal(3, config.MessageSendMaxRetries);
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertiesSet_WhenApplyTo_ThenRawPropertiesApplied()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerOptions
+        {
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["delivery.timeout.ms"] = "120000"
+            }
+        };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal("120000", config.Get("delivery.timeout.ms"));
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertyConflictsWithTypedProperty_WhenApplyTo_ThenTypedPropertyWins()
+    {
+        // Arrange
+        var producerConfig = new KafkaProducerOptions
+        {
+            BatchSize = 32768,
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["batch.size"] = "9999999"
+            }
+        };
+        var config = new ConfluentKafka.ProducerConfig();
+
+        // Act
+        producerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(32768, config.BatchSize);
     }
 }

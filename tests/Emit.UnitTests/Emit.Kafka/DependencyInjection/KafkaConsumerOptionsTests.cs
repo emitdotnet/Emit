@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using System.Collections.Generic;
 using global::Emit.Kafka.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
@@ -178,6 +179,75 @@ public sealed class KafkaConsumerOptionsTests
     }
 
     [Fact]
+    public void GivenQueuedMaxMessagesKbytesSet_WhenApplyTo_ThenConfigQueuedMaxMessagesKbytesIsSet()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerOptions { QueuedMaxMessagesKbytes = 131072 };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(131072, config.QueuedMaxMessagesKbytes);
+    }
+
+    [Fact]
+    public void GivenQueuedMinMessagesSet_WhenApplyTo_ThenConfigQueuedMinMessagesIsSet()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerOptions { QueuedMinMessages = 50000 };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(50000, config.QueuedMinMessages);
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertiesSet_WhenApplyTo_ThenRawPropertiesApplied()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerOptions
+        {
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["fetch.error.backoff.ms"] = "250"
+            }
+        };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal("250", config.Get("fetch.error.backoff.ms"));
+    }
+
+    [Fact]
+    public void GivenAdditionalPropertyConflictsWithTypedProperty_WhenApplyTo_ThenTypedPropertyWins()
+    {
+        // Arrange
+        var consumerConfig = new KafkaConsumerOptions
+        {
+            FetchMaxBytes = 1000000,
+            AdditionalProperties = new Dictionary<string, string>
+            {
+                ["fetch.max.bytes"] = "9999999"
+            }
+        };
+        var config = new ConfluentKafka.ConsumerConfig();
+
+        // Act
+        consumerConfig.ApplyTo(config);
+
+        // Assert
+        Assert.Equal(1000000, config.FetchMaxBytes);
+    }
+
+    [Fact]
     public void GivenAllPropertiesSet_WhenApplyTo_ThenAllApplied()
     {
         // Arrange
@@ -195,7 +265,9 @@ public sealed class KafkaConsumerOptionsTests
             PartitionAssignmentStrategy = ConfluentKafka.PartitionAssignmentStrategy.RoundRobin,
             IsolationLevel = ConfluentKafka.IsolationLevel.ReadCommitted,
             CheckCrcs = true,
-            GroupProtocol = ConfluentKafka.GroupProtocol.Consumer
+            GroupProtocol = ConfluentKafka.GroupProtocol.Consumer,
+            QueuedMaxMessagesKbytes = 131072,
+            QueuedMinMessages = 50000
         };
         var config = new ConfluentKafka.ConsumerConfig();
 
@@ -216,5 +288,7 @@ public sealed class KafkaConsumerOptionsTests
         Assert.Equal(ConfluentKafka.IsolationLevel.ReadCommitted, config.IsolationLevel);
         Assert.Equal(true, config.CheckCrcs);
         Assert.Equal(ConfluentKafka.GroupProtocol.Consumer, config.GroupProtocol);
+        Assert.Equal(131072, config.QueuedMaxMessagesKbytes);
+        Assert.Equal(50000, config.QueuedMinMessages);
     }
 }

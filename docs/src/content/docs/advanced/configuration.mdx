@@ -71,6 +71,23 @@ Confluent consumer options (also settable on the group):
 | `HeartbeatInterval` | How often the consumer sends heartbeats to the broker |
 | `MaxPollInterval` | Maximum time between poll calls before the broker considers the consumer dead |
 | `IsolationLevel` | `ReadUncommitted` or `ReadCommitted` (for transactional producers) |
+| `QueuedMaxMessagesKbytes` | Maximum KB of pre-fetched messages in the local consumer queue. Critical for memory-constrained containers where librdkafka's 1 GB default can cause OOM-kills. |
+| `QueuedMinMessages` | Minimum number of messages per topic+partition librdkafka tries to maintain in the local queue |
+
+
+## Additional properties
+
+All options classes (`KafkaClientOptions`, `KafkaConsumerOptions`, `KafkaProducerOptions`) expose an `AdditionalProperties` dictionary for librdkafka settings not yet surfaced as typed properties. Typed properties always take precedence over entries in this dictionary. Invalid keys cause an `InvalidOperationException` at client build time.
+
+```csharp
+kafka.ClientConfig(client =>
+{
+    client.AdditionalProperties = new Dictionary<string, string>
+    {
+        ["socket.nagle.disable"] = "true"
+    };
+});
+```
 
 ## Schema Registry options
 
