@@ -71,7 +71,7 @@ Confluent consumer options (also settable on the group):
 | `HeartbeatInterval` | How often the consumer sends heartbeats to the broker |
 | `MaxPollInterval` | Maximum time between poll calls before the broker considers the consumer dead |
 | `IsolationLevel` | `ReadUncommitted` or `ReadCommitted` (for transactional producers) |
-| `QueuedMaxMessagesKbytes` | Maximum KB of pre-fetched messages in the local consumer queue. Critical for memory-constrained containers where librdkafka's 1 GB default can cause OOM-kills. |
+| `QueuedMaxMessagesKbytes` | Maximum KB of pre-fetched messages in the local consumer queue |
 | `QueuedMinMessages` | Minimum number of messages per topic+partition librdkafka tries to maintain in the local queue |
 
 
