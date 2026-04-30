@@ -103,6 +103,41 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         set => consumerConfig.IsolationLevel = value;
     }
 
+    /// <inheritdoc cref="KafkaConsumerOptions.CheckCrcs"/>
+    public bool? CheckCrcs
+    {
+        get => consumerConfig.CheckCrcs;
+        set => consumerConfig.CheckCrcs = value;
+    }
+
+    /// <inheritdoc cref="KafkaConsumerOptions.GroupProtocol"/>
+    public ConfluentKafka.GroupProtocol? GroupProtocol
+    {
+        get => consumerConfig.GroupProtocol;
+        set => consumerConfig.GroupProtocol = value;
+    }
+
+    /// <inheritdoc cref="KafkaConsumerOptions.QueuedMaxMessagesKbytes"/>
+    public int? QueuedMaxMessagesKbytes
+    {
+        get => consumerConfig.QueuedMaxMessagesKbytes;
+        set => consumerConfig.QueuedMaxMessagesKbytes = value;
+    }
+
+    /// <inheritdoc cref="KafkaConsumerOptions.QueuedMinMessages"/>
+    public int? QueuedMinMessages
+    {
+        get => consumerConfig.QueuedMinMessages;
+        set => consumerConfig.QueuedMinMessages = value;
+    }
+
+    /// <inheritdoc cref="KafkaConsumerOptions.AdditionalProperties"/>
+    public Dictionary<string, string>? AdditionalProperties
+    {
+        get => consumerConfig.AdditionalProperties;
+        set => consumerConfig.AdditionalProperties = value;
+    }
+
     /// <inheritdoc />
     IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
 
