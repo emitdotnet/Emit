@@ -513,6 +513,173 @@ public sealed class KafkaBrokerMetricsTests : IDisposable
         Assert.Contains(longMeasurements, m => m.Value == 20);
     }
 
+    [Fact]
+    public void GivenPartitionsRevokedAfterRebalance_WhenHandleStatistics_ThenStaleLagEntriesAreDropped()
+    {
+        // Arrange
+        var jsonBeforeRebalance = """
+        {
+          "topics": {
+            "test-topic": {
+              "partitions": {
+                "0": { "consumer_lag": 100 },
+                "1": { "consumer_lag": 200 }
+              }
+            }
+          }
+        }
+        """;
+
+        // After rebalance, partition 1 was revoked — librdkafka reports lag -1 for it
+        var jsonAfterRebalance = """
+        {
+          "topics": {
+            "test-topic": {
+              "partitions": {
+                "0": { "consumer_lag": 50 },
+                "1": { "consumer_lag": -1 }
+              }
+            }
+          }
+        }
+        """;
+
+        var metrics = new KafkaBrokerMetrics(null, new EmitMetricsEnrichment());
+
+        // Act — first callback: both partitions active
+        metrics.HandleStatistics(jsonBeforeRebalance);
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(longMeasurements, m =>
+            m.Value == 100 && HasTag(m.Tags, "partition", 0));
+        Assert.Contains(longMeasurements, m =>
+            m.Value == 200 && HasTag(m.Tags, "partition", 1));
+
+        // Act — second callback: partition 1 revoked (lag -1)
+        metrics.HandleStatistics(jsonAfterRebalance);
+
+        // Clear all lists AFTER the second HandleStatistics so only the post-swap state is observed
+        doubleMeasurements.Clear();
+        longMeasurements.Clear();
+        intMeasurements.Clear();
+        listener.RecordObservableInstruments();
+
+        // Assert — partition 0 updated, stale value 200 for partition 1 is gone
+        Assert.Contains(longMeasurements, m =>
+            m.Value == 50 &&
+            HasTag(m.Tags, "topic", "test-topic") &&
+            HasTag(m.Tags, "partition", 0));
+        Assert.DoesNotContain(longMeasurements, m =>
+            m.Value == 200 &&
+            HasTag(m.Tags, "topic", "test-topic") &&
+            HasTag(m.Tags, "partition", 1));
+    }
+
+    [Fact]
+    public void GivenBrokerDisappearsFromStatistics_WhenHandleStatistics_ThenStaleBrokerEntriesAreDropped()
+    {
+        // Arrange
+        var jsonWithTwoBrokers = """
+        {
+          "brokers": {
+            "broker1": { "nodeid": 1, "state": "UP", "outbuf_msg_cnt": 501 },
+            "broker2": { "nodeid": 2, "state": "UP", "outbuf_msg_cnt": 777 }
+          }
+        }
+        """;
+
+        var jsonWithOneBroker = """
+        {
+          "brokers": {
+            "broker1": { "nodeid": 1, "state": "UP", "outbuf_msg_cnt": 502 }
+          }
+        }
+        """;
+
+        var metrics = new KafkaBrokerMetrics(null, new EmitMetricsEnrichment());
+
+        // Act — first callback: two brokers
+        metrics.HandleStatistics(jsonWithTwoBrokers);
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(intMeasurements, m => m.Value == 501 && HasTag(m.Tags, "broker_id", 1));
+        Assert.Contains(intMeasurements, m => m.Value == 777 && HasTag(m.Tags, "broker_id", 2));
+
+        // Act — second callback: broker 2 disappeared
+        metrics.HandleStatistics(jsonWithOneBroker);
+
+        // Clear all lists AFTER the second HandleStatistics so only the post-swap state is observed
+        doubleMeasurements.Clear();
+        longMeasurements.Clear();
+        intMeasurements.Clear();
+        listener.RecordObservableInstruments();
+
+        // Assert — broker 1 updated to 502, stale value 777 for broker 2 is gone
+        Assert.Contains(intMeasurements, m => m.Value == 502 && HasTag(m.Tags, "broker_id", 1));
+        Assert.DoesNotContain(intMeasurements, m => m.Value == 777 && HasTag(m.Tags, "broker_id", 2));
+    }
+
+    [Fact]
+    public void GivenStatisticsWithMissingSections_WhenHandleStatistics_ThenPreviousDataIsCleared()
+    {
+        // Arrange — use broker_id 99 and unique values to avoid cross-contamination from other test instances
+        var jsonWithAllSections = """
+        {
+          "msg_cnt": 10,
+          "msg_size": 100,
+          "brokers": {
+            "broker99": { "nodeid": 99, "state": "UP", "outbuf_msg_cnt": 891 }
+          },
+          "topics": {
+            "clear-test-topic": {
+              "partitions": {
+                "0": { "consumer_lag": 892 }
+              }
+            }
+          },
+          "cgrp": {
+            "state": "stable",
+            "rebalance_cnt": 1
+          }
+        }
+        """;
+
+        // Second callback is missing brokers, topics, and cgrp sections entirely
+        var jsonWithoutSections = """
+        {
+          "msg_cnt": 893,
+          "msg_size": 894
+        }
+        """;
+
+        var metrics = new KafkaBrokerMetrics(null, new EmitMetricsEnrichment());
+
+        // Act — first callback populates all sections
+        metrics.HandleStatistics(jsonWithAllSections);
+        doubleMeasurements.Clear();
+        longMeasurements.Clear();
+        intMeasurements.Clear();
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(intMeasurements, m => m.Value == 891 && HasTag(m.Tags, "broker_id", 99));
+        Assert.Contains(longMeasurements, m => m.Value == 892 && HasTag(m.Tags, "topic", "clear-test-topic"));
+
+        // Act — second callback has no brokers/topics/cgrp sections
+        metrics.HandleStatistics(jsonWithoutSections);
+        doubleMeasurements.Clear();
+        longMeasurements.Clear();
+        intMeasurements.Clear();
+        listener.RecordObservableInstruments();
+
+        // Assert — previous broker data is cleared (not preserved from stale snapshot)
+        Assert.DoesNotContain(intMeasurements, m => m.Value == 891 && HasTag(m.Tags, "broker_id", 99));
+        // Previous consumer lag data is cleared
+        Assert.DoesNotContain(longMeasurements, m => m.Value == 892 && HasTag(m.Tags, "topic", "clear-test-topic"));
+        // Client metrics are updated
+        Assert.Contains(longMeasurements, m => m.Value == 893);
+        Assert.Contains(longMeasurements, m => m.Value == 894);
+    }
+
     private static bool HasTag(KeyValuePair<string, object?>[] tags, string key, object expectedValue)
     {
         return tags.Any(t => t.Key == key && Equals(t.Value, expectedValue));
