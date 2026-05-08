@@ -103,7 +103,6 @@ public static class MeterProviderBuilderExtensions
 
         // Consumer
         builder.AddView("emit.consumer.retry.duration", seconds);
-        builder.AddView("emit.consumer.validation.duration", seconds);
         builder.AddView("emit.consumer.circuit_breaker.open_duration", seconds);
         builder.AddView("emit.consumer.rate_limit.wait_duration", seconds);
 

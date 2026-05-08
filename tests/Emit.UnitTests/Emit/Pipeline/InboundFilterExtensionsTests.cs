@@ -3,8 +3,8 @@ namespace Emit.UnitTests.Pipeline;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
+using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 
 public sealed class InboundFilterExtensionsTests
@@ -246,6 +246,16 @@ public sealed class InboundFilterExtensionsTests
             InboundPipeline.AddConsumerFilter<string, TFilter>();
             return this;
         }
+
+        public IInboundConfigurable<string> Filter(
+            Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
+        {
+            ArgumentNullException.ThrowIfNull(predicate);
+            var middleware = new FilterMiddleware<string>();
+            middleware.AddPredicate(predicate);
+            InboundPipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
+            return this;
+        }
     }
 
     private sealed class TestConsumeContext<T> : ConsumeContext<T>;
@@ -266,4 +276,5 @@ public sealed class InboundFilterExtensionsTests
     {
         public T Value { get; set; } = value;
     }
+
 }

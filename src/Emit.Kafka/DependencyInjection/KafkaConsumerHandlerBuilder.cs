@@ -3,6 +3,7 @@ namespace Emit.Kafka.DependencyInjection;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.Pipeline;
+using Emit.Pipeline.Modules;
 
 /// <summary>
 /// Configures per-consumer middleware for a single consumer handler registered
@@ -34,6 +35,17 @@ public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<T
         where TFilter : class, IConsumerFilter<TValue>
     {
         Pipeline.AddConsumerFilter<TValue, TFilter>();
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IInboundConfigurable<TValue> Filter(
+        Func<ConsumeContext<TValue>, CancellationToken, ValueTask<bool>> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        var middleware = new FilterMiddleware<TValue>();
+        middleware.AddPredicate(predicate);
+        Pipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
         return this;
     }
 }

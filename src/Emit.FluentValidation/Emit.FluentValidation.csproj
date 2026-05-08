@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Emit.Abstractions\Emit.Abstractions.csproj" />
+    <ProjectReference Include="..\Emit\Emit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

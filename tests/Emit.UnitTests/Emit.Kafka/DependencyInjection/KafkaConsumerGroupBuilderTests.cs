@@ -519,7 +519,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     // ── Group-level Validate tests ──
 
     [Fact]
-    public void GivenValidateClassBased_WhenCalled_ThenStoresValidationModule()
+    public void GivenValidateClassBased_WhenCalled_ThenStoresValidationMiddleware()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
@@ -533,7 +533,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void GivenValidateAsyncDelegate_WhenCalled_ThenStoresValidationModule()
+    public void GivenValidateAsyncDelegate_WhenCalled_ThenStoresValidationMiddleware()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
@@ -547,7 +547,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void GivenValidateSyncDelegate_WhenCalled_ThenStoresValidationModule()
+    public void GivenValidateSyncDelegate_WhenCalled_ThenStoresValidationMiddleware()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();

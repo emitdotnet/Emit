@@ -58,9 +58,6 @@ public sealed class EmitMetrics
         ValidationCompleted = meter.CreateCounter<long>(
             "emit.consumer.validation.completed", "{validation}", "Count of validation executions.");
 
-        ValidationDuration = meter.CreateHistogram<double>(
-            "emit.consumer.validation.duration", "s", "Validator execution time.");
-
         // Circuit breaker
         StateTransitions = meter.CreateCounter<long>(
             "emit.consumer.circuit_breaker.state_transitions", "{transition}", "Count of circuit breaker state transitions.");
@@ -105,8 +102,6 @@ public sealed class EmitMetrics
 
     // Validation
     internal Counter<long> ValidationCompleted { get; }
-
-    internal Histogram<double> ValidationDuration { get; }
 
     // Circuit breaker
     internal Counter<long> StateTransitions { get; }
@@ -176,12 +171,6 @@ public sealed class EmitMetrics
         if (count <= 0) return;
         var tags = enrichment.CreateTags([new("result", result), new("action", action)]);
         ValidationCompleted.Add(count, tags);
-    }
-
-    internal void RecordValidationDuration(double seconds)
-    {
-        var tags = enrichment.CreateTags();
-        ValidationDuration.Record(seconds, tags);
     }
 
     // ── Circuit breaker recording methods ──

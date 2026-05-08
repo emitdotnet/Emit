@@ -11,6 +11,7 @@ using Emit.RateLimiting;
 using Emit.Routing;
 using ConfluentKafka = Confluent.Kafka;
 
+
 /// <summary>
 /// Configures a consumer group for a topic: consumer config overrides,
 /// worker pool settings, and consumer handler registrations.
@@ -175,8 +176,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>Group-level error policy configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorPolicyBuilder>? GroupErrorPolicyAction { get; private set; }
 
-    /// <summary>Group-level validation module, or <c>null</c> if not configured.</summary>
-    internal ValidationModule<TValue>? Validation { get; private set; }
+    /// <summary>Group-level validation middleware, or <c>null</c> if not configured.</summary>
+    internal ValidationMiddleware<TValue>? Validation { get; private set; }
+
+    /// <summary>Group-level filter middleware, or <c>null</c> if no filters have been registered.</summary>
+    internal FilterMiddleware<TValue>? Filters { get; private set; }
 
     /// <summary>Deserialization error action configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorActionBuilder>? DeserializationErrorAction { get; private set; }
@@ -217,14 +221,32 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     }
 
     /// <summary>
-    /// Registers a consumer filter on this consumer group's inbound pipeline.
+    /// Registers a consumer filter on this consumer group. Works for both single-message and
+    /// batch consumers.
     /// </summary>
     /// <typeparam name="TFilter">The filter type.</typeparam>
     /// <returns>This builder for continued chaining.</returns>
     public KafkaConsumerGroupBuilder<TKey, TValue> Filter<TFilter>()
         where TFilter : class, IConsumerFilter<TValue>
     {
-        Pipeline.AddConsumerFilter<TValue, TFilter>();
+        EnsureFilterMiddleware().AddFilterType<TFilter>();
+        return this;
+    }
+
+    /// <summary>
+    /// Registers an asynchronous predicate filter on this consumer group. Works for both
+    /// single-message and batch consumers.
+    /// </summary>
+    /// <param name="predicate">
+    /// An asynchronous predicate that receives the consume context and a cancellation token.
+    /// Return <see langword="true"/> to continue the pipeline, <see langword="false"/> to skip.
+    /// </param>
+    /// <returns>This builder for continued chaining.</returns>
+    public KafkaConsumerGroupBuilder<TKey, TValue> Filter(
+        Func<ConsumeContext<TValue>, CancellationToken, ValueTask<bool>> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        EnsureFilterMiddleware().AddPredicate(predicate);
         return this;
     }
 
@@ -252,8 +274,9 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
     /// <summary>
     /// Registers a class-based message validator that is resolved from the service provider
-    /// for each message. Validation failures throw <see cref="MessageValidationException"/>;
-    /// the <paramref name="configureAction"/> determines whether to dead-letter or discard them.
+    /// for each message. Validation failures are dead-lettered or discarded inline per the
+    /// terminal action configured by <paramref name="configureAction"/>; transient validator
+    /// exceptions propagate to the group's error policy.
     /// </summary>
     /// <typeparam name="TValidator">The validator type.</typeparam>
     /// <param name="configureAction">Configures the terminal action for validation failures.</param>
@@ -264,16 +287,17 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     {
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure<TValidator>(configureAction);
         Validation = module;
         return this;
     }
 
     /// <summary>
-    /// Registers an inline async delegate validator. Validation failures throw
-    /// <see cref="MessageValidationException"/>; the <paramref name="configureAction"/>
-    /// determines whether to dead-letter or discard them.
+    /// Registers an inline async delegate validator. Validation failures are dead-lettered
+    /// or discarded inline per the terminal action configured by
+    /// <paramref name="configureAction"/>; transient validator exceptions propagate to the
+    /// group's error policy.
     /// </summary>
     /// <param name="validator">The async validation delegate.</param>
     /// <param name="configureAction">Configures the terminal action for validation failures.</param>
@@ -286,16 +310,17 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         ArgumentNullException.ThrowIfNull(validator);
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure(validator, configureAction);
         Validation = module;
         return this;
     }
 
     /// <summary>
-    /// Registers an inline synchronous delegate validator. Validation failures throw
-    /// <see cref="MessageValidationException"/>; the <paramref name="configureAction"/>
-    /// determines whether to dead-letter or discard them.
+    /// Registers an inline synchronous delegate validator. Validation failures are dead-lettered
+    /// or discarded inline per the terminal action configured by
+    /// <paramref name="configureAction"/>; transient validator exceptions propagate to the
+    /// group's error policy.
     /// </summary>
     /// <param name="validator">The synchronous validation delegate.</param>
     /// <param name="configureAction">Configures the terminal action for validation failures.</param>
@@ -308,7 +333,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         ArgumentNullException.ThrowIfNull(validator);
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure(validator, configureAction);
         Validation = module;
         return this;
@@ -560,6 +585,9 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
     IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Filter<TFilter>() => Filter<TFilter>();
 
+    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Filter(
+        Func<ConsumeContext<TValue>, CancellationToken, ValueTask<bool>> predicate) => Filter(predicate);
+
     private void EnsureValidateNotAlreadyCalled()
     {
         if (Validation is not null)
@@ -567,5 +595,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
             throw new InvalidOperationException(
                 $"{nameof(Validate)} has already been called on this consumer group builder.");
         }
+    }
+
+    private FilterMiddleware<TValue> EnsureFilterMiddleware()
+    {
+        Filters ??= new FilterMiddleware<TValue>();
+        return Filters;
     }
 }

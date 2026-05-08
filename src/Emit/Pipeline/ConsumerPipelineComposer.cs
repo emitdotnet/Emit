@@ -53,17 +53,20 @@ public sealed class ConsumerPipelineComposer<TValue>
     public required IMessagePipelineBuilder ProviderInboundPipeline { get; init; }
 
     /// <summary>
-    /// Gets the optional validation module. When configured, a validation middleware is inserted
-    /// between retry and user middleware. On failure, throws <see cref="MessageValidationException"/>.
+    /// Gets the consumer group's <see cref="ValidationMiddleware{TValue}"/> as inbound middleware.
+    /// For single consumers it composes directly; for batch consumers the framework wraps it in
+    /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Validation handles
+    /// dead-lettering or discarding inline on failure and short-circuits the pipeline.
     /// </summary>
-    public ValidationModule<TValue>? Validation { get; init; }
+    public IMiddleware<ConsumeContext<TValue>>? ValidationMiddleware { get; init; }
 
     /// <summary>
-    /// Gets an optional pre-built validation middleware. When set, this middleware is used
-    /// instead of building a <see cref="ValidationMiddleware{TValue}"/> from <see cref="Validation"/>.
-    /// Used by batch consumers to supply <see cref="BatchValidationMiddleware{TValue}"/>.
+    /// Gets the consumer group's <see cref="Modules.FilterMiddleware{TValue}"/> as inbound middleware.
+    /// For single consumers it composes directly; for batch consumers the framework wraps it in
+    /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Filtered messages
+    /// short-circuit before reaching validation.
     /// </summary>
-    public IMiddleware<ConsumeContext<TValue>>? PreBuiltValidationMiddleware { get; init; }
+    public IMiddleware<ConsumeContext<TValue>>? FilterMiddleware { get; init; }
 
     /// <summary>
     /// Gets the optional retry configuration. When set, a retry middleware wraps the handler
@@ -143,19 +146,15 @@ public sealed class ConsumerPipelineComposer<TValue>
         }
 
         // 4. ValidationMiddleware (if configured) — outside retry so validation failures skip retry
-        if (PreBuiltValidationMiddleware is not null)
+        if (ValidationMiddleware is not null)
         {
-            // Batch consumers: use the pre-built BatchValidationMiddleware (per-item validation)
-            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(PreBuiltValidationMiddleware, terminal);
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(ValidationMiddleware, terminal);
         }
-        else if (Validation is { IsConfigured: true })
+
+        // 4.5. FilterMiddleware (outside validation — filtered items never reach the validator)
+        if (FilterMiddleware is not null)
         {
-            // Single consumers: build ValidationMiddleware as before
-            var validationMw = new ValidationMiddleware<TValue>(
-                Validation,
-                Services.GetRequiredService<EmitMetrics>(),
-                LoggerFactory.CreateLogger<ValidationMiddleware<TValue>>());
-            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(validationMw, terminal);
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(FilterMiddleware, terminal);
         }
 
         // 5. Group → Provider → Global user middleware

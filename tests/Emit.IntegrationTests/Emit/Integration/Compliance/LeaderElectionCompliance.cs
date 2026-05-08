@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 
 /// <summary>
 /// Compliance tests for leader election behavior. Derived classes provide a database-specific
@@ -178,22 +179,25 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         await using var follower = CreateNode(ShortLeaseDuration);
 
         await leader.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
-        Assert.True(leader.Worker.IsLeader);
+        await WaitUntilAsync(
+            () => leader.Worker.IsLeader,
+            "Leader did not establish leadership within timeout.");
 
         await follower.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
 
         // Act — stop leader without graceful resign (simulate crash by cancelling)
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         await leader.Worker.StopAsync(cts.Token);
 
-        // Wait for lease to expire and follower to take over
-        await Task.Delay(ExpiryWaitTime);
-
-        // Assert
-        Assert.True(follower.Worker.IsLeader);
+        // Assert — wait for the lease to expire and the follower to take over.
+        // Budget: lease duration + generous slack for several heartbeat cycles, DB
+        // round-trips, and CI host jitter. Polls every 200ms and returns as soon as
+        // the follower acquires leadership, so the happy path stays fast.
+        await WaitUntilAsync(
+            () => follower.Worker.IsLeader,
+            "Follower did not take over after leader stopped.",
+            timeout: ShortLeaseDuration + TimeSpan.FromSeconds(15));
 
         // Cleanup
         await follower.Worker.StopAsync(CancellationToken.None);

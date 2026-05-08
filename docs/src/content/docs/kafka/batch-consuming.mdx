@@ -126,7 +126,21 @@ group.AddBatchConsumer<ScanBatchConsumer>();
 group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
 ```
 
-If every item in a batch fails validation, the handler is not invoked. See [Validation](../../error-handling/validation/) for validator registration options.
+If every item in a batch fails validation, the handler is not invoked. See [Validation](../../error-handling/validation/) for validator registration options. `SkipNullPayloads()` and `allowNullMessages: true` on `ValidateWithFluentValidation` also apply per item; see [Validation → Null payloads](../../error-handling/validation/#null-payloads).
+
+### Filtering
+
+Filters run **per item**, not per batch. Both class-based `IConsumerFilter<TValue>` and predicate-based `.Filter(...)` evaluate each item individually. Items where any filter returns `false` are silently dropped from the batch; survivors continue as a reduced batch. AND semantics apply across multiple filters at the item level.
+
+```csharp
+group.AddBatchConsumer<ScanBatchConsumer>();
+group.Filter<ActiveOnlyFilter>();
+group.Filter((ctx, _) => ValueTask.FromResult(ctx.Message.Region != "test"));
+```
+
+If every item in a batch is filtered out, the handler is not invoked. Offsets still advance for filtered items: filtering is a silent skip, not an error.
+
+Per-consumer (leaf-level) filters remain unsupported in batch mode for the same reason as per-consumer middleware: see [Constraints](#constraints) below.
 
 ### Retry
 

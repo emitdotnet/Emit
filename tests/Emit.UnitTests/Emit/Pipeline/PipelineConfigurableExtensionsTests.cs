@@ -4,6 +4,7 @@ using System.Linq;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
+using global::Emit.Pipeline.Modules;
 using Xunit;
 
 public sealed class PipelineConfigurableExtensionsTests
@@ -212,6 +213,16 @@ public sealed class PipelineConfigurableExtensionsTests
             where TFilter : class, IConsumerFilter<string>
         {
             InboundPipeline.AddConsumerFilter<string, TFilter>();
+            return this;
+        }
+
+        public IInboundConfigurable<string> Filter(
+            Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
+        {
+            ArgumentNullException.ThrowIfNull(predicate);
+            var middleware = new FilterMiddleware<string>();
+            middleware.AddPredicate(predicate);
+            InboundPipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
             return this;
         }
     }

@@ -2,17 +2,22 @@ namespace Emit.Pipeline.Modules;
 
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
+using Emit.Abstractions.Pipeline;
+using Emit.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Holds validation configuration for a consumer group. Validation failures throw
-/// <see cref="MessageValidationException"/>. When a <see cref="ValidationErrorAction"/>
-/// is configured, that action applies to validation failures specifically; otherwise they
-/// are handled by the group-level error policy.
+/// Holds validation configuration for a consumer group and acts as the inbound middleware that
+/// validates each message. Validation failures are routed to the terminal action carried by
+/// <see cref="ValidationErrorAction"/> (dead-letter or discard) inline; the pipeline short-circuits
+/// without invoking the handler. Transient validator exceptions propagate to the group's error
+/// policy and are eligible for retry. Implements <see cref="IMiddleware{TContext}"/> directly so
+/// it can be inserted into the pipeline without an intermediate adapter.
 /// </summary>
 /// <typeparam name="TValue">The message type to validate.</typeparam>
-public sealed class ValidationModule<TValue>
+public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TValue>>
 {
     private Type? validatorType;
     private IMessageValidator<TValue>? delegateValidator;
@@ -78,20 +83,6 @@ public sealed class ValidationModule<TValue>
     }
 
     /// <summary>
-    /// Resolves the configured validator. For class-based validators, resolves from DI.
-    /// For delegate validators, returns the adapter instance.
-    /// </summary>
-    internal IMessageValidator<TValue> ResolveValidator(IServiceProvider services)
-    {
-        if (delegateValidator is not null)
-        {
-            return delegateValidator;
-        }
-
-        return (IMessageValidator<TValue>)services.GetRequiredService(validatorType!);
-    }
-
-    /// <summary>
     /// Registers the class-based validator type in the service collection if one was configured.
     /// </summary>
     public void RegisterServices(IServiceCollection services)
@@ -100,6 +91,60 @@ public sealed class ValidationModule<TValue>
         {
             services.TryAddTransient(validatorType);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task InvokeAsync(
+        ConsumeContext<TValue> context,
+        IMiddlewarePipeline<ConsumeContext<TValue>> next)
+    {
+        var validator = delegateValidator ??
+            (IMessageValidator<TValue>)context.Services.GetRequiredService(validatorType!);
+
+        var result = await validator.ValidateAsync(context.Message, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var metrics = context.Services.GetRequiredService<EmitMetrics>();
+
+        if (result.IsValid)
+        {
+            metrics.RecordValidationCompleted("passed", "none");
+            await next.InvokeAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        var errorMessage = string.Join("; ", result.Errors);
+
+        var logger = context.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger<ValidationMiddleware<TValue>>();
+        logger.LogWarning(
+            "Validation failed for message {MessageId}: {Errors}",
+            context.MessageId, errorMessage);
+
+        var sink = context.Services.GetService<IDeadLetterSink>();
+        if (ValidationErrorAction is ErrorAction.DeadLetterAction && sink is not null)
+        {
+            metrics.RecordValidationCompleted("failed", "dead_letter");
+
+            var headers = DeadLetterHeaders.CreateBase(
+                context.TransportContext.Headers,
+                typeof(MessageValidationException),
+                errorMessage,
+                context.TransportContext.GetSourceProperties());
+
+            await sink.ProduceAsync(
+                context.TransportContext.RawKey,
+                context.TransportContext.RawValue,
+                headers,
+                context.CancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // DiscardAction, or DeadLetterAction without a sink configured.
+            metrics.RecordValidationCompleted("failed", "discard");
+        }
+
+        // Short-circuit: do not invoke the rest of the pipeline.
     }
 
     private void EnsureNotConfigured()

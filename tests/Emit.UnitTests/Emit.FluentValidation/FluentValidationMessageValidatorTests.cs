@@ -2,6 +2,7 @@ namespace Emit.UnitTests.FluentValidation;
 
 using Emit.Abstractions;
 using Emit.FluentValidation;
+using Emit.Pipeline;
 using global::FluentValidation;
 using global::FluentValidation.Results;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,10 +82,13 @@ public sealed class FluentValidationMessageValidatorTests
         public bool CanValidateInstancesOfType(Type type) => type == typeof(TestOrder);
     }
 
-    private static FluentValidationMessageValidator<TestOrder> BuildValidator(IServiceCollection services)
+    private static FluentValidationMessageValidator<TestOrder> BuildValidator(
+        IServiceCollection services, bool allowNullMessages = false)
     {
         var provider = services.BuildServiceProvider();
-        return new FluentValidationMessageValidator<TestOrder>(provider);
+        return allowNullMessages
+            ? new FluentValidationNullTolerantMessageValidator<TestOrder>(provider)
+            : new FluentValidationMessageValidator<TestOrder>(provider);
     }
 
     [Fact]
@@ -190,5 +194,88 @@ public sealed class FluentValidationMessageValidatorTests
             () => validator.ValidateAsync(message, CancellationToken.None));
 
         Assert.Equal("validator timed out", ex.Message);
+    }
+
+    // ── Null message handling ──
+
+    [Fact]
+    public async Task GivenNullMessage_WhenAllowNullMessagesIsFalse_ThenReturnsFailWithoutInvokingFluentValidation()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        // No validator registered — if FluentValidation ran, it would throw
+        var validator = BuildValidator(services, allowNullMessages: false);
+
+        // Act
+        var result = await validator.ValidateAsync(null!, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public async Task GivenNullMessage_WhenAllowNullMessagesIsTrue_ThenReturnsSuccessWithoutInvokingFluentValidation()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        // No validator registered — if FluentValidation ran, it would throw
+        var validator = BuildValidator(services, allowNullMessages: true);
+
+        // Act
+        var result = await validator.ValidateAsync(null!, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.IsValid);
+        Assert.Same(MessageValidationResult.Success, result);
+    }
+
+    [Fact]
+    public async Task GivenNonNullMessage_WhenAllowNullMessagesIsTrue_ThenStillRunsFluentValidation()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddScoped<IValidator<TestOrder>, NameOnlyValidator>();
+        var validator = BuildValidator(services, allowNullMessages: true);
+        var message = new TestOrder("", 10); // fails NameOnlyValidator
+
+        // Act
+        var result = await validator.ValidateAsync(message, CancellationToken.None);
+
+        // Assert — FluentValidation still runs for non-null messages
+        Assert.False(result.IsValid);
+        Assert.Contains("Name is required", result.Errors);
+    }
+
+    [Fact]
+    public async Task GivenNonNullMessage_WhenAllowNullMessagesIsFalse_ThenStillRunsFluentValidation()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddScoped<IValidator<TestOrder>, AlwaysPassValidator>();
+        var validator = BuildValidator(services, allowNullMessages: false);
+        var message = new TestOrder("Widget", 5);
+
+        // Act
+        var result = await validator.ValidateAsync(message, CancellationToken.None);
+
+        // Assert — FluentValidation still runs for non-null messages
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task GivenNullMessage_WhenAllowNullMessagesIsFalse_ThenFailMessageMentionsAllowNullMessagesParameterAndSkipNullPayloads()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var validator = BuildValidator(services, allowNullMessages: false);
+
+        // Act
+        var result = await validator.ValidateAsync(null!, CancellationToken.None);
+
+        // Assert — error message guides the user toward allowNullMessages and SkipNullPayloads
+        Assert.False(result.IsValid);
+        Assert.Single(result.Errors);
+        Assert.Contains("allowNullMessages", result.Errors[0], StringComparison.Ordinal);
+        Assert.Contains(nameof(NullPayloadFilterExtensions.SkipNullPayloads), result.Errors[0], StringComparison.Ordinal);
     }
 }
