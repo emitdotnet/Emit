@@ -36,4 +36,15 @@ public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<T
         Pipeline.AddConsumerFilter<TValue, TFilter>();
         return this;
     }
+
+    /// <inheritdoc />
+    public IInboundConfigurable<TValue> Filter(
+        Func<ConsumeContext<TValue>, CancellationToken, ValueTask<bool>> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        Pipeline.Use(
+            _ => new ConsumerFilterMiddleware<TValue>(predicate),
+            MiddlewareLifetime.Singleton);
+        return this;
+    }
 }

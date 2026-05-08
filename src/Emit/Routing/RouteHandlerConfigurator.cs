@@ -34,4 +34,15 @@ internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<
         Pipeline.AddConsumerFilter<TMessage, TFilter>();
         return this;
     }
+
+    /// <inheritdoc />
+    public IInboundConfigurable<TMessage> Filter(
+        Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        Pipeline.Use(
+            _ => new ConsumerFilterMiddleware<TMessage>(predicate),
+            MiddlewareLifetime.Singleton);
+        return this;
+    }
 }

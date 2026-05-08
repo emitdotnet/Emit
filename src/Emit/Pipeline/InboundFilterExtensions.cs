@@ -55,32 +55,6 @@ public static class InboundFilterExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(predicate);
 
-        return builder.Use(
-            _ => new ConsumerFilterMiddleware<TMessage>(
-                (context, _) => ValueTask.FromResult(predicate(context))),
-            MiddlewareLifetime.Singleton);
-    }
-
-    /// <summary>
-    /// Registers an asynchronous predicate filter. When the predicate returns <c>false</c>,
-    /// the pipeline is short-circuited and the consumer handler is not invoked.
-    /// </summary>
-    /// <typeparam name="TMessage">The message type, inferred from the builder.</typeparam>
-    /// <param name="builder">The inbound builder to register the filter on.</param>
-    /// <param name="predicate">
-    /// An asynchronous predicate that receives the consume context and a cancellation token.
-    /// Return <c>true</c> to continue the pipeline, <c>false</c> to skip.
-    /// </param>
-    /// <returns>The builder for method chaining.</returns>
-    public static IInboundConfigurable<TMessage> Filter<TMessage>(
-        this IInboundConfigurable<TMessage> builder,
-        Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(predicate);
-
-        return builder.Use(
-            _ => new ConsumerFilterMiddleware<TMessage>(predicate),
-            MiddlewareLifetime.Singleton);
+        return builder.Filter((context, _) => ValueTask.FromResult(predicate(context)));
     }
 }

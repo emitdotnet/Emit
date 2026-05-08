@@ -4,7 +4,6 @@ using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 
 public sealed class InboundFilterExtensionsTests
@@ -246,6 +245,16 @@ public sealed class InboundFilterExtensionsTests
             InboundPipeline.AddConsumerFilter<string, TFilter>();
             return this;
         }
+
+        public IInboundConfigurable<string> Filter(
+            Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
+        {
+            ArgumentNullException.ThrowIfNull(predicate);
+            InboundPipeline.Use(
+                _ => new ConsumerFilterMiddleware<string>(predicate),
+                MiddlewareLifetime.Singleton);
+            return this;
+        }
     }
 
     private sealed class TestConsumeContext<T> : ConsumeContext<T>;
@@ -266,4 +275,5 @@ public sealed class InboundFilterExtensionsTests
     {
         public T Value { get; set; } = value;
     }
+
 }

@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <PackageReference Include="MongoDB.Driver" />
+    <!-- Override transitive Snappier 1.0.0 (vulnerable) brought in by MongoDB.Driver. -->
+    <PackageReference Include="Snappier" />
   </ItemGroup>
 
   <ItemGroup>

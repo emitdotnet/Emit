@@ -34,4 +34,16 @@ public interface IInboundConfigurable<TMessage> : IInboundConfigurable
     /// <returns>This builder for chaining.</returns>
     IInboundConfigurable<TMessage> Filter<TFilter>()
         where TFilter : class, IConsumerFilter<TMessage>;
+
+    /// <summary>
+    /// Registers an asynchronous predicate filter. When the predicate returns <see langword="false"/>,
+    /// the pipeline is short-circuited and the consumer handler is not invoked.
+    /// </summary>
+    /// <param name="predicate">
+    /// An asynchronous predicate that receives the consume context and a cancellation token.
+    /// Return <see langword="true"/> to continue the pipeline, <see langword="false"/> to skip.
+    /// </param>
+    /// <returns>This builder for chaining.</returns>
+    IInboundConfigurable<TMessage> Filter(
+        Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate);
 }

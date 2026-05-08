@@ -33,10 +33,15 @@ public sealed class ValidationMiddlewareTests
         };
     }
 
-    private ValidationMiddleware<string> CreateMiddleware(ValidationModule<string> validation)
+    private ValidationMiddleware<string> CreateMiddleware(
+        ValidationModule<string> validation,
+        ErrorAction? errorAction = null,
+        IDeadLetterSink? deadLetterSink = null)
     {
         return new ValidationMiddleware<string>(
             validation,
+            errorAction ?? ErrorAction.Discard(),
+            deadLetterSink,
             new EmitMetrics(null, new EmitMetricsEnrichment()),
             logger);
     }
@@ -60,20 +65,6 @@ public sealed class ValidationMiddlewareTests
     }
 
     [Fact]
-    public async Task GivenInvalidMessage_WhenInvoked_ThenThrowsMessageValidationException()
-    {
-        // Arrange
-        var module = new ValidationModule<string>();
-        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")), a => a.Discard());
-        var middleware = CreateMiddleware(module);
-
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<MessageValidationException>(
-            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
-        Assert.Contains("field is required", ex.Errors);
-    }
-
-    [Fact]
     public async Task GivenInvalidMessage_WhenInvoked_ThenDoesNotCallNext()
     {
         // Arrange
@@ -82,17 +73,63 @@ public sealed class ValidationMiddlewareTests
         var middleware = CreateMiddleware(module);
         var nextCalled = false;
 
-        // Act — catch expected exception
-        try
-        {
-            await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
-        }
-        catch (MessageValidationException)
-        {
-            // expected
-        }
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
 
         // Assert
+        Assert.False(nextCalled);
+    }
+
+    [Fact]
+    public async Task GivenInvalidMessageAndDeadLetterAction_WhenInvoked_ThenDeadLettersInline()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")), a => a.DeadLetter());
+        var sink = new RecordingDeadLetterSink();
+        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), sink);
+
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+
+        // Assert
+        Assert.Single(sink.ProducedMessages);
+        var headers = sink.ProducedMessages[0].Headers;
+        Assert.Contains(headers, h => h.Key == DeadLetterHeaders.ExceptionType
+            && h.Value.Contains(nameof(MessageValidationException), StringComparison.Ordinal));
+        Assert.Contains(headers, h => h.Key == DeadLetterHeaders.ExceptionMessage
+            && h.Value.Contains("field is required", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GivenInvalidMessageAndDiscardAction_WhenInvoked_ThenDoesNotDeadLetter()
+    {
+        // Arrange
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.Discard());
+        var sink = new RecordingDeadLetterSink();
+        var middleware = CreateMiddleware(module, ErrorAction.Discard(), sink);
+
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+
+        // Assert
+        Assert.Empty(sink.ProducedMessages);
+    }
+
+    [Fact]
+    public async Task GivenInvalidMessageAndDeadLetterActionWithoutSink_WhenInvoked_ThenSilentlySkips()
+    {
+        // Arrange — no sink configured
+        var module = new ValidationModule<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.DeadLetter());
+        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), deadLetterSink: null);
+        var nextCalled = false;
+
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+
+        // Assert — short-circuits cleanly even without a sink
         Assert.False(nextCalled);
     }
 
@@ -105,27 +142,31 @@ public sealed class ValidationMiddlewareTests
             throw new TimeoutException("database unavailable"), a => a.Discard());
         var middleware = CreateMiddleware(module);
 
-        // Act & Assert
+        // Act & Assert — transient validator errors propagate so the outer error policy can retry.
         await Assert.ThrowsAsync<TimeoutException>(
             () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
     }
 
     [Fact]
-    public async Task GivenMultipleValidationErrors_WhenInvoked_ThenExceptionContainsAllErrors()
+    public async Task GivenMultipleValidationErrors_WhenInvokedWithDeadLetter_ThenAllErrorsInDlqHeader()
     {
         // Arrange
         var module = new ValidationModule<string>();
         module.Configure((_, _) => Task.FromResult(
-            MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])), a => a.Discard());
-        var middleware = CreateMiddleware(module);
+            MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])), a => a.DeadLetter());
+        var sink = new RecordingDeadLetterSink();
+        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), sink);
 
-        // Act & Assert
-        var ex = await Assert.ThrowsAsync<MessageValidationException>(
-            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
-        Assert.Equal(3, ex.Errors.Count);
-        Assert.Contains("name is required", ex.Errors);
-        Assert.Contains("age must be positive", ex.Errors);
-        Assert.Contains("email is invalid", ex.Errors);
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+
+        // Assert
+        Assert.Single(sink.ProducedMessages);
+        var exceptionMessage = sink.ProducedMessages[0].Headers
+            .First(h => h.Key == DeadLetterHeaders.ExceptionMessage).Value;
+        Assert.Contains("name is required", exceptionMessage, StringComparison.Ordinal);
+        Assert.Contains("age must be positive", exceptionMessage, StringComparison.Ordinal);
+        Assert.Contains("email is invalid", exceptionMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -243,4 +284,26 @@ public sealed class ValidationMiddlewareTests
             return Task.FromResult(MessageValidationResult.Success);
         }
     }
+
+    private sealed class RecordingDeadLetterSink : IDeadLetterSink
+    {
+        public List<RecordedMessage> ProducedMessages { get; } = [];
+
+        public Uri DestinationAddress { get; } = new("emit://dlq/test");
+
+        public Task ProduceAsync(
+            byte[]? rawKey,
+            byte[]? rawValue,
+            IReadOnlyList<KeyValuePair<string, string>> headers,
+            CancellationToken cancellationToken)
+        {
+            ProducedMessages.Add(new RecordedMessage(rawKey, rawValue, headers.ToList()));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record RecordedMessage(
+        byte[]? Key,
+        byte[]? Value,
+        IReadOnlyList<KeyValuePair<string, string>> Headers);
 }

@@ -112,6 +112,8 @@ services.AddEmit(emit =>
 
 Under the hood, `ValidateWithFluentValidation` resolves `IValidator<TMessage>` from DI for each message. If no validator is registered for the message type, you get a clear `InvalidOperationException` at runtime rather than silent passthrough. Both synchronous and asynchronous FluentValidation rules work correctly.
 
+A null payload is treated as a deterministic validation failure by default. To let null bypass FluentValidation (log-compaction tombstones, for example), pass `allowNullMessages: true`. See [Null payloads](#null-payloads) for the full story.
+
 ## What happens on failure
 
 Every `Validate` call requires an error action that determines what Emit does with invalid messages:
@@ -121,7 +123,7 @@ Every `Validate` call requires an error action that determines what Emit does wi
 | `Discard()` | The message is silently dropped and acknowledged. The handler is never invoked. |
 | `DeadLetter()` | The message is forwarded to the configured [dead-letter topic](../dead-letter-queue/) with diagnostic headers. |
 
-When a message is dead-lettered due to validation failure, the `x-emit-exception-type` header contains `ValidationException` and the individual error messages appear in `x-emit-exception-message`.
+When a message is dead-lettered due to validation failure, the `x-emit-exception-type` header contains `Emit.MessageValidationException` and the individual error messages appear in `x-emit-exception-message`.
 
 ## Validation failures vs. validator exceptions
 
@@ -132,6 +134,34 @@ A **validation failure** is a normal, expected outcome. The message is structura
 A **validator exception** is unexpected. Your validator tried to hit a database and the connection timed out, or an internal bug caused a `NullReferenceException`. Emit treats this the same as any other unhandled exception: it falls through to the group-level `OnError` policy. If you configured retries there, the message (including the validation step) will be retried.
 
 The rule of thumb: return `MessageValidationResult.Fail(...)` for deterministic business failures. Let exceptions propagate for transient infrastructure errors that a retry might fix.
+
+## Null payloads
+
+A null payload at the consumer means different things in different contexts. On a normal topic it's almost always a defect: a producer bug or a serialization regression. On a log-compacted topic it's a tombstone signaling a key was deleted. Emit doesn't guess which case applies. By default, null is treated as a validation failure; you opt into the tombstone interpretation explicitly.
+
+The default routes a null payload through the configured validation error action (dead-letter or discard) without invoking the handler.
+
+To accept nulls and let your handler observe them, pass `allowNullMessages: true`:
+
+```csharp
+group.ValidateWithFluentValidation(
+    onFailure => onFailure.DeadLetter(),
+    allowNullMessages: true);
+```
+
+FluentValidation is bypassed for null payloads only. Non-null messages still flow through the configured `IValidator<T>` rules. Your handler then receives the null and decides what to do with it (typically treating it as a delete signal).
+
+If you'd rather drop null payloads silently, with no handler invocation and no dead-letter entry, use `.SkipNullPayloads()` upstream of validation:
+
+```csharp
+group
+    .SkipNullPayloads()
+    .ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
+```
+
+`SkipNullPayloads()` is a small wrapper over `.Filter(...)` constrained to reference-typed messages. Filtered items short-circuit before validation runs; offsets advance and no exception or DLQ entry is produced.
+
+When to pick which: use `allowNullMessages: true` when the handler needs to see the null (cache invalidation, delete propagation). Use `.SkipNullPayloads()` when nulls are noise and the handler should never see them.
 
 ## Where validation runs in the pipeline
 

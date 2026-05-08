@@ -58,7 +58,6 @@ Pipeline and consumer middleware metrics.
 | `emit.consumer.retry.duration` | Histogram (s) | `result` | Total time spent in retry loops |
 | `emit.consumer.discards` | Counter | | Messages discarded by error policy |
 | `emit.consumer.validation.completed` | Counter | `result`, `action` | Validation results |
-| `emit.consumer.validation.duration` | Histogram (s) | | Time spent in validation |
 | `emit.consumer.circuit_breaker.state_transitions` | Counter | `to_state` | Circuit state changes |
 | `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | | How long the circuit stayed open |
 | `emit.consumer.circuit_breaker.state` | Gauge | | Current circuit state: 0=closed, 1=open, 2=half-open |

@@ -327,6 +327,20 @@ consumer.Filter<PizzaOrdered>(async (ctx, ct) =>
 
 Multiple filters can be registered on the same consumer. All registered filters must return `true` for the message to proceed; AND logic. If any filter returns `false`, the message is skipped and no further filters are evaluated.
 
+Filters work the same way for batch consumers: each item in the batch is evaluated individually, and only items where every filter returns `true` survive into the handler's reduced batch. See [Batch Consuming → Filtering](../batch-consuming/#filtering) for the full per-item semantics.
+
+### Skipping null payloads
+
+For reference-typed messages, `.SkipNullPayloads()` drops null payloads upstream of the handler without dead-lettering them:
+
+```csharp
+group.SkipNullPayloads();
+```
+
+Filtered nulls produce no DLQ entry and no exception; offsets advance normally. The constraint `where TMessage : class` reflects that null is only meaningful for reference-typed deserializer results.
+
+This is the right choice when nulls are noise. When the handler must observe the null (Kafka tombstones on a log-compacted topic), use `allowNullMessages: true` on `ValidateWithFluentValidation` instead. See [Validation → Null payloads](../../error-handling/validation/#null-payloads).
+
 ## Consumer observers
 
 `IKafkaConsumerObserver` provides Kafka-specific lifecycle events. All methods have default no-op implementations; implement only the ones you care about:

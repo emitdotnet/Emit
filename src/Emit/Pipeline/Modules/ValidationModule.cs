@@ -6,10 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
-/// Holds validation configuration for a consumer group. Validation failures throw
-/// <see cref="MessageValidationException"/>. When a <see cref="ValidationErrorAction"/>
-/// is configured, that action applies to validation failures specifically; otherwise they
-/// are handled by the group-level error policy.
+/// Holds validation configuration for a consumer group. Validation failures are routed to the
+/// terminal action carried by <see cref="ValidationErrorAction"/> (dead-letter or discard),
+/// applied inline by the validation middleware. Transient validator exceptions propagate to
+/// the group's error policy and are eligible for retry.
 /// </summary>
 /// <typeparam name="TValue">The message type to validate.</typeparam>
 public sealed class ValidationModule<TValue>

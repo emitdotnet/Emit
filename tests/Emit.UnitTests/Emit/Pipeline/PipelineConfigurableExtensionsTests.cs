@@ -214,6 +214,16 @@ public sealed class PipelineConfigurableExtensionsTests
             InboundPipeline.AddConsumerFilter<string, TFilter>();
             return this;
         }
+
+        public IInboundConfigurable<string> Filter(
+            Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
+        {
+            ArgumentNullException.ThrowIfNull(predicate);
+            InboundPipeline.Use(
+                _ => new ConsumerFilterMiddleware<string>(predicate),
+                MiddlewareLifetime.Singleton);
+            return this;
+        }
     }
 
     private sealed class TestMiddlewareA : IMiddleware<ConsumeContext<string>>
