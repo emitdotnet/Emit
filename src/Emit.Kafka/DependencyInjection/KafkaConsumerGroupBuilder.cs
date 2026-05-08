@@ -176,11 +176,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>Group-level error policy configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorPolicyBuilder>? GroupErrorPolicyAction { get; private set; }
 
-    /// <summary>Group-level validation module, or <c>null</c> if not configured.</summary>
-    internal ValidationModule<TValue>? Validation { get; private set; }
+    /// <summary>Group-level validation middleware, or <c>null</c> if not configured.</summary>
+    internal ValidationMiddleware<TValue>? Validation { get; private set; }
 
-    /// <summary>Group-level filter module, or <c>null</c> if no filters have been registered.</summary>
-    internal FilterModule<TValue>? Filters { get; private set; }
+    /// <summary>Group-level filter middleware, or <c>null</c> if no filters have been registered.</summary>
+    internal FilterMiddleware<TValue>? Filters { get; private set; }
 
     /// <summary>Deserialization error action configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorActionBuilder>? DeserializationErrorAction { get; private set; }
@@ -229,7 +229,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     public KafkaConsumerGroupBuilder<TKey, TValue> Filter<TFilter>()
         where TFilter : class, IConsumerFilter<TValue>
     {
-        EnsureFilterModule().AddFilterType<TFilter>();
+        EnsureFilterMiddleware().AddFilterType<TFilter>();
         return this;
     }
 
@@ -246,7 +246,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         Func<ConsumeContext<TValue>, CancellationToken, ValueTask<bool>> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
-        EnsureFilterModule().AddPredicate(predicate);
+        EnsureFilterMiddleware().AddPredicate(predicate);
         return this;
     }
 
@@ -287,7 +287,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     {
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure<TValidator>(configureAction);
         Validation = module;
         return this;
@@ -310,7 +310,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         ArgumentNullException.ThrowIfNull(validator);
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure(validator, configureAction);
         Validation = module;
         return this;
@@ -333,7 +333,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         ArgumentNullException.ThrowIfNull(validator);
         ArgumentNullException.ThrowIfNull(configureAction);
         EnsureValidateNotAlreadyCalled();
-        var module = new ValidationModule<TValue>();
+        var module = new ValidationMiddleware<TValue>();
         module.Configure(validator, configureAction);
         Validation = module;
         return this;
@@ -597,9 +597,9 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         }
     }
 
-    private FilterModule<TValue> EnsureFilterModule()
+    private FilterMiddleware<TValue> EnsureFilterMiddleware()
     {
-        Filters ??= new FilterModule<TValue>();
+        Filters ??= new FilterMiddleware<TValue>();
         return Filters;
     }
 }

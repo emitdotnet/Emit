@@ -533,8 +533,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                     {
                         Services = sp,
                         LoggerFactory = loggerFactory,
-                        ValidationMiddleware = BuildValidationMiddleware(config.ValidationModule, sp, loggerFactory),
-                        FilterMiddleware = BuildFilterMiddleware(config.FilterModule),
+                        ValidationMiddleware = BuildValidationMiddleware(config.ValidationMiddleware),
+                        FilterMiddleware = BuildFilterMiddleware(config.FilterMiddleware),
                         RetryConfig = config.RetryConfig,
                         ErrorPolicy = errorEvaluator,
                         ConsumeObservers = consumeObservers,
@@ -601,12 +601,12 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                         // Build the per-item middleware (single-mode shape) and lift each into
                         // a batch-mode wrapper via BatchPerItemAdapter. No batch-specific
                         // middleware classes — same code as single, run per item.
-                        var innerValidation = BuildValidationMiddleware(config.ValidationModule, sp, loggerFactory);
+                        var innerValidation = BuildValidationMiddleware(config.ValidationMiddleware);
                         var batchValidation = innerValidation is not null
                             ? new BatchPerItemAdapter<TValue>(_ => innerValidation)
                             : null;
 
-                        var innerFilter = BuildFilterMiddleware(config.FilterModule);
+                        var innerFilter = BuildFilterMiddleware(config.FilterMiddleware);
                         var batchFilter = innerFilter is not null
                             ? new BatchPerItemAdapter<TValue>(_ => innerFilter)
                             : null;
@@ -791,8 +791,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             DestinationAddress = destinationAddress,
             GroupErrorPolicy = groupErrorPolicy,
             DeserializationErrorAction = deserializationErrorAction,
-            ValidationModule = validationModule,
-            FilterModule = filterModule,
+            ValidationMiddleware = validationModule,
+            FilterMiddleware = filterModule,
             RetryConfig = retryConfig,
             RateLimitEnabled = groupBuilder.RateLimitAction is not null,
             CircuitBreakerConfig = circuitBreakerConfig,
@@ -819,8 +819,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         public required Uri DestinationAddress { get; init; }
         public required ErrorPolicy? GroupErrorPolicy { get; init; }
         public required ErrorAction? DeserializationErrorAction { get; init; }
-        public required ValidationModule<TValue>? ValidationModule { get; init; }
-        public required FilterModule<TValue>? FilterModule { get; init; }
+        public required ValidationMiddleware<TValue>? ValidationMiddleware { get; init; }
+        public required FilterMiddleware<TValue>? FilterMiddleware { get; init; }
         public required RetryConfig? RetryConfig { get; init; }
         public required bool RateLimitEnabled { get; init; }
         public required CircuitBreakerConfig? CircuitBreakerConfig { get; init; }
@@ -943,47 +943,24 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
     }
 
     /// <summary>
-    /// Builds the <see cref="ValidationMiddleware{TValue}"/> for a consumer group, or
-    /// <see langword="null"/> if no validator is configured. The same single-mode middleware is
-    /// returned for both single and batch consumers; batch consumers wrap it in
+    /// Returns the consumer group's <see cref="ValidationMiddleware{TValue}"/> as inbound middleware,
+    /// or <see langword="null"/> if no validator is configured. The same single-mode middleware
+    /// is returned for both single and batch consumers; batch consumers wrap it in
     /// <see cref="BatchPerItemAdapter{TItem}"/> at composition time.
     /// </summary>
     private static IMiddleware<ConsumeContext<TValue>>? BuildValidationMiddleware<TValue>(
-        ValidationModule<TValue>? module,
-        IServiceProvider sp,
-        ILoggerFactory loggerFactory)
-    {
-        if (module is not { IsConfigured: true })
-        {
-            return null;
-        }
-
-        return new ValidationMiddleware<TValue>(
-            module,
-            module.ValidationErrorAction ?? ErrorAction.Discard(),
-            sp.GetService<IDeadLetterSink>(),
-            sp.GetRequiredService<EmitMetrics>(),
-            loggerFactory.CreateLogger<ValidationMiddleware<TValue>>());
-    }
+        ValidationMiddleware<TValue>? module)
+        => module is { IsConfigured: true } ? module : null;
 
     /// <summary>
-    /// Builds the <see cref="ConsumerFilterMiddleware{TMessage}"/> backed by the consumer group's
-    /// <see cref="FilterModule{TValue}"/>, or <see langword="null"/> if no filters are registered.
-    /// Same single-mode middleware is returned for both single and batch consumers; batch
-    /// consumers wrap it in <see cref="BatchPerItemAdapter{TItem}"/> at composition time.
+    /// Returns the consumer group's <see cref="FilterMiddleware{TValue}"/> as inbound middleware,
+    /// or <see langword="null"/> if no filters are registered. The same single-mode middleware
+    /// is returned for both single and batch consumers; batch consumers wrap it in
+    /// <see cref="BatchPerItemAdapter{TItem}"/> at composition time.
     /// </summary>
     private static IMiddleware<ConsumeContext<TValue>>? BuildFilterMiddleware<TValue>(
-        FilterModule<TValue>? module)
-    {
-        if (module is not { HasEntries: true })
-        {
-            return null;
-        }
-
-        var captured = module;
-        return new ConsumerFilterMiddleware<TValue>(
-            (ctx, ct) => captured.EvaluateAsync(ctx, ct));
-    }
+        FilterMiddleware<TValue>? module)
+        => module is { HasEntries: true } ? module : null;
 
     private static ErrorAction? BuildDeserializationErrorAction(
         Action<ErrorActionBuilder>? configureAction)

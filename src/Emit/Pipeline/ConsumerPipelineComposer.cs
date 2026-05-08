@@ -53,19 +53,18 @@ public sealed class ConsumerPipelineComposer<TValue>
     public required IMessagePipelineBuilder ProviderInboundPipeline { get; init; }
 
     /// <summary>
-    /// Gets an optional pre-built validation middleware. The framework constructs a
-    /// <see cref="ValidationMiddleware{TValue}"/> for single consumers and a
-    /// <see cref="BatchPerItemAdapter{TItem}"/>-wrapped <see cref="ValidationMiddleware{TValue}"/>
-    /// for batch consumers, then sets it here. On <see cref="MessageValidationResult.IsValid">failure</see>,
-    /// validation handles dead-lettering or discarding inline and short-circuits the pipeline.
+    /// Gets the consumer group's <see cref="ValidationMiddleware{TValue}"/> as inbound middleware.
+    /// For single consumers it composes directly; for batch consumers the framework wraps it in
+    /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Validation handles
+    /// dead-lettering or discarding inline on failure and short-circuits the pipeline.
     /// </summary>
     public IMiddleware<ConsumeContext<TValue>>? ValidationMiddleware { get; init; }
 
     /// <summary>
-    /// Gets an optional pre-built filter middleware. The framework constructs a
-    /// <see cref="ConsumerFilterMiddleware{TMessage}"/> for single consumers and a
-    /// <see cref="BatchPerItemAdapter{TItem}"/>-wrapped filter for batch consumers,
-    /// then sets it here. Filtered messages short-circuit before reaching validation.
+    /// Gets the consumer group's <see cref="Modules.FilterMiddleware{TValue}"/> as inbound middleware.
+    /// For single consumers it composes directly; for batch consumers the framework wraps it in
+    /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Filtered messages
+    /// short-circuit before reaching validation.
     /// </summary>
     public IMiddleware<ConsumeContext<TValue>>? FilterMiddleware { get; init; }
 

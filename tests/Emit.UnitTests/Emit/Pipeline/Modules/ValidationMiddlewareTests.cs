@@ -1,10 +1,9 @@
-namespace Emit.UnitTests.Consumer;
+namespace Emit.UnitTests.Pipeline.Modules;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
-using global::Emit.Consumer;
 using global::Emit.Metrics;
 using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,36 +13,41 @@ using Xunit;
 
 public sealed class ValidationMiddlewareTests
 {
-    private readonly ILogger<ValidationMiddleware<string>> logger =
-        NullLogger<ValidationMiddleware<string>>.Instance;
-
     // ── Helpers ──
 
-    private static ConsumeContext<string> CreateContext(IServiceProvider? services = null)
+    private static IServiceCollection BaseServices()
     {
-        var svc = services ?? new ServiceCollection().BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton(new EmitMetrics(null, new EmitMetricsEnrichment()));
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        return services;
+    }
+
+    private static ConsumeContext<string> CreateContext(IServiceProvider services)
+    {
         return new ConsumeContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
-            Services = svc,
+            Services = services,
             Message = "test-message",
-            TransportContext = TestTransportContext.Create(svc),
+            TransportContext = TestTransportContext.Create(services),
         };
     }
 
-    private ValidationMiddleware<string> CreateMiddleware(
-        ValidationModule<string> validation,
-        ErrorAction? errorAction = null,
-        IDeadLetterSink? deadLetterSink = null)
+    private static TestPipeline<ConsumeContext<string>> RecordingNext(out Action assertCalled)
     {
-        return new ValidationMiddleware<string>(
-            validation,
-            errorAction ?? ErrorAction.Discard(),
-            deadLetterSink,
-            new EmitMetrics(null, new EmitMetricsEnrichment()),
-            logger);
+        var called = false;
+        assertCalled = () => Assert.True(called, "Expected next pipeline to be invoked, but it was not.");
+        return new TestPipeline<ConsumeContext<string>>(_ => { called = true; return Task.CompletedTask; });
+    }
+
+    private static TestPipeline<ConsumeContext<string>> RecordingNextNotCalled(out Action assertNotCalled)
+    {
+        var called = false;
+        assertNotCalled = () => Assert.False(called, "Expected next pipeline NOT to be invoked, but it was.");
+        return new TestPipeline<ConsumeContext<string>>(_ => { called = true; return Task.CompletedTask; });
     }
 
     // ── Tests ──
@@ -52,45 +56,47 @@ public sealed class ValidationMiddlewareTests
     public async Task GivenValidMessage_WhenInvoked_ThenCallsNextMiddleware()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
-        var middleware = CreateMiddleware(module);
-        var nextCalled = false;
+        var services = BaseServices().BuildServiceProvider();
+        var next = RecordingNext(out var assertCalled);
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(CreateContext(services), next);
 
         // Assert
-        Assert.True(nextCalled);
+        assertCalled();
     }
 
     [Fact]
     public async Task GivenInvalidMessage_WhenInvoked_ThenDoesNotCallNext()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.Discard());
-        var middleware = CreateMiddleware(module);
-        var nextCalled = false;
+        var services = BaseServices().BuildServiceProvider();
+        var next = RecordingNextNotCalled(out var assertNotCalled);
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(CreateContext(services), next);
 
         // Assert
-        Assert.False(nextCalled);
+        assertNotCalled();
     }
 
     [Fact]
     public async Task GivenInvalidMessageAndDeadLetterAction_WhenInvoked_ThenDeadLettersInline()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("field is required")), a => a.DeadLetter());
         var sink = new RecordingDeadLetterSink();
-        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), sink);
+        var services = BaseServices();
+        services.AddSingleton<IDeadLetterSink>(sink);
+        var sp = services.BuildServiceProvider();
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert
         Assert.Single(sink.ProducedMessages);
@@ -105,13 +111,15 @@ public sealed class ValidationMiddlewareTests
     public async Task GivenInvalidMessageAndDiscardAction_WhenInvoked_ThenDoesNotDeadLetter()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.Discard());
         var sink = new RecordingDeadLetterSink();
-        var middleware = CreateMiddleware(module, ErrorAction.Discard(), sink);
+        var services = BaseServices();
+        services.AddSingleton<IDeadLetterSink>(sink);
+        var sp = services.BuildServiceProvider();
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert
         Assert.Empty(sink.ProducedMessages);
@@ -120,45 +128,47 @@ public sealed class ValidationMiddlewareTests
     [Fact]
     public async Task GivenInvalidMessageAndDeadLetterActionWithoutSink_WhenInvoked_ThenSilentlySkips()
     {
-        // Arrange — no sink configured
-        var module = new ValidationModule<string>();
+        // Arrange — no sink registered
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.DeadLetter());
-        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), deadLetterSink: null);
-        var nextCalled = false;
+        var services = BaseServices().BuildServiceProvider();
+        var next = RecordingNextNotCalled(out var assertNotCalled);
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(CreateContext(services), next);
 
         // Assert — short-circuits cleanly even without a sink
-        Assert.False(nextCalled);
+        assertNotCalled();
     }
 
     [Fact]
     public async Task GivenValidatorThrowsException_WhenInvoked_ThenExceptionPropagates()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) =>
             throw new TimeoutException("database unavailable"), a => a.Discard());
-        var middleware = CreateMiddleware(module);
+        var services = BaseServices().BuildServiceProvider();
 
         // Act & Assert — transient validator errors propagate so the outer error policy can retry.
         await Assert.ThrowsAsync<TimeoutException>(
-            () => middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
+            () => module.InvokeAsync(CreateContext(services), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
     }
 
     [Fact]
     public async Task GivenMultipleValidationErrors_WhenInvokedWithDeadLetter_ThenAllErrorsInDlqHeader()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(
             MessageValidationResult.Fail(["name is required", "age must be positive", "email is invalid"])), a => a.DeadLetter());
         var sink = new RecordingDeadLetterSink();
-        var middleware = CreateMiddleware(module, ErrorAction.DeadLetter(), sink);
+        var services = BaseServices();
+        services.AddSingleton<IDeadLetterSink>(sink);
+        var sp = services.BuildServiceProvider();
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert
         Assert.Single(sink.ProducedMessages);
@@ -174,17 +184,17 @@ public sealed class ValidationMiddlewareTests
     {
         // Arrange
         var delegateCalled = false;
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((msg, _) =>
         {
             delegateCalled = true;
             Assert.Equal("test-message", msg);
             return Task.FromResult(MessageValidationResult.Success);
         }, a => a.Discard());
-        var middleware = CreateMiddleware(module);
+        var services = BaseServices().BuildServiceProvider();
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(services), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert
         Assert.True(delegateCalled);
@@ -194,17 +204,15 @@ public sealed class ValidationMiddlewareTests
     public async Task GivenClassBasedValidator_WhenInvoked_ThenValidatorResolvedFromDI()
     {
         // Arrange
-        var services = new ServiceCollection();
+        var services = BaseServices();
         services.AddScoped<StubValidator>();
         var sp = services.BuildServiceProvider();
 
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure<StubValidator>(a => a.Discard());
-        var middleware = CreateMiddleware(module);
-        var context = CreateContext(sp);
 
         // Act
-        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
 
         // Assert — validator was resolved and invoked (StubValidator always returns Success)
         var validator = sp.GetRequiredService<StubValidator>();
@@ -215,7 +223,7 @@ public sealed class ValidationMiddlewareTests
     public void GivenConfigureWithDiscard_WhenConfigured_ThenValidationErrorActionIsDiscard()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
 
         // Act
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
@@ -229,7 +237,7 @@ public sealed class ValidationMiddlewareTests
     public void GivenConfigureWithDeadLetter_WhenConfigured_ThenValidationErrorActionIsDeadLetter()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
 
         // Act
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.DeadLetter());
@@ -243,7 +251,7 @@ public sealed class ValidationMiddlewareTests
     public void GivenClassBasedValidator_WhenRegisterServices_ThenValidatorTypeRegistered()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure<StubValidator>(a => a.Discard());
         var services = new ServiceCollection();
 
@@ -260,7 +268,7 @@ public sealed class ValidationMiddlewareTests
     public void GivenDelegateValidator_WhenRegisterServices_ThenNoServiceRegistered()
     {
         // Arrange
-        var module = new ValidationModule<string>();
+        var module = new ValidationMiddleware<string>();
         module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
         var services = new ServiceCollection();
         var countBefore = services.Count;
@@ -270,6 +278,18 @@ public sealed class ValidationMiddlewareTests
 
         // Assert
         Assert.Equal(countBefore, services.Count);
+    }
+
+    [Fact]
+    public void GivenAlreadyConfigured_WhenConfigureAgain_ThenThrows()
+    {
+        // Arrange
+        var module = new ValidationMiddleware<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard());
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(() =>
+            module.Configure((_, _) => Task.FromResult(MessageValidationResult.Success), a => a.Discard()));
     }
 
     // ── Test infrastructure ──

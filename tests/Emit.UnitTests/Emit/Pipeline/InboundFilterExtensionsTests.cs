@@ -3,6 +3,7 @@ namespace Emit.UnitTests.Pipeline;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
+using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -250,9 +251,9 @@ public sealed class InboundFilterExtensionsTests
             Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
         {
             ArgumentNullException.ThrowIfNull(predicate);
-            InboundPipeline.Use(
-                _ => new ConsumerFilterMiddleware<string>(predicate),
-                MiddlewareLifetime.Singleton);
+            var middleware = new FilterMiddleware<string>();
+            middleware.AddPredicate(predicate);
+            InboundPipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
             return this;
         }
     }

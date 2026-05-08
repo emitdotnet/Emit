@@ -2,7 +2,7 @@ namespace Emit.Pipeline;
 
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
-using Microsoft.Extensions.DependencyInjection;
+using Emit.Pipeline.Modules;
 
 /// <summary>
 /// Extension methods for registering consumer filters on inbound pipelines.
@@ -27,14 +27,9 @@ public static class InboundFilterExtensions
     {
         ArgumentNullException.ThrowIfNull(pipeline);
 
-        pipeline.Use(
-            _ => new ConsumerFilterMiddleware<TMessage>(
-                (context, ct) =>
-                {
-                    var filter = ActivatorUtilities.GetServiceOrCreateInstance<TFilter>(context.Services);
-                    return filter.ShouldConsumeAsync(context, ct);
-                }),
-            MiddlewareLifetime.Singleton);
+        var middleware = new FilterMiddleware<TMessage>();
+        middleware.AddFilterType<TFilter>();
+        pipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
     }
 
     /// <summary>

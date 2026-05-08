@@ -3,6 +3,7 @@ namespace Emit.Routing;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.Pipeline;
+using Emit.Pipeline.Modules;
 
 /// <summary>
 /// Internal <see cref="IInboundConfigurable{TMessage}"/> implementation used inside
@@ -40,9 +41,9 @@ internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<
         Func<ConsumeContext<TMessage>, CancellationToken, ValueTask<bool>> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
-        Pipeline.Use(
-            _ => new ConsumerFilterMiddleware<TMessage>(predicate),
-            MiddlewareLifetime.Singleton);
+        var middleware = new FilterMiddleware<TMessage>();
+        middleware.AddPredicate(predicate);
+        Pipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
         return this;
     }
 }
