@@ -80,6 +80,7 @@ emit.AddMongoDb(mongo =>
          {
              options.PollingInterval = TimeSpan.FromSeconds(5);  // default
              options.BatchSize = 100;                            // default
+             options.MaxConcurrentGroups = 32;                   // default
          });
 });
 
@@ -101,8 +102,9 @@ emit.AddKafka(kafka =>
 
 | Option | Default | Range | Description |
 |---|---|---|---|
-| `PollingInterval` | 5 seconds | minimum 1 second | Time between poll cycles. The next poll starts immediately if the previous batch took longer. |
+| `PollingInterval` | 5 seconds | minimum 1 second | Idle wait between poll cycles. When a full batch is fetched and fully delivered, the next poll starts immediately to drain the backlog. |
 | `BatchSize` | 100 | 1 to 10,000 | Maximum entries fetched per poll cycle, ordered by sequence (FIFO). |
+| `MaxConcurrentGroups` | 32 | minimum 1 | Maximum entry groups delivered in parallel within a poll cycle. |
 
 For provider-specific registration details, see [EF Core](../persistence/efcore/) and [MongoDB](../persistence/mongodb/).
 
@@ -110,7 +112,7 @@ For provider-specific registration details, see [EF Core](../persistence/efcore/
 
 Messages are ordered by group key. The default group key for a Kafka producer is `kafka:{topic}` (for example, `kafka:pizzas`). When a partition key is present, the group key is `kafka:{topic}:{partitionKey}`. All entries within the same group are delivered strictly in sequence.
 
-The worker processes different groups in parallel, so two topics make progress independently. Within a single group, entries are delivered one at a time in enqueue order.
+The worker processes different groups in parallel, up to `MaxConcurrentGroups` at a time, so two topics make progress independently. Within a single group, entries are delivered one at a time in enqueue order.
 
 :::note
 With EF Core, entries within a single `SaveChangesAsync` batch are assigned identity column values in database insertion order, which may not match the order you called `Add`. For guaranteed sequence ordering within a group, use separate `SaveChangesAsync` calls or `IUnitOfWork` with separate transactions.

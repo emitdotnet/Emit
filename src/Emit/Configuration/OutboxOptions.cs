@@ -19,4 +19,14 @@ public sealed class OutboxOptions
     /// </summary>
     public int BatchSize { get; set; } = 100;
 
+    /// <summary>
+    /// Gets or sets the maximum number of entry groups dispatched in parallel within a single batch.
+    /// </summary>
+    /// <remarks>
+    /// Entries are partitioned by group key. Each group is processed sequentially to preserve
+    /// ordering, while distinct groups are dispatched concurrently up to this limit. Higher values
+    /// increase throughput at the cost of more concurrent load on the message broker.
+    /// </remarks>
+    public int MaxConcurrentGroups { get; set; } = 32;
+
 }

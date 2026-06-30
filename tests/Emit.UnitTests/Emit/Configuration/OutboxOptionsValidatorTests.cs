@@ -50,6 +50,22 @@ public class OutboxOptionsValidatorTests
         Assert.Contains($"{nameof(OutboxOptions.BatchSize)} must be at most {ValidationConstants.MaxBatchSize}", result.FailureMessage);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GivenZeroOrNegativeMaxConcurrentGroups_WhenValidated_ThenFails(int maxConcurrentGroups)
+    {
+        // Arrange
+        var options = new OutboxOptions { MaxConcurrentGroups = maxConcurrentGroups };
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        Assert.True(result.Failed);
+        Assert.Contains($"{nameof(OutboxOptions.MaxConcurrentGroups)} must be greater than 0", result.FailureMessage);
+    }
+
     [Fact]
     public void GivenPollingIntervalBelowMinimum_WhenValidated_ThenFails()
     {

@@ -175,6 +175,59 @@ public class OutboxDaemonTests
         mockProvider.Verify(p => p.ProcessAsync(entry2, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task GivenMoreGroupsThanLimit_WhenDispatched_ThenConcurrencyDoesNotExceedMaxConcurrentGroups()
+    {
+        // Arrange
+        options.MaxConcurrentGroups = 2;
+        var active = 0;
+        var peak = 0;
+        var lockObj = new object();
+
+        var entries = Enumerable.Range(1, 6)
+            .Select(i => CreateEntry($"entry-{i}", "test-provider", $"group-{i}", sequence: i))
+            .ToArray();
+
+        mockProvider.Setup(p => p.SystemId).Returns("test-provider");
+        mockProvider
+            .Setup(p => p.ProcessAsync(It.IsAny<OutboxEntry>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                lock (lockObj)
+                {
+                    active++;
+                    peak = Math.Max(peak, active);
+                }
+
+                await Task.Delay(50);
+
+                lock (lockObj)
+                {
+                    active--;
+                }
+            });
+
+        mockRepository
+            .Setup(r => r.GetBatchAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(entries);
+
+        mockRepository
+            .Setup(r => r.DeleteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var daemon = CreateDaemon([mockProvider.Object]);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Act
+        await daemon.StartAsync(cts.Token);
+        await Task.Delay(400);
+        await daemon.StopAsync(CancellationToken.None);
+
+        // Assert — never more than MaxConcurrentGroups groups dispatched at once
+        Assert.True(peak > 1, $"Expected groups to run concurrently, but peak was {peak}.");
+        Assert.True(peak <= options.MaxConcurrentGroups, $"Peak concurrency {peak} exceeded limit {options.MaxConcurrentGroups}.");
+    }
+
     private static OutboxEntry CreateEntry(
         string id,
         string systemId,

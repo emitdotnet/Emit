@@ -159,29 +159,32 @@ internal sealed class OutboxDaemon : IDaemonAgent
         outboxMetrics.RecordBatchEntries(entries.Count);
 
         var partitionedEntries = entries.GroupBy(e => e.GroupKey);
-        var tasks = new List<Task<int>>();
 
-        foreach (var group in partitionedEntries)
+        // Each group is processed sequentially to preserve ordering; distinct groups are
+        // dispatched concurrently up to MaxConcurrentGroups. Awaiting completion here forms a
+        // barrier between batches, which preserves ordering for a group key that spans batches.
+        var dispatched = 0;
+        var parallelOptions = new ParallelOptions
         {
-            var groupKey = group.Key;
-            var groupEntries = group.OrderBy(e => e.Sequence).ToList();
+            MaxDegreeOfParallelism = outboxOptions.MaxConcurrentGroups,
+            CancellationToken = cancellationToken,
+        };
 
-            tasks.Add(Task.Run(async () =>
+        await Parallel.ForEachAsync(partitionedEntries, parallelOptions, async (group, ct) =>
+        {
+            try
             {
-                try
-                {
-                    return await ProcessGroupAsync(outboxRepository, groupKey, groupEntries, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "Unhandled error processing group {GroupKey}", groupKey);
-                    return 0;
-                }
-            }, cancellationToken));
-        }
+                var groupEntries = group.OrderBy(e => e.Sequence).ToList();
+                var count = await ProcessGroupAsync(outboxRepository, group.Key, groupEntries, ct).ConfigureAwait(false);
+                Interlocked.Add(ref dispatched, count);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Unhandled error processing group {GroupKey}", group.Key);
+            }
+        }).ConfigureAwait(false);
 
-        var dispatchedPerGroup = await Task.WhenAll(tasks).ConfigureAwait(false);
-        return dispatchedPerGroup.Sum();
+        return dispatched;
     }
 
     /// <summary>
