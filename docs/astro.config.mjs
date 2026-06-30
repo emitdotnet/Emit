@@ -1,9 +1,16 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import remarkGfm from 'remark-gfm';
 
 export default defineConfig({
   site: 'https://emitdotnet.github.io',
   base: process.env.CI ? '/Emit' : undefined,
+  // GFM (tables, strikethrough, autolinks) is not reliably applied to .mdx
+  // content by the MDX integration on its own, so register it explicitly.
+  // The MDX integration inherits these remark plugins via extendMarkdownConfig.
+  markdown: {
+    remarkPlugins: [remarkGfm],
+  },
   vite: {
     server: {
       watch: {
