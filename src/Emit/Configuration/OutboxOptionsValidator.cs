@@ -26,6 +26,11 @@ internal sealed class OutboxOptionsValidator : IValidateOptions<OutboxOptions>
             failures.Add($"{nameof(options.BatchSize)} must be at most {ValidationConstants.MaxBatchSize}.");
         }
 
+        if (options.MaxConcurrentGroups <= 0)
+        {
+            failures.Add($"{nameof(options.MaxConcurrentGroups)} must be greater than 0.");
+        }
+
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;

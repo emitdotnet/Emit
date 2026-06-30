@@ -94,9 +94,10 @@ internal sealed class OutboxDaemon : IDaemonAgent
         while (!cancellationToken.IsCancellationRequested)
         {
             var start = Stopwatch.GetTimestamp();
+            var dispatched = 0;
             try
             {
-                await DispatchBatchAsync(cancellationToken).ConfigureAwait(false);
+                dispatched = await DispatchBatchAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -106,6 +107,17 @@ internal sealed class OutboxDaemon : IDaemonAgent
             {
                 outboxMetrics.RecordWorkerError();
                 logger.LogError(ex, "Error in outbox processing loop");
+            }
+
+            // A full batch that was fully dispatched means the outbox almost
+            // certainly holds more work. Skip the poll delay and drain the next
+            // batch immediately. A short batch (queue drained) or a partially
+            // dispatched batch (a head entry failed and remains, by ordering
+            // guarantee) falls through to the normal wait, which doubles as the
+            // retry cadence for that stuck entry.
+            if (dispatched >= outboxOptions.BatchSize)
+            {
+                continue;
             }
 
             var remaining = outboxOptions.PollingInterval - Stopwatch.GetElapsedTime(start);
@@ -123,7 +135,12 @@ internal sealed class OutboxDaemon : IDaemonAgent
         }
     }
 
-    private async Task DispatchBatchAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Dispatches a single batch and returns the number of entries successfully
+    /// processed and deleted. A return value equal to the configured batch size
+    /// signals that the outbox was full and fully drained this cycle.
+    /// </summary>
+    private async Task<int> DispatchBatchAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
@@ -135,42 +152,54 @@ internal sealed class OutboxDaemon : IDaemonAgent
         if (entries is [])
         {
             outboxMetrics.RecordPollCycle(hasEntries: false);
-            return;
+            return 0;
         }
 
         outboxMetrics.RecordPollCycle(hasEntries: true);
         outboxMetrics.RecordBatchEntries(entries.Count);
 
         var partitionedEntries = entries.GroupBy(e => e.GroupKey);
-        var tasks = new List<Task>();
 
-        foreach (var group in partitionedEntries)
+        // Each group is processed sequentially to preserve ordering; distinct groups are
+        // dispatched concurrently up to MaxConcurrentGroups. Awaiting completion here forms a
+        // barrier between batches, which preserves ordering for a group key that spans batches.
+        var dispatched = 0;
+        var parallelOptions = new ParallelOptions
         {
-            var groupKey = group.Key;
-            var groupEntries = group.OrderBy(e => e.Sequence).ToList();
+            MaxDegreeOfParallelism = outboxOptions.MaxConcurrentGroups,
+            CancellationToken = cancellationToken,
+        };
 
-            tasks.Add(Task.Run(async () =>
+        await Parallel.ForEachAsync(partitionedEntries, parallelOptions, async (group, ct) =>
+        {
+            try
             {
-                try
-                {
-                    await ProcessGroupAsync(outboxRepository, groupKey, groupEntries, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "Unhandled error processing group {GroupKey}", groupKey);
-                }
-            }, cancellationToken));
-        }
+                var groupEntries = group.OrderBy(e => e.Sequence).ToList();
+                var count = await ProcessGroupAsync(outboxRepository, group.Key, groupEntries, ct).ConfigureAwait(false);
+                Interlocked.Add(ref dispatched, count);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Unhandled error processing group {GroupKey}", group.Key);
+            }
+        }).ConfigureAwait(false);
 
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        return dispatched;
     }
 
-    private async Task ProcessGroupAsync(
+    /// <summary>
+    /// Processes a group's entries in sequence order, stopping at the first
+    /// failure to preserve ordering, and returns the number successfully
+    /// processed and deleted.
+    /// </summary>
+    private async Task<int> ProcessGroupAsync(
         IOutboxRepository outboxRepository,
         string groupKey,
         List<OutboxEntry> entries,
         CancellationToken cancellationToken)
     {
+        var dispatched = 0;
+
         foreach (var entry in entries)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -187,7 +216,11 @@ internal sealed class OutboxDaemon : IDaemonAgent
                     groupKey, entry.Sequence);
                 break;
             }
+
+            dispatched++;
         }
+
+        return dispatched;
     }
 
     private async Task<bool> ProcessEntryAsync(IOutboxRepository outboxRepository, OutboxEntry entry, CancellationToken cancellationToken)

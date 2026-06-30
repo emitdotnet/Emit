@@ -11,8 +11,9 @@ Applies to both MongoDB and EF Core when `UseOutbox()` is called on the persiste
 
 | Option | Default | Range | Description |
 |---|---|---|---|
-| `PollingInterval` | `5s` | min `1s` | Minimum time between poll cycles. The next poll starts immediately if the previous batch took longer than this interval. |
+| `PollingInterval` | `5s` | min `1s` | Idle wait between poll cycles. When a full batch is fetched and fully delivered, the next poll starts immediately to drain the backlog without waiting. |
 | `BatchSize` | `100` | `1`-`10000` | Max entries fetched per cycle, ordered by sequence (FIFO). |
+| `MaxConcurrentGroups` | `32` | min `1` | Max entry groups delivered in parallel within a cycle. Groups are delivered concurrently up to this limit; entries within a group stay sequential. |
 
 ## Kafka client options
 
