@@ -78,10 +78,11 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
 
         // Act
         await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
 
         // Assert
-        Assert.True(node.Worker.IsLeader);
+        await WaitUntilAsync(
+            () => node.Worker.IsLeader,
+            "Single node did not become leader within timeout.");
 
         // Cleanup
         await node.Worker.StopAsync(CancellationToken.None);
@@ -95,10 +96,11 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
 
         // Act
         await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
 
         // Assert
-        Assert.True(node.Observer.NodeRegistered);
+        await WaitUntilAsync(
+            () => node.Observer.NodeRegistered,
+            "Single node was not registered within timeout.");
 
         // Cleanup
         await node.Worker.StopAsync(CancellationToken.None);
@@ -112,11 +114,11 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
 
         // Act
         await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
 
         // Assert
-        Assert.True(node.Observer.LeaderElected);
-        Assert.True(node.Observer.NodeRegistered);
+        await WaitUntilAsync(
+            () => node.Observer.LeaderElected && node.Observer.NodeRegistered,
+            "Observer was not notified of leadership and registration within timeout.");
 
         // Cleanup
         await node.Worker.StopAsync(CancellationToken.None);
@@ -134,11 +136,13 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Act
         await node1.Worker.StartAsync(CancellationToken.None);
         await node2.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(3);
 
-        // Assert
-        var leaders = new[] { node1.Worker, node2.Worker }.Count(w => w.IsLeader);
-        Assert.Equal(1, leaders);
+        // Assert — wait for a leader to emerge, then confirm exactly one
+        var workers = new[] { node1.Worker, node2.Worker };
+        await WaitUntilAsync(
+            () => workers.Any(w => w.IsLeader),
+            "No leader emerged among two nodes within timeout.");
+        Assert.Equal(1, workers.Count(w => w.IsLeader));
 
         // Cleanup
         await node1.Worker.StopAsync(CancellationToken.None);
@@ -157,11 +161,13 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         await node1.Worker.StartAsync(CancellationToken.None);
         await node2.Worker.StartAsync(CancellationToken.None);
         await node3.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(3);
 
-        // Assert
-        var leaders = new[] { node1.Worker, node2.Worker, node3.Worker }.Count(w => w.IsLeader);
-        Assert.Equal(1, leaders);
+        // Assert — wait for a leader to emerge, then confirm exactly one
+        var workers = new[] { node1.Worker, node2.Worker, node3.Worker };
+        await WaitUntilAsync(
+            () => workers.Any(w => w.IsLeader),
+            "No leader emerged among three nodes within timeout.");
+        Assert.Equal(1, workers.Count(w => w.IsLeader));
 
         // Cleanup
         await node1.Worker.StopAsync(CancellationToken.None);
@@ -240,8 +246,9 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Arrange
         await using var node = CreateNode(LongLeaseDuration);
         await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
-        Assert.True(node.Worker.IsLeader);
+        await WaitUntilAsync(
+            () => node.Worker.IsLeader,
+            "Node did not become leader within timeout.");
 
         // Act
         await node.Worker.StopAsync(CancellationToken.None);
@@ -249,8 +256,9 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Assert — a new node can immediately become leader (no lease to wait out)
         await using var newNode = CreateNode(LongLeaseDuration);
         await newNode.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
-        Assert.True(newNode.Worker.IsLeader);
+        await WaitUntilAsync(
+            () => newNode.Worker.IsLeader,
+            "New node did not take over leadership after graceful resignation within timeout.");
 
         // Cleanup
         await newNode.Worker.StopAsync(CancellationToken.None);
@@ -268,11 +276,11 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Act
         await node1.Worker.StartAsync(CancellationToken.None);
         await node2.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
 
         // Assert
-        Assert.True(node1.Observer.NodeRegistered);
-        Assert.True(node2.Observer.NodeRegistered);
+        await WaitUntilAsync(
+            () => node1.Observer.NodeRegistered && node2.Observer.NodeRegistered,
+            "Not all nodes were registered within timeout.");
 
         // Cleanup
         await node1.Worker.StopAsync(CancellationToken.None);
@@ -294,7 +302,9 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Start the leader with short TTL for dead node detection
         await using var leader = CreateNode(ShortLeaseDuration, ShortNodeRegistrationTtl);
         await leader.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
+        await WaitUntilAsync(
+            () => leader.Worker.IsLeader,
+            "Leader did not establish leadership within timeout.");
 
         // Act — wait for the dead node's TTL to expire and leader to clean up
         await Task.Delay(ShortNodeRegistrationTtl + TestHeartbeatInterval);
@@ -335,13 +345,14 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
         // Arrange
         await using var node = CreateNode(LongLeaseDuration);
         await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
-        Assert.True(node.Worker.IsLeader);
+        await WaitUntilAsync(
+            () => node.Worker.IsLeader,
+            "Node did not become leader within timeout.");
 
         // Act — wait for several more heartbeat cycles
         await WaitForHeartbeats(4);
 
-        // Assert
+        // Assert — leadership is retained across lease extensions
         Assert.True(node.Worker.IsLeader);
 
         // Cleanup
@@ -356,11 +367,11 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
 
         // Act
         await node.Worker.StartAsync(CancellationToken.None);
-        // Wait just enough for the first heartbeat tick
-        await Task.Delay(TimeSpan.FromMilliseconds(750));
 
-        // Assert
-        Assert.True(node.Worker.IsLeader);
+        // Assert — the first node to start acquires leadership on its first heartbeat
+        await WaitUntilAsync(
+            () => node.Worker.IsLeader,
+            "First node did not acquire leadership within timeout.");
 
         // Cleanup
         await node.Worker.StopAsync(CancellationToken.None);
