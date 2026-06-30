@@ -16,6 +16,8 @@
     <PackageReference Include="MongoDB.Driver" />
     <!-- Override transitive Snappier 1.0.0 (vulnerable) brought in by MongoDB.Driver. -->
     <PackageReference Include="Snappier" />
+    <!-- Override transitive SharpCompress 0.30.1 (vulnerable) brought in by MongoDB.Driver. -->
+    <PackageReference Include="SharpCompress" />
   </ItemGroup>
 
   <ItemGroup>
