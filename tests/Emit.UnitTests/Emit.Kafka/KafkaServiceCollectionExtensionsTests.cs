@@ -108,7 +108,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void GivenOutboxDisabled_WhenAddKafka_ThenDoesNotRegisterOutboxProvider()
+    public void GivenOutboxDisabled_WhenAddKafka_ThenOutboxDaemonNotRegistered()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -123,8 +123,11 @@ public sealed class KafkaServiceCollectionExtensionsTests
             });
         });
 
-        // Assert
-        Assert.DoesNotContain(services, d => d.ServiceType == typeof(IOutboxProvider));
+        // Assert — AddKafka registers its outbox provider unconditionally, because whether the
+        // outbox is enabled is not final until every integration has registered. Nothing
+        // resolves that provider unless the daemon exists, and the daemon is the gate that
+        // must stay closed when the outbox is off.
+        Assert.DoesNotContain(services, d => d.ServiceType == typeof(global::Emit.Daemon.OutboxDaemon));
     }
 
     [Fact]
@@ -421,6 +424,84 @@ public sealed class KafkaServiceCollectionExtensionsTests
             }));
     }
 
+    [Fact]
+    public void GivenTransactionalConsumerAndNoOutbox_WhenAddEmit_ThenThrowsNamingTheConsumer()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act & Assert — no persistence provider, so there is no unit of work the attribute
+        // could open a transaction on. Honouring it is impossible, so it must not be ignored.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddEmit(builder =>
+            {
+                builder.AddKafka(kafka =>
+                {
+                    kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+                    kafka.Topic<string, string>("orders", t =>
+                    {
+                        t.SetUtf8KeyDeserializer();
+                        t.SetUtf8ValueDeserializer();
+                        t.ConsumerGroup("g", group => group.AddConsumer<TransactionalTestConsumer>());
+                    });
+                });
+            }));
+
+        Assert.Contains(nameof(TransactionalTestConsumer), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GivenTransactionalBatchConsumerAndNoOutbox_WhenAddEmit_ThenThrowsNamingTheConsumer()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddEmit(builder =>
+            {
+                builder.AddKafka(kafka =>
+                {
+                    kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+                    kafka.Topic<string, string>("orders", t =>
+                    {
+                        t.SetUtf8KeyDeserializer();
+                        t.SetUtf8ValueDeserializer();
+                        t.ConsumerGroup("g", group =>
+                            group.AddBatchConsumer<TransactionalTestBatchConsumer>());
+                    });
+                });
+            }));
+
+        Assert.Contains(nameof(TransactionalTestBatchConsumer), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GivenUndecoratedConsumerAndNoOutbox_WhenAddEmit_ThenDoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act & Assert — the rejection must be scoped to handlers that actually asked for a
+        // transaction, so an ordinary consumer without persistence stays valid.
+        services.AddEmit(builder =>
+        {
+            builder.AddKafka(kafka =>
+            {
+                kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+                kafka.Topic<string, string>("orders", t =>
+                {
+                    t.SetUtf8KeyDeserializer();
+                    t.SetUtf8ValueDeserializer();
+                    t.ConsumerGroup("g", group => group.AddConsumer<TestConsumer>());
+                });
+            });
+        });
+    }
+
     private static global::MongoDB.Driver.IMongoClient CreateMockMongoClient()
     {
         return new Mock<global::MongoDB.Driver.IMongoClient>().Object;
@@ -432,6 +513,20 @@ public sealed class KafkaServiceCollectionExtensionsTests
         var dbNamespace = new global::MongoDB.Driver.DatabaseNamespace("testdb");
         mock.Setup(x => x.DatabaseNamespace).Returns(dbNamespace);
         return mock.Object;
+    }
+
+    [Transactional]
+    private sealed class TransactionalTestConsumer : IConsumer<string>
+    {
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
+
+    [Transactional]
+    private sealed class TransactionalTestBatchConsumer : IBatchConsumer<string>
+    {
+        public Task ConsumeAsync(ConsumeContext<MessageBatch<string>> context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class TestConsumer : IConsumer<string>

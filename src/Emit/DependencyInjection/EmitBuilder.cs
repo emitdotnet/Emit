@@ -1,5 +1,6 @@
 namespace Emit.DependencyInjection;
 
+using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.Configuration;
 using Emit.Pipeline;
@@ -46,8 +47,14 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
     /// When <c>true</c>, producers enqueue messages to the transactional outbox and
     /// background workers deliver them. When <c>false</c>, producers send directly
     /// to the external system.
+    /// <para>
+    /// Deliberately internal. The value is only final once every integration has been
+    /// registered, so exposing it during configuration would let an integration branch on a
+    /// provisional answer that depends on registration order. Integrations resolve the state
+    /// from a built provider instead, via <see cref="OutboxRegistrationExtensions.IsOutboxEnabled"/>.
+    /// </para>
     /// </remarks>
-    public bool OutboxEnabled => services.Any(d => d.ImplementationInstance is OutboxRegistrationMarker);
+    internal bool OutboxEnabled => services.Any(d => d.ImplementationInstance is OutboxRegistrationMarker);
 
     /// <summary>
     /// Configures leader election interval options.
@@ -153,6 +160,25 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
             throw new InvalidOperationException(
                 "No outbox provider has been registered. " +
                 "Outbox mode requires at least one outbox provider.");
+        }
+
+        // A handler decorated with [Transactional] needs a unit of work to open a transaction on,
+        // and only the outbox registration supplies one. Silently dropping the transaction would
+        // leave the handler believing its writes are atomic when they are not, so this is rejected
+        // here, after every integration has registered, rather than left to fail at request time.
+        var transactionalHandlers = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<TransactionalHandlerMarker>()
+            .Select(m => m.HandlerType.Name)
+            .Distinct()
+            .ToList();
+
+        if (transactionalHandlers.Count > 0 && !services.Any(d => d.ServiceType == typeof(IUnitOfWork)))
+        {
+            throw new InvalidOperationException(
+                $"{string.Join(", ", transactionalHandlers)} decorated with " +
+                $"[{nameof(TransactionalAttribute)}] but no {nameof(IUnitOfWork)} is registered. " +
+                "Enable the outbox on the persistence provider (UseOutbox()), or remove the attribute.");
         }
     }
 }

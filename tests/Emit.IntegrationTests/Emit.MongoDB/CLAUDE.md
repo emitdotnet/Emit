@@ -15,6 +15,8 @@ MongoDB integration tests: compliance implementations proving MongoDB persistenc
 | `MongoDbUnitOfWorkCompliance.cs` | Inherits UnitOfWorkCompliance; proves IUnitOfWork with MongoDB + Kafka | Debug or extend MongoDB unit of work tests |
 | `MongoDbSessionAccessorCompliance.cs` | Inherits MongoSessionAccessorCompliance; proves IMongoSessionAccessor lifecycle with MongoDB | Debug or extend MongoDB session accessor tests |
 | `MongoDbProducerRoutingCompliance.cs` | Inherits ProducerRoutingCompliance; proves outbox-by-default and UseDirect() with MongoDB + Kafka | Debug or extend MongoDB producer routing tests |
+| `MongoDbMediatorTransactionalCompliance.cs` | Inherits MediatorTransactionalCompliance; adds IMongoSessionAccessor facts for [Transactional] mediator handlers | Debug or extend MongoDB mediator transactional tests |
+| `MongoDbProducerOutboxRoutingCompliance.cs` | Inherits ProducerOutboxRoutingCompliance; proves outbox-backed producer routing with MongoDB + Kafka | Debug or extend MongoDB producer outbox-routing tests |
 
 ## Subdirectories
 

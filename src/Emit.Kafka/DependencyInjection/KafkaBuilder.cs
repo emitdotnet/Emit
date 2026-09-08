@@ -5,6 +5,7 @@ using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Observability;
 using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
+using Emit.DependencyInjection;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
@@ -28,7 +29,6 @@ using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
 {
     private readonly IServiceCollection services;
-    private readonly bool outboxEnabled;
     private readonly IMessagePipelineBuilder globalInboundPipeline;
     private readonly IMessagePipelineBuilder globalOutboundPipeline;
     private readonly HashSet<string> registeredTopicNames = new(StringComparer.Ordinal);
@@ -71,12 +71,10 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
     /// </summary>
     internal KafkaBuilder(
         IServiceCollection services,
-        bool outboxEnabled,
         IMessagePipelineBuilder globalInboundPipeline,
         IMessagePipelineBuilder globalOutboundPipeline)
     {
         this.services = services ?? throw new ArgumentNullException(nameof(services));
-        this.outboxEnabled = outboxEnabled;
         this.globalInboundPipeline = globalInboundPipeline;
         this.globalOutboundPipeline = globalOutboundPipeline;
     }
@@ -288,7 +286,6 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         var kafkaOutbound = OutboundPipeline;
         var capturedGlobalOutbound = globalOutboundPipeline;
         var useDirect = producerBuilder?.DirectEnabled == true;
-        var useOutbox = outboxEnabled && !useDirect;
         var producerPipeline = producerBuilder?.Pipeline;
 
         // Build transport URIs for the producer
@@ -312,6 +309,12 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                             sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>());
                         var resolvedValueAsync = valueAsyncSerializer ?? valueAsyncSerializerFactory?.Invoke(
                             sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>());
+
+                        // Routing is decided here rather than during registration. A snapshot
+                        // taken while services were still being registered would send messages
+                        // directly whenever the persistence provider happened to be registered
+                        // after AddKafka, silently breaking the atomicity the outbox provides.
+                        var useOutbox = !useDirect && sp.IsOutboxEnabled();
 
                         var terminal = useOutbox
                             ? CreateOutboxTerminal(topicName, capturedDestinationAddress, keySerializer, valueSerializer, resolvedKeyAsync, resolvedValueAsync)
@@ -493,6 +496,10 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
 
+            // Resolved here rather than during registration: a persistence provider may enable
+            // the outbox after AddKafka, and this factory runs once everything is registered.
+            var outboxEnabled = sp.IsOutboxEnabled();
+
             // Create flow control first — shared between the circuit breaker and the worker
             var flowControl = new KafkaConsumerFlowControl(
                 loggerFactory.CreateLogger<KafkaConsumerFlowControl>());
@@ -659,15 +666,37 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         foreach (var consumerType in groupBuilder.ConsumerTypes)
         {
             services.TryAddScoped(consumerType);
+            MarkIfTransactional(consumerType);
         }
 
         if (groupBuilder.IsBatchMode && groupBuilder.BatchConsumerType is not null)
         {
             var batchConsumerType = groupBuilder.BatchConsumerType;
             services.TryAddScoped(batchConsumerType);
+            MarkIfTransactional(batchConsumerType);
 
             var adapterType = typeof(BatchConsumerAdapter<,>).MakeGenericType(typeof(TValue), batchConsumerType);
             services.TryAddScoped(adapterType);
+        }
+
+        if (groupBuilder.Routers is { } routers)
+        {
+            foreach (var routedConsumerType in routers.SelectMany(r => r.ConsumerTypes))
+            {
+                MarkIfTransactional(routedConsumerType);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records a decorated handler so the configuration can be validated centrally once every
+    /// integration has registered, rather than failing at request time.
+    /// </summary>
+    private void MarkIfTransactional(Type handlerType)
+    {
+        if (Attribute.IsDefined(handlerType, typeof(TransactionalAttribute)))
+        {
+            services.AddSingleton(new TransactionalHandlerMarker(handlerType));
         }
     }
 

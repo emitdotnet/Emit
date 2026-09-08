@@ -165,13 +165,78 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
         }
     }
 
+    // ── Registration order must not decide whether the attribute works ──
+
+    [Fact]
+    public async Task GivenTransportRegisteredFirst_WhenMessageConsumed_ThenOutboxEntryDelivered()
+    {
+        // Arrange
+        var inputTopic = $"test-txn-order-commit-in-{Guid.NewGuid():N}";
+        var outputTopic = $"test-txn-order-commit-out-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var pollingInterval = TimeSpan.FromSeconds(1);
+        var sink = new MessageSink<string>();
+
+        var host = BuildHost(sink, inputTopic, outputTopic, groupId, pollingInterval,
+            typeof(TransactionalProducingConsumer), EmitRegistrationOrder.PersistenceLast);
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act
+            await ProduceDirectAsync(inputTopic, "k", "hello");
+
+            // Assert
+            var ctx = await sink.WaitForMessageAsync();
+            Assert.Equal("hello", ctx.Message);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task GivenTransportRegisteredFirst_WhenHandlerThrows_ThenOutboxEntryNotDelivered()
+    {
+        // Arrange
+        var inputTopic = $"test-txn-order-throw-in-{Guid.NewGuid():N}";
+        var outputTopic = $"test-txn-order-throw-out-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var pollingInterval = TimeSpan.FromSeconds(1);
+        var sink = new MessageSink<string>();
+
+        var host = BuildHost(sink, inputTopic, outputTopic, groupId, pollingInterval,
+            typeof(TransactionalThrowingConsumer), EmitRegistrationOrder.PersistenceLast);
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act
+            await ProduceDirectAsync(inputTopic, "k", "will-fail");
+
+            // Assert — the rollback must hold regardless of registration order.
+            await Task.Delay(pollingInterval * 5);
+            Assert.Empty(sink.ReceivedMessages);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
     private IHost BuildHost(
         MessageSink<string> sink,
         string inputTopic,
         string outputTopic,
         string groupId,
         TimeSpan pollingInterval,
-        Type consumerType)
+        Type consumerType,
+        EmitRegistrationOrder order = EmitRegistrationOrder.PersistenceFirst)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -180,8 +245,18 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
                 services.AddSingleton(TransactionalRetryConsumer.CallTracker);
                 services.AddEmit(emit =>
                 {
-                    ConfigurePersistence(emit, pollingInterval);
-                    ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
+                    // Applications may register these in either order, so both must behave
+                    // identically.
+                    if (order == EmitRegistrationOrder.PersistenceFirst)
+                    {
+                        ConfigurePersistence(emit, pollingInterval);
+                        ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
+                    }
+                    else
+                    {
+                        ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
+                        ConfigurePersistence(emit, pollingInterval);
+                    }
                 });
             })
             .Build();

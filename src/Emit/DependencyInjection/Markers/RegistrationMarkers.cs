@@ -19,3 +19,10 @@ public sealed record OutboxRegistrationMarker(string ProviderName);
 /// Marker registered by a persistence provider when the distributed lock is enabled.
 /// </summary>
 public sealed record DistributedLockRegistrationMarker(string ProviderName);
+
+/// <summary>
+/// Marker registered for each handler type decorated with <c>[Transactional]</c>, so the
+/// configuration can be validated once every integration has been registered.
+/// </summary>
+/// <param name="HandlerType">The decorated consumer or mediator handler type.</param>
+public sealed record TransactionalHandlerMarker(Type HandlerType);

@@ -106,6 +106,8 @@ emit.AddKafka(kafka =>
 | `BatchSize` | 100 | 1 to 10,000 | Maximum entries fetched per poll cycle, ordered by sequence (FIFO). |
 | `MaxConcurrentGroups` | 32 | minimum 1 | Maximum entry groups delivered in parallel within a poll cycle. |
 
+`[Transactional]` without `UseOutbox()` is rejected at startup, naming the handler.
+
 For provider-specific registration details, see [EF Core](../persistence/efcore/) and [MongoDB](../persistence/mongodb/).
 
 ## Ordering guarantees

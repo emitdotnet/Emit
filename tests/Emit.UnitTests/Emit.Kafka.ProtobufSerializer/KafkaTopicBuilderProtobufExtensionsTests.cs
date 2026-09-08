@@ -31,7 +31,7 @@ public sealed class KafkaTopicBuilderProtobufExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -60,7 +60,7 @@ public sealed class KafkaTopicBuilderProtobufExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>

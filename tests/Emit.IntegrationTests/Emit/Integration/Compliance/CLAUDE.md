@@ -40,3 +40,5 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ImplicitOutboxCompliance.cs` | EF Core implicit outbox (Tier 1): produce+SaveChanges atomicity, no-save no delivery | Add implicit outbox tests or debug EF Core implicit tier |
 | `MongoSessionAccessorCompliance.cs` | IMongoSessionAccessor lifecycle: session populated after BeginAsync, cleared after dispose | Add MongoDB session accessor tests or debug IMongoSessionAccessor |
 | `ProducerRoutingCompliance.cs` | Producer routing: outbox-by-default, UseDirect() opt-out, mixed behavior | Add producer routing tests or debug outbox/direct routing |
+| `MediatorTransactionalCompliance.cs` | [Transactional] on mediator handlers: transaction present/absent, commit, rollback, response integrity, registration order, both handler shapes | Add mediator [Transactional] tests or debug the attribute on IRequestHandler |
+| `ProducerOutboxRoutingCompliance.cs` | Producer routes through the outbox: a rolled-back transaction delivers nothing, regardless of registration order | Add producer outbox-routing tests or debug direct-versus-outbox routing |
