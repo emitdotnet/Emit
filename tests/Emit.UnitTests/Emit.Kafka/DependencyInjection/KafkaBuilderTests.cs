@@ -14,7 +14,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.ConfigureClient(config => { });
@@ -28,7 +28,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         var result = builder.ConfigureClient(config => { });
@@ -42,7 +42,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(config => { });
 
         // Act & Assert
@@ -55,7 +55,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.ConfigureClient(null!));
@@ -66,7 +66,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         var result = builder.Topic<string, string>("orders", topic => { });
@@ -80,7 +80,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         builder.Topic<string, string>("orders", topic => { });
@@ -94,7 +94,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         builder.Topic<string, string>("orders", topic => { });
@@ -108,7 +108,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.ThrowsAny<ArgumentException>(() => builder.Topic<string, string>(null!, topic => { }));
@@ -119,7 +119,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.Throws<ArgumentException>(() => builder.Topic<string, string>("   ", topic => { }));
@@ -130,7 +130,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.Topic<string, string>("orders", null!));
@@ -141,7 +141,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         KafkaTopicBuilder<string, string>? capturedBuilder = null;
 
         // Act
@@ -159,7 +159,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert (no exception)
         builder.Topic<string, string>("orders", topic => { });
@@ -172,7 +172,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert (no exception)
         builder.Topic<string, string>("orders", topic => { });
@@ -184,7 +184,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.ConfigureSchemaRegistry(config => { });
@@ -198,7 +198,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         var result = builder.ConfigureSchemaRegistry(config => { });
@@ -212,7 +212,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureSchemaRegistry(config => { });
 
         // Act & Assert
@@ -225,7 +225,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.ConfigureSchemaRegistry(null!));
@@ -236,7 +236,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.ConfigureSchemaRegistry(config =>
@@ -253,7 +253,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureSchemaRegistry(config =>
         {
             config.Url = "http://localhost:8081";
@@ -274,7 +274,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
@@ -289,7 +289,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
@@ -304,7 +304,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
@@ -319,7 +319,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
         builder.DeadLetter("orders.dlt");
 
@@ -333,7 +333,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.ThrowsAny<ArgumentException>(() => builder.DeadLetter(null!));
@@ -344,7 +344,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
         builder.Topic<string, string>("orders.dlt", t =>
         {
@@ -362,7 +362,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
@@ -377,7 +377,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.ConfigureProducer(config => { });
@@ -391,7 +391,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         var result = builder.ConfigureProducer(config => { });
@@ -405,7 +405,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureProducer(config => { });
 
         // Act & Assert
@@ -418,7 +418,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: true, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.ConfigureProducer(null!));
@@ -431,7 +431,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.AutoProvision();
@@ -445,7 +445,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         var result = builder.AutoProvision();
@@ -461,7 +461,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.Topic<string, string>("orders", t =>
@@ -480,7 +480,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
 
         // Act
         builder.Topic<string, string>("orders", t => { });
@@ -495,7 +495,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
 
         // Act
@@ -510,7 +510,7 @@ public sealed class KafkaBuilderTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var builder = new KafkaBuilder(services, outboxEnabled: false, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
         builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
         builder.Topic<string, string>("shared-topic", t =>
         {

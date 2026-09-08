@@ -1,5 +1,6 @@
 namespace Emit.MongoDB;
 
+using Emit.Abstractions;
 using global::MongoDB.Driver;
 
 /// <summary>
@@ -8,7 +9,8 @@ using global::MongoDB.Driver;
 internal sealed class MongoUnitOfWorkTransaction(
     IClientSessionHandle session,
     MongoTransactionContext transactionContext,
-    MongoSessionHolder sessionHolder) : IMongoUnitOfWorkTransaction
+    MongoSessionHolder sessionHolder,
+    IEmitContext emitContext) : IMongoUnitOfWorkTransaction
 {
     /// <inheritdoc/>
     public IClientSessionHandle Session => session;
@@ -32,5 +34,13 @@ internal sealed class MongoUnitOfWorkTransaction(
     {
         await transactionContext.DisposeAsync().ConfigureAwait(false);
         sessionHolder.Session = null;
+
+        // The ambient transaction is scoped, so leaving it behind would make the next
+        // transaction in the same scope collide with this finished one. Cleared only when the
+        // context still holds this transaction, so an unrelated one is never detached.
+        if (ReferenceEquals(emitContext.Transaction, transactionContext))
+        {
+            emitContext.Transaction = null;
+        }
     }
 }

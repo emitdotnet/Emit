@@ -1,5 +1,7 @@
 namespace Emit.EntityFrameworkCore.Tests;
 
+using global::Emit;
+using global::Emit.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Moq;
@@ -41,7 +43,7 @@ public class EfCoreUnitOfWorkTransactionTests
             .Returns(Task.CompletedTask);
 
         var transactionContext = new EfCoreTransactionContext(mockContextTransaction.Object);
-        var transaction = new EfCoreUnitOfWorkTransaction(mockDbContext.Object, transactionContext);
+        var transaction = new EfCoreUnitOfWorkTransaction(mockDbContext.Object, transactionContext, new EmitContext());
 
         // Act
         await transaction.CommitAsync();
@@ -156,8 +158,48 @@ public class EfCoreUnitOfWorkTransactionTests
             .ReturnsAsync(0);
 
         var transactionContext = new EfCoreTransactionContext(mockContextTransaction.Object);
-        var transaction = new EfCoreUnitOfWorkTransaction(mockDbContext.Object, transactionContext);
+        var transaction = new EfCoreUnitOfWorkTransaction(mockDbContext.Object, transactionContext, new EmitContext());
 
         return (transaction, mockDbContext, mockContextTransaction);
+    }
+
+    [Fact]
+    public async Task GivenEfCoreTransaction_WhenDisposed_ThenAmbientTransactionCleared()
+    {
+        // Arrange
+        var mockDbContext = new Mock<DbContext>();
+        var mockContextTransaction = new Mock<IDbContextTransaction>();
+        var transactionContext = new EfCoreTransactionContext(mockContextTransaction.Object);
+        var emitContext = new EmitContext { Transaction = transactionContext };
+        var transaction = new EfCoreUnitOfWorkTransaction(
+            mockDbContext.Object, transactionContext, emitContext);
+
+        // Act
+        await transaction.DisposeAsync();
+
+        // Assert — a transaction left on the scoped context would collide with the next one.
+        Assert.Null(emitContext.Transaction);
+    }
+
+    [Fact]
+    public async Task GivenAmbientTransactionReplaced_WhenDisposed_ThenOtherTransactionNotCleared()
+    {
+        // Arrange — the context now holds a different transaction than the one being disposed.
+        var mockDbContext = new Mock<DbContext>();
+        var mockContextTransaction = new Mock<IDbContextTransaction>();
+        var transactionContext = new EfCoreTransactionContext(mockContextTransaction.Object);
+        var emitContext = new EmitContext { Transaction = transactionContext };
+        var transaction = new EfCoreUnitOfWorkTransaction(
+            mockDbContext.Object, transactionContext, emitContext);
+
+        emitContext.Transaction = null;
+        var other = new EfCoreTransactionContext(new Mock<IDbContextTransaction>().Object);
+        emitContext.Transaction = other;
+
+        // Act
+        await transaction.DisposeAsync();
+
+        // Assert — disposing one transaction must never detach an unrelated one.
+        Assert.Same(other, emitContext.Transaction);
     }
 }

@@ -69,6 +69,11 @@ public static class MediatorEmitBuilderExtensions
         foreach (var registration in mediatorBuilder.Registrations.Values)
         {
             services.TryAddScoped(registration.HandlerType);
+
+            if (Attribute.IsDefined(registration.HandlerType, typeof(TransactionalAttribute)))
+            {
+                services.AddSingleton(new TransactionalHandlerMarker(registration.HandlerType));
+            }
         }
 
         // Register mediator middleware with appropriate lifetimes
@@ -97,14 +102,15 @@ public static class MediatorEmitBuilderExtensions
         var globalInbound = builder.InboundPipeline;
         var mediatorInbound = mediatorBuilder.InboundPipeline;
 
-        // Capture outbox flag for pipeline composition
-        var outboxEnabled = builder.OutboxEnabled;
-
         // Factory-built singleton — typed pipelines composed when IServiceProvider available.
         // Each request type gets a typed dispatch delegate that creates MediatorContext<TRequest>
         // and invokes the typed pipeline with no runtime reflection.
         services.AddSingleton(sp =>
         {
+            // Resolved here, not during registration: the outbox may be enabled by a provider
+            // registered after AddMediator, and this factory runs once everything is registered.
+            var outboxEnabled = sp.IsOutboxEnabled();
+
             var dispatchers = new Dictionary<Type, Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>>();
 
             foreach (var (requestType, invoker) in invokerMap)

@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 internal sealed class EfCoreUnitOfWorkTransaction(
     DbContext dbContext,
-    EfCoreTransactionContext transactionContext) : IUnitOfWorkTransaction
+    EfCoreTransactionContext transactionContext,
+    IEmitContext emitContext) : IUnitOfWorkTransaction
 {
     private enum TransactionState { Active, Committed, RolledBack }
 
@@ -62,5 +63,13 @@ internal sealed class EfCoreUnitOfWorkTransaction(
         }
 
         await transactionContext.DisposeAsync().ConfigureAwait(false);
+
+        // The ambient transaction is scoped, so leaving it behind would make the next
+        // transaction in the same scope collide with this finished one. Cleared only when the
+        // context still holds this transaction, so an unrelated one is never detached.
+        if (ReferenceEquals(emitContext.Transaction, transactionContext))
+        {
+            emitContext.Transaction = null;
+        }
     }
 }

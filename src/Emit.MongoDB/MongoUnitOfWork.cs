@@ -26,6 +26,6 @@ internal sealed class MongoUnitOfWork(
         emitContext.Transaction = transactionContext;
         sessionHolder.Session = session;
 
-        return new MongoUnitOfWorkTransaction(session, transactionContext, sessionHolder);
+        return new MongoUnitOfWorkTransaction(session, transactionContext, sessionHolder, emitContext);
     }
 }

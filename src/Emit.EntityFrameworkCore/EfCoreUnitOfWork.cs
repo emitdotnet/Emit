@@ -18,6 +18,6 @@ internal sealed class EfCoreUnitOfWork<TDbContext>(
         var transactionContext = new EfCoreTransactionContext(contextTransaction);
         emitContext.Transaction = transactionContext;
 
-        return new EfCoreUnitOfWorkTransaction(dbContext, transactionContext);
+        return new EfCoreUnitOfWorkTransaction(dbContext, transactionContext, emitContext);
     }
 }

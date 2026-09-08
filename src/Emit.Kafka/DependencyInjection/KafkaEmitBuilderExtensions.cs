@@ -31,7 +31,7 @@ public static class KafkaEmitBuilderExtensions
         ArgumentNullException.ThrowIfNull(configure);
         EnsureNotAlreadyRegistered(builder.Services);
 
-        var kafkaBuilder = new KafkaBuilder(builder.Services, builder.OutboxEnabled, builder.InboundPipeline, builder.OutboundPipeline);
+        var kafkaBuilder = new KafkaBuilder(builder.Services, builder.InboundPipeline, builder.OutboundPipeline);
         configure(kafkaBuilder);
 
         // Register Kafka-level middleware with appropriate lifetimes
@@ -61,12 +61,12 @@ public static class KafkaEmitBuilderExtensions
         // Always register the shared IProducer<byte[], byte[]> singleton
         RegisterProducer(builder.Services, kafkaBuilder);
 
-        // Register outbox provider and marker only when outbox mode is enabled
-        if (builder.OutboxEnabled)
-        {
-            RegisterOutboxProvider(builder.Services);
-            builder.Services.AddSingleton(new OutboxProviderMarker());
-        }
+        // Registered unconditionally: whether the outbox is enabled is not yet final here, since
+        // a persistence provider may be registered after AddKafka. The outbox provider is only
+        // ever consumed by the outbox daemon, which core registers solely when the outbox is on,
+        // so an unused descriptor costs nothing when it is off.
+        RegisterOutboxProvider(builder.Services);
+        builder.Services.AddSingleton(new OutboxProviderMarker());
 
         // Register AdminClient singleton and topic verifier at position 0
         RegisterAdminClient(builder.Services, kafkaBuilder);
