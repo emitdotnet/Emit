@@ -44,3 +44,17 @@ Kafka-specific sections (`/kafka/*`) may use Kafka terminology freely.
 ## Sync rule
 
 Keep docs in sync with code. When APIs change, update the corresponding `/docs` pages.
+
+## Dependencies
+
+Run `npm install` and `npm audit fix` on Linux, or in a Linux container. npm prunes
+optional dependencies belonging to other platforms from the lock file, so running
+these on Windows drops the Linux binaries CI needs and `npm ci` then fails there with
+"can only install packages when your package.json and package-lock.json are in sync".
+
+Verifying with `npm ci` on the same machine does not catch it, because the pruned
+packages are not needed on that platform. Verify on Linux:
+
+```bash
+docker run --rm -v "$PWD:/app" -w /app node:22 npm ci
+```
