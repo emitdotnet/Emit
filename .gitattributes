@@ -1,0 +1,32 @@
+# Normalize line endings.
+#
+# Without this file, Git relies on each developer's core.autocrlf setting.
+# On Windows that checks files out as CRLF, which contradicts .editorconfig
+# (end_of_line = lf) and makes `dotnet format` report ENDOFLINE errors that
+# do not reproduce on Linux.
+#
+# `eol=lf` overrides core.autocrlf, so every working tree gets LF regardless
+# of platform or local Git configuration.
+* text=auto eol=lf
+
+# Windows batch files genuinely require CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files must never be converted.
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.dll binary
+*.exe binary
+*.snk binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
