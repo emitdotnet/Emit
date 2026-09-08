@@ -84,9 +84,14 @@ public static class MediatorEmitBuilderExtensions
         var handlerPipelineMap = new Dictionary<Type, IMessagePipelineBuilder>();
         foreach (var registration in mediatorBuilder.Registrations.Values)
         {
-            var invokerType = registration.ResponseType is not null
-                ? typeof(MediatorHandlerInvoker<,>).MakeGenericType(registration.RequestType, registration.ResponseType)
-                : typeof(MediatorVoidHandlerInvoker<>).MakeGenericType(registration.RequestType);
+            var invokerType = registration switch
+            {
+                { IsStream: true, ResponseType: { } streamResponse } =>
+                    typeof(MediatorStreamHandlerInvoker<,>).MakeGenericType(registration.RequestType, streamResponse),
+                { ResponseType: { } response } =>
+                    typeof(MediatorHandlerInvoker<,>).MakeGenericType(registration.RequestType, response),
+                _ => typeof(MediatorVoidHandlerInvoker<>).MakeGenericType(registration.RequestType),
+            };
 
             var invoker = Activator.CreateInstance(invokerType, registration.HandlerType)!;
             invokerMap[registration.RequestType] = invoker;
@@ -111,16 +116,22 @@ public static class MediatorEmitBuilderExtensions
             // registered after AddMediator, and this factory runs once everything is registered.
             var outboxEnabled = sp.IsOutboxEnabled();
 
-            var dispatchers = new Dictionary<Type, Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>>();
+            var dispatchers = new Dictionary<Type, MediatorDispatch>();
 
             foreach (var (requestType, invoker) in invokerMap)
             {
                 handlerPipelineMap.TryGetValue(requestType, out var handlerPipeline);
-                var handlerType = mediatorBuilder.Registrations[requestType].HandlerType;
+                var registration = mediatorBuilder.Registrations[requestType];
+
+                // Stream and non-stream requests are composed by the same code path. The only
+                // difference is the terminal, already chosen above, and the feature the caller
+                // seeds onto the context to receive its result.
                 var genericMethod = BuildDispatcherMethod.MakeGenericMethod(requestType);
-                var dispatcher = (Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>)
-                    genericMethod.Invoke(null, [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, outboxEnabled, handlerType])!;
-                dispatchers[requestType] = dispatcher;
+                var dispatch = (MediatorDispatch)genericMethod.Invoke(
+                    null,
+                    [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, outboxEnabled, registration.HandlerType])!;
+
+                dispatchers[requestType] = dispatch;
             }
 
             return new MediatorConfiguration(dispatchers);
@@ -135,7 +146,7 @@ public static class MediatorEmitBuilderExtensions
     /// Generic helper invoked via reflection (<see cref="BuildDispatcherMethod"/>)
     /// to build a typed dispatch delegate for a specific request type.
     /// </summary>
-    private static Func<object, IServiceProvider, TimeProvider, CancellationToken, MediatorResponseFeature?, Task>
+    private static MediatorDispatch
         BuildDispatcher<TRequest>(
             IServiceProvider sp,
             object invoker,
@@ -160,7 +171,7 @@ public static class MediatorEmitBuilderExtensions
             ? handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound, mediatorInbound)
             : mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound);
 
-        return (request, services, timeProvider, ct, responseFeature) =>
+        return (request, services, timeProvider, ct, configureFeatures) =>
         {
             var context = new MediatorContext<TRequest>
             {
@@ -171,8 +182,7 @@ public static class MediatorEmitBuilderExtensions
                 Message = (TRequest)request,
             };
 
-            if (responseFeature is not null)
-                context.Features.Set<IResponseFeature>(responseFeature);
+            configureFeatures?.Invoke(context.Features);
 
             return pipeline.InvokeAsync(context);
         };
