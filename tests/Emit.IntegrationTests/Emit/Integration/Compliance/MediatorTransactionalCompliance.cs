@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Runtime.CompilerServices;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
 using Emit.Kafka.DependencyInjection;
@@ -373,6 +374,173 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
         }
     }
 
+    // ── Stream handlers get the same transaction treatment ──
+
+    [Fact]
+    public async Task GivenTransactionalStreamHandler_WhenEnumerated_ThenTransactionActiveInsideHandler()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<TransactionalStreamHandler>());
+
+        try
+        {
+            // Act
+            await DrainAsync(host, new TransactionalStreamRequest(2));
+
+            // Assert: the handler observes a transaction while producing, not merely while
+            // being constructed.
+            Assert.Equal(2, probe.Count);
+            Assert.All(probe.Observations, o => Assert.NotNull(o.Transaction));
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    [Fact]
+    public async Task GivenTransactionalStreamHandler_WhenEnumerationCompletes_ThenTransactionCommitted()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<TransactionalStreamHandler>());
+
+        try
+        {
+            // Act
+            await DrainAsync(host, new TransactionalStreamRequest(2));
+
+            // Assert: the commit happens after the last item, because the pipeline wraps the
+            // whole enumeration rather than just its start.
+            var transaction = probe.Last!.Transaction;
+            Assert.NotNull(transaction);
+            Assert.True(transaction.IsCommitted);
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    [Fact]
+    public async Task GivenTransactionalStreamHandler_WhenHandlerThrowsPartway_ThenTransactionNotCommitted()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<TransactionalStreamHandler>());
+
+        try
+        {
+            // Act
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => DrainAsync(host, new TransactionalStreamRequest(2, ShouldThrow: true)));
+
+            // Assert: items already delivered do not make the work durable.
+            var transaction = probe.Last!.Transaction;
+            Assert.NotNull(transaction);
+            Assert.False(transaction.IsCommitted);
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    [Fact]
+    public async Task GivenPlainStreamHandler_WhenEnumerated_ThenNoTransactionInsideHandler()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<PlainStreamHandler>());
+
+        try
+        {
+            // Act
+            await DrainAsync(host, new PlainStreamRequest(2));
+
+            // Assert
+            Assert.Equal(2, probe.Count);
+            Assert.All(probe.Observations, o => Assert.Null(o.Transaction));
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    [Fact]
+    public async Task GivenTransactionalStreamHandler_WhenConsumerStopsEarly_ThenTransactionCommitted()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<TransactionalStreamHandler>());
+
+        try
+        {
+            // Act: take one item and stop.
+            using (var scope = host.Services.CreateScope())
+            {
+                var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+                await foreach (var _ in mediator.CreateStreamAsync(new TransactionalStreamRequest(10)))
+                {
+                    break;
+                }
+            }
+
+            // Assert: ending the enumeration is a normal end to the request, so the work the
+            // handler already did is kept.
+            var transaction = probe.Last!.Transaction;
+            Assert.NotNull(transaction);
+            Assert.True(transaction.IsCommitted);
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    [Fact]
+    public async Task GivenTransactionalStreamHandler_WhenCancelled_ThenTransactionNotCommitted()
+    {
+        // Arrange
+        var (host, probe) = BuildHost(m => m.AddHandler<TransactionalStreamHandler>());
+        using var cts = new CancellationTokenSource();
+
+        try
+        {
+            // Act
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                using var scope = host.Services.CreateScope();
+                var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+                await foreach (var _ in mediator.CreateStreamAsync(
+                    new TransactionalStreamRequest(10), cts.Token))
+                {
+                    await cts.CancelAsync();
+                }
+            });
+
+            // Assert: cancelling aborts the request, unlike ending the enumeration.
+            var transaction = probe.Last!.Transaction;
+            Assert.NotNull(transaction);
+            Assert.False(transaction.IsCommitted);
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
+    }
+
+    /// <summary>Enumerates a stream request to completion through a fresh scope.</summary>
+    protected static async Task DrainAsync<TResponse>(IHost host, IStreamRequest<TResponse> request)
+    {
+        using var scope = host.Services.CreateScope();
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+        await foreach (var _ in mediator.CreateStreamAsync(request))
+        {
+            // Draining is the point; the items themselves do not matter here.
+        }
+    }
+
     // ── Helpers ──
 
     /// <summary>
@@ -556,5 +724,60 @@ public sealed class PlainVoidHandler(
     {
         probe.Record(emitContext.Transaction, sessionInspector.CurrentSession);
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>A request handled by a [Transactional] stream handler.</summary>
+public sealed record TransactionalStreamRequest(int Count, bool ShouldThrow = false) : IStreamRequest<int>;
+
+/// <summary>A request handled by an undecorated stream handler.</summary>
+public sealed record PlainStreamRequest(int Count) : IStreamRequest<int>;
+
+/// <summary>
+/// A [Transactional] stream handler recording the ambient transaction it observes as it
+/// produces each item, so the test can tell whether the transaction spans the enumeration.
+/// </summary>
+[Transactional]
+public sealed class TransactionalStreamHandler(
+    IEmitContext emitContext,
+    IAmbientSessionInspector sessionInspector,
+    TransactionProbe probe) : IStreamRequestHandler<TransactionalStreamRequest, int>
+{
+    /// <inheritdoc />
+    public async IAsyncEnumerable<int> HandleAsync(
+        TransactionalStreamRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        for (var i = 0; i < request.Count; i++)
+        {
+            probe.Record(emitContext.Transaction, sessionInspector.CurrentSession);
+            yield return i;
+            await Task.Yield();
+        }
+
+        if (request.ShouldThrow)
+        {
+            throw new InvalidOperationException("Simulated handler failure");
+        }
+    }
+}
+
+/// <summary>An undecorated stream handler, which must not receive a transaction.</summary>
+public sealed class PlainStreamHandler(
+    IEmitContext emitContext,
+    IAmbientSessionInspector sessionInspector,
+    TransactionProbe probe) : IStreamRequestHandler<PlainStreamRequest, int>
+{
+    /// <inheritdoc />
+    public async IAsyncEnumerable<int> HandleAsync(
+        PlainStreamRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        for (var i = 0; i < request.Count; i++)
+        {
+            probe.Record(emitContext.Transaction, sessionInspector.CurrentSession);
+            yield return i;
+            await Task.Yield();
+        }
     }
 }

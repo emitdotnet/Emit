@@ -156,6 +156,75 @@ public sealed class CreateOrderHandler(
 }
 ```
 
+## Streaming handlers
+
+A handler that produces a sequence implements `IStreamRequestHandler<TRequest, TResponse>`, and its
+request implements `IStreamRequest<TResponse>`. Registration is unchanged.
+
+```csharp
+public sealed record GetOrders(Guid CustomerId) : IStreamRequest<Order>;
+
+public sealed class GetOrdersHandler(MyDbContext db) : IStreamRequestHandler<GetOrders, Order>
+{
+    public async IAsyncEnumerable<Order> HandleAsync(
+        GetOrders request,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var order in db.Orders
+            .Where(o => o.CustomerId == request.CustomerId)
+            .AsAsyncEnumerable()
+            .WithCancellation(ct))
+        {
+            yield return order;
+        }
+    }
+}
+```
+
+Dispatch with `CreateStreamAsync`:
+
+```csharp
+await foreach (var order in mediator.CreateStreamAsync(new GetOrders(id), ct))
+{
+    await response.WriteAsync(Serialize(order), ct);
+}
+```
+
+A request declares one shape or the other. `SendAsync` will not accept a streaming request and
+`CreateStreamAsync` will not accept a single-response one, so the compiler picks for you.
+
+### What the pipeline does
+
+The handler runs inside the middleware pipeline for the whole life of the stream, not just while
+the sequence is created. Middleware, observers and `[Transactional]` therefore wrap every item,
+and a duration metric measures the whole stream rather than its creation.
+
+`[Transactional]` on a streaming handler holds one transaction open until the enumeration ends.
+That is what makes the stream atomic, and it is worth weighing for a long-lived connection, where
+it means holding a database transaction open for as long as the client stays connected.
+
+### Stopping early, and cancelling
+
+The handler advances only when an item is requested, so it is always between items when you decide
+whether to continue.
+
+Ending the enumeration, with a `break` or by taking a fixed number of items, stops the handler at
+its next item boundary and completes the request normally. Any work it already did is kept, and a
+transaction commits.
+
+Cancelling the token aborts the request instead. The handler is cancelled where it stands and a
+transaction rolls back.
+
+Disposing the enumerator completes the request, so if the request fails at that point, when a
+commit fails for instance, the failure is thrown from the loop.
+
+### Scope and lifetime
+
+Handlers run in the scope that resolved the mediator, so the stream must be enumerated while that
+scope is alive. In ASP.NET that is the request scope, which lives as long as the response.
+
+Nothing runs until you enumerate. Building a stream and never reading it starts no work.
+
 ## One handler per request type
 
 Registering two handlers for the same request type throws at startup. If you need fan-out, dispatch to multiple targets inside a single handler, or publish an event through the outbox.

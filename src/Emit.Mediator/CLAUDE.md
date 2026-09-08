@@ -8,8 +8,13 @@ In-process mediator for request/response dispatching with middleware pipeline su
 | ---- | ---- | ------------ |
 | `README.md` | Mediator package description and usage overview | Understand what this package provides |
 | `Emit.Mediator.csproj` | Mediator project file with Emit.Abstractions dependency | Configure mediator dependencies |
-| `IMediator.cs` | Interface for dispatching requests with SendAsync (void) and SendAsync&lt;TResponse&gt; | Understand mediator dispatch API |
+| `IMediator.cs` | Interface for dispatching requests: SendAsync (void), SendAsync&lt;TResponse&gt;, and CreateStreamAsync&lt;TResponse&gt; | Understand mediator dispatch API |
 | `IRequest.cs` | Marker interfaces IRequest (void) and IRequest&lt;TResponse&gt; for request types | Define new request types |
+| `IStreamRequest.cs` | Marker interface for requests that produce a sequence of responses | Define a streaming request type |
+| `IStreamRequestHandler.cs` | Handler interface returning IAsyncEnumerable&lt;TResponse&gt; | Implement a streaming handler |
+| `IStreamSink.cs` | Internal demand-driven sink carrying stream items out of the pipeline | Understand how items leave the pipeline |
+| `ChannelStreamSink.cs` | Sink implementation pairing a demand channel with an item channel for lockstep | Understand stream back-pressure and early stop |
+| `MediatorStreamHandlerInvoker.cs` | Terminal advancing a stream handler one item per request from the consumer | Understand stream handler invocation |
 | `IRequestHandler.cs` | Handler interfaces: IRequestHandler&lt;TRequest&gt; (void) and IRequestHandler&lt;TRequest, TResponse&gt; | Implement request handlers |
 | `Mediator.cs` | Scoped implementation dispatching requests to pre-built typed pipelines keyed by request type | Understand mediator dispatch internals |
 | `MediatorConfiguration.cs` | Singleton holding pre-built dispatch delegates composed at container build time | Understand pipeline composition |

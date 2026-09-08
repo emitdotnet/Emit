@@ -37,8 +37,9 @@ public sealed class MediatorBuilder : IInboundConfigurable
 
     /// <summary>
     /// Registers a handler type. The library discovers request and response types
-    /// by reflecting <see cref="IRequestHandler{TRequest}"/> and
-    /// <see cref="IRequestHandler{TRequest, TResponse}"/> implementations.
+    /// by reflecting <see cref="IRequestHandler{TRequest}"/>,
+    /// <see cref="IRequestHandler{TRequest, TResponse}"/> and
+    /// <see cref="IStreamRequestHandler{TRequest, TResponse}"/> implementations.
     /// </summary>
     /// <typeparam name="THandler">The handler type implementing one or more handler interfaces.</typeparam>
     /// <exception cref="InvalidOperationException">
@@ -69,11 +70,11 @@ public sealed class MediatorBuilder : IInboundConfigurable
 
         var handlerType = typeof(THandler);
         var requestType = typeof(TRequest);
-        var responseType = FindResponseType(handlerType, requestType);
+        var (responseType, isStream) = FindResponseType(handlerType, requestType);
 
         var handlerBuilder = new MediatorHandlerBuilder<TRequest>();
         configure(handlerBuilder);
-        AddRegistration(handlerType, requestType, responseType, handlerBuilder.Pipeline);
+        AddRegistration(handlerType, requestType, responseType, handlerBuilder.Pipeline, isStream);
     }
 
     /// <summary>
@@ -88,7 +89,7 @@ public sealed class MediatorBuilder : IInboundConfigurable
         return this;
     }
 
-    private static Type? FindResponseType(Type handlerType, Type requestType)
+    private static (Type? ResponseType, bool IsStream) FindResponseType(Type handlerType, Type requestType)
     {
         // Check IRequestHandler<TRequest, TResponse> (response handlers)
         foreach (var iface in handlerType.GetInterfaces()
@@ -96,7 +97,16 @@ public sealed class MediatorBuilder : IInboundConfigurable
         {
             var args = iface.GetGenericArguments();
             if (args[0] == requestType)
-                return args[1];
+                return (args[1], false);
+        }
+
+        // Check IStreamRequestHandler<TRequest, TResponse> (stream handlers)
+        foreach (var iface in handlerType.GetInterfaces()
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamRequestHandler<,>)))
+        {
+            var args = iface.GetGenericArguments();
+            if (args[0] == requestType)
+                return (args[1], true);
         }
 
         // Check IRequestHandler<TRequest> (void handlers)
@@ -104,13 +114,14 @@ public sealed class MediatorBuilder : IInboundConfigurable
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<>)))
         {
             if (iface.GetGenericArguments()[0] == requestType)
-                return null;
+                return (null, false);
         }
 
         throw new InvalidOperationException(
             $"Handler type '{handlerType.Name}' does not implement " +
-            $"{nameof(IRequestHandler)}<{requestType.Name}> or " +
-            $"{nameof(IRequestHandler)}<{requestType.Name}, TResponse>.");
+            $"{nameof(IRequestHandler)}<{requestType.Name}>, " +
+            $"{nameof(IRequestHandler)}<{requestType.Name}, TResponse>, or " +
+            $"{nameof(IStreamRequestHandler<,>)}<{requestType.Name}, TResponse>.");
     }
 
     private void RegisterHandler<THandler>(IMessagePipelineBuilder? handlerPipeline) where THandler : class, IRequestHandler
@@ -132,11 +143,37 @@ public sealed class MediatorBuilder : IInboundConfigurable
             var requestType = iface.GetGenericArguments()[0];
             AddRegistration(handlerType, requestType, responseType: null, handlerPipeline);
         }
+
+        // Scan for IStreamRequestHandler<TRequest, TResponse> (stream handlers)
+        foreach (var iface in handlerType.GetInterfaces()
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamRequestHandler<,>)))
+        {
+            var genericArgs = iface.GetGenericArguments();
+            AddRegistration(handlerType, genericArgs[0], genericArgs[1], handlerPipeline, isStream: true);
+        }
     }
 
-    private void AddRegistration(Type handlerType, Type requestType, Type? responseType, IMessagePipelineBuilder? handlerPipeline)
+    private void AddRegistration(
+        Type handlerType,
+        Type requestType,
+        Type? responseType,
+        IMessagePipelineBuilder? handlerPipeline,
+        bool isStream = false)
     {
-        if (!registrations.TryAdd(requestType, new HandlerRegistration(handlerType, requestType, responseType, handlerPipeline)))
+        var declaresSingle = requestType.GetInterfaces().Any(i =>
+            i == typeof(IRequest) || (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequest<>)));
+        var declaresStream = requestType.GetInterfaces().Any(i =>
+            i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamRequest<>));
+
+        if (declaresSingle && declaresStream)
+        {
+            throw new InvalidOperationException(
+                $"Request type '{requestType.Name}' declares both {nameof(IRequest)} and " +
+                $"{nameof(IStreamRequest<>)}. A request produces either a single response " +
+                "or a sequence, never both.");
+        }
+
+        if (!registrations.TryAdd(requestType, new HandlerRegistration(handlerType, requestType, responseType, handlerPipeline, isStream)))
         {
             throw new InvalidOperationException(
                 $"A handler is already registered for request type '{requestType.Name}'. " +
@@ -148,5 +185,10 @@ public sealed class MediatorBuilder : IInboundConfigurable
     /// Captures the handler type, its request/response type pair, and optional per-handler pipeline.
     /// A null <see cref="ResponseType"/> indicates a void handler.
     /// </summary>
-    internal sealed record HandlerRegistration(Type HandlerType, Type RequestType, Type? ResponseType, IMessagePipelineBuilder? HandlerPipeline);
+    internal sealed record HandlerRegistration(
+        Type HandlerType,
+        Type RequestType,
+        Type? ResponseType,
+        IMessagePipelineBuilder? HandlerPipeline,
+        bool IsStream = false);
 }
