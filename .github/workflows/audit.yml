@@ -1,0 +1,37 @@
+name: NuGet Audit
+
+# Dedicated NuGet audit pipeline. AuditPipeline=true turns NuGet audit warnings
+# into errors here only (see Directory.Build.props), so a newly published
+# advisory fails this workflow without breaking regular builds. The schedule
+# catches advisories published when nothing is being committed.
+# https://learn.microsoft.com/nuget/concepts/auditing-packages#running-nuget-audit-in-ci
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup .NET 10
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore with NuGet auditing
+      run: dotnet restore -p:AuditPipeline=true

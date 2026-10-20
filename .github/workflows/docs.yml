@@ -1,0 +1,41 @@
+name: Docs
+
+# Build the documentation site whenever it changes, so dependency bumps in
+# docs/ are verified before merge. Deployment stays in deploy-docs.yml and
+# publish.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: docs/package-lock.json
+
+    - name: Install dependencies
+      working-directory: docs
+      run: npm ci
+
+    - name: Build docs
+      working-directory: docs
+      run: npm run build
