@@ -11,6 +11,8 @@
       Use the lowest compatible version to maximize consumer flexibility.
       Framework-included packages use the first release for the target framework (10.0.0).
       See: https://learn.microsoft.com/en-us/dotnet/standard/library-guidance/dependencies
+      Dependabot only opens security updates for NuGet (.github/dependabot.yml);
+      every other version change here is made by hand.
     -->
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
