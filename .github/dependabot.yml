@@ -3,20 +3,17 @@ version: 2
 # One grouped PR per ecosystem instead of one PR per package. Groups also
 # apply to security updates, so a batch of advisories lands as a single PR.
 updates:
+  # No pull requests for the docs site, version or security. Its packages are
+  # build tooling for a static site and are updated by hand. An ignore rule
+  # that names only the dependency also blocks security updates, which
+  # removing this entry would not do.
   - package-ecosystem: npm
     directory: /docs
     schedule:
       interval: weekly
-    commit-message:
-      prefix: chore(deps)
-    groups:
-      docs-security:
-        applies-to: security-updates
-        patterns: ['*']
-      docs:
-        applies-to: version-updates
-        patterns: ['*']
-        update-types: [minor, patch]
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: '*'
 
   # Security updates only. Library dependencies flow to NuGet consumers as
   # minimum versions, so they stay at the lowest compatible version and are
