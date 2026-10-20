@@ -44,7 +44,7 @@
       overridden until MongoDB.Driver bumps its own reference past the vulnerable range.
     -->
     <PackageVersion Include="SharpCompress" Version="0.49.1" />
-    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
     <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
 
     <!--
