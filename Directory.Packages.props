@@ -12,22 +12,22 @@
       Framework-included packages use the first release for the target framework (10.0.0).
       See: https://learn.microsoft.com/en-us/dotnet/standard/library-guidance/dependencies
     -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0" />
-    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.13" />
+    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="MessagePack" Version="3.1.4" />
-    <PackageVersion Include="Confluent.Kafka" Version="2.13.0" />
-    <PackageVersion Include="Confluent.SchemaRegistry" Version="2.13.0" />
-    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Avro" Version="2.13.0" />
-    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Json" Version="2.13.0" />
-    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Protobuf" Version="2.13.0" />
-    <PackageVersion Include="MongoDB.Driver" Version="3.6.0" />
+    <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
+    <PackageVersion Include="Confluent.SchemaRegistry" Version="2.16.0" />
+    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Avro" Version="2.16.0" />
+    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Json" Version="2.16.0" />
+    <PackageVersion Include="Confluent.SchemaRegistry.Serdes.Protobuf" Version="2.16.0" />
+    <PackageVersion Include="MongoDB.Driver" Version="3.12.0" />
     <!--
       Snappier is a transitive of MongoDB.Driver (used internally for wire-protocol
       compression). MongoDB.Driver 3.6.0 declares Snappier 1.0.0, which has a known
@@ -43,17 +43,17 @@
       (GHSA-6c8g-7p36-r338, affecting <= 0.47.4). Pinned here so the transitive is
       overridden until MongoDB.Driver bumps its own reference past the vulnerable range.
     -->
-    <PackageVersion Include="SharpCompress" Version="0.49.1" />
-    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
-    <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
+    <PackageVersion Include="SharpCompress" Version="0.50.6" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.12.0" />
+    <PackageVersion Include="OpenTelemetry" Version="1.20.0" />
 
     <!--
       Non-library dependencies (tests, samples, tooling only).
       These do not flow to NuGet consumers — latest versions are fine.
     -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.13" />
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
@@ -61,14 +61,14 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.3" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.4.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
-    <PackageVersion Include="Moq" Version="4.20.72" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
-    <PackageVersion Include="Testcontainers.Kafka" Version="4.15.0" />
-    <PackageVersion Include="Testcontainers.MongoDb" Version="4.15.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <PackageVersion Include="Moq" Version="4.21.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <PackageVersion Include="Testcontainers.Kafka" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.MongoDb" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
   </ItemGroup>
 </Project>
