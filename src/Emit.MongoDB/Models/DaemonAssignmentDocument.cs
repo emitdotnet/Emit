@@ -1,12 +1,18 @@
 namespace Emit.MongoDB.Models;
 
 /// <summary>
-/// Represents a daemon assignment in MongoDB.
+/// Represents the assignment of a service's daemon in MongoDB. A service and daemon
+/// identifier pair has at most one document.
 /// </summary>
 internal sealed class DaemonAssignmentDocument
 {
     /// <summary>
-    /// Gets or sets the daemon identifier (mapped as <c>_id</c>).
+    /// Gets or sets the name of the service the daemon belongs to.
+    /// </summary>
+    public string ServiceName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the daemon identifier.
     /// </summary>
     public string DaemonId { get; set; } = string.Empty;
 
@@ -31,7 +37,13 @@ internal sealed class DaemonAssignmentDocument
     public DateTime AssignedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the drain deadline (UTC), set when state is revoking.
+    /// Gets or sets the fencing key, written when the document is created and never changed.
     /// </summary>
-    public DateTime? DrainDeadline { get; set; }
+    public Guid FencingKey { get; set; }
+
+    /// <summary>
+    /// The state of a released assignment: no node runs the daemon, and the document only keeps its
+    /// generation so that generations never repeat.
+    /// </summary>
+    internal const string ReleasedState = "Released";
 }

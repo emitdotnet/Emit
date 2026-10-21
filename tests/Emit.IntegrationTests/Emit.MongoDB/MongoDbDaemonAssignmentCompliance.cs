@@ -6,6 +6,7 @@ using Emit.IntegrationTests.Integration.Compliance;
 using Emit.MongoDB;
 using Emit.MongoDB.DependencyInjection;
 using Emit.MongoDB.Tests.TestInfrastructure;
+using global::MongoDB.Bson;
 using global::MongoDB.Driver;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -17,6 +18,7 @@ using Xunit;
 public class MongoDbDaemonAssignmentCompliance : DaemonAssignmentCompliance, IClassFixture<MongoDbContainerFixture>
 {
     private readonly string databaseName;
+    private readonly ServiceProvider serviceProvider;
     private readonly IMongoClient mongoClient;
     private readonly IDaemonAssignmentPersistence persistence;
 
@@ -39,8 +41,8 @@ public class MongoDbDaemonAssignmentCompliance : DaemonAssignmentCompliance, ICl
             });
         });
 
-        var sp = services.BuildServiceProvider();
-        persistence = sp.GetRequiredService<IDaemonAssignmentPersistence>();
+        serviceProvider = services.BuildServiceProvider();
+        persistence = serviceProvider.GetRequiredService<IDaemonAssignmentPersistence>();
     }
 
     /// <inheritdoc/>
@@ -52,6 +54,7 @@ public class MongoDbDaemonAssignmentCompliance : DaemonAssignmentCompliance, ICl
     /// <inheritdoc/>
     public override async Task DisposeAsync()
     {
+        await serviceProvider.DisposeAsync();
         await mongoClient.DropDatabaseAsync(databaseName);
     }
 }

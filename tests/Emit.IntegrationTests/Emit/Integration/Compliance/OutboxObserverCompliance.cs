@@ -9,6 +9,7 @@ using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -67,6 +68,7 @@ public abstract class OutboxObserverCompliance : IAsyncLifetime
                 {
                     emit.Services.AddSingleton<IOutboxObserver>(
                         sp => sp.GetRequiredService<TrackingOutboxObserver>());
+                    ConfigureFastCoordination(emit, NewServiceName());
                     ConfigurePersistence(emit, pollingInterval);
                     ConfigureKafka(emit, topic, groupId);
                 });
@@ -78,7 +80,7 @@ public abstract class OutboxObserverCompliance : IAsyncLifetime
         try
         {
             // Act — produce a message via the transactional outbox.
-            await ProduceTransactionallyAsync(host.Services, "k", "outbox-observer-test");
+            await ProduceAsync(host.Services, "k", "outbox-observer-test");
 
             // Assert — wait for all three callbacks to fire (enqueued, processing, processed).
             await observer.WaitForProcessedAsync(TimeSpan.FromSeconds(30));
@@ -97,25 +99,8 @@ public abstract class OutboxObserverCompliance : IAsyncLifetime
         }
     }
 
-    private async Task ProduceTransactionallyAsync(
-        IServiceProvider services,
-        string key,
-        string value,
-        CancellationToken ct = default)
-    {
-        using var scope = services.CreateScope();
-        var sp = scope.ServiceProvider;
-
-        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
-        var producer = sp.GetRequiredService<IEventProducer<string, string>>();
-
-        await using var transaction = await unitOfWork.BeginAsync(ct);
-
-        await producer.ProduceAsync(new EventMessage<string, string>(key, value), ct);
-
-        await FlushBeforeCommitAsync(sp);
-        await transaction.CommitAsync(ct);
-    }
+    private Task ProduceAsync(IServiceProvider services, string key, string value) =>
+        TestHelpers.ProduceTransactionallyAsync(services, key, value, FlushBeforeCommitAsync);
 
     private void ConfigureKafka(EmitBuilder emit, string topic, string groupId)
     {

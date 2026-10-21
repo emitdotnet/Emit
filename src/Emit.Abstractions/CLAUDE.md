@@ -8,8 +8,11 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | ---- | ---- | ------------ |
 | `README.md` | Abstractions overview and package description | Understand what this package provides |
 | `Emit.Abstractions.csproj` | Abstractions project file with Transactional dependency | Configure abstraction dependencies |
-| `IOutboxRepository.cs` | Persistence contract for enqueueing, deleting, and fetching outbox entries | Implement a new persistence backend |
-| `IOutboxProvider.cs` | Contract for providers that process outbox entries by delivering to external systems | Implement a new outbox provider |
+| `IOutboxRepository.cs` | Persistence contract for enqueueing, fetching, and deleting delivered outbox entries in one call | Implement a new persistence backend |
+| `IOutboxProvider.cs` | Contract for providers that deliver outbox entries to external systems, one delivery per batch and run of the outbox daemon | Implement a new outbox provider |
+| `IOutboxDelivery.cs` | A batch delivery: entries sent through it become visible together when it completes, none if it is abandoned | Implement a new outbox provider |
+| `MessageBrokerUnreachableException.cs` | Thrown by an outbox delivery that could not reach the message broker, as opposed to the broker refusing the entry; the outbox daemon then fails its run so another node takes over | Implement a new outbox provider |
+| `OutboxDeliveryContext.cs` | The run of the outbox daemon a delivery belongs to: fencing key and generation | Implement a new outbox provider that fences earlier runs |
 | `IConsumer.cs` | Generic interface for handling consumed messages with a typed value | Implement consumer handlers |
 | `IEventProducer.cs` | Generic interface for producing typed key-value messages | Implement a new producer or understand producing API |
 | `EventProducerExtensions.cs` | Convenience overloads for IEventProducer accepting key, value, and headers directly | Understand producer extension API surface |

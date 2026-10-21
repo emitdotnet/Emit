@@ -78,7 +78,7 @@ public class EfCoreOutboxRepositoryTests
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentNullException>(
             () => repository.DeleteAsync(null!));
-        Assert.Equal("entryId", exception.ParamName);
+        Assert.Equal("entryIds", exception.ParamName);
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class EfCoreOutboxRepositoryTests
 
         // Act & Assert
         await Assert.ThrowsAsync<FormatException>(
-            () => repository.DeleteAsync("not-a-valid-guid"));
+            () => repository.DeleteAsync(["not-a-valid-guid"]));
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class EfCoreOutboxRepositoryTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => repository.DeleteAsync(unsupportedId));
+            () => repository.DeleteAsync([unsupportedId]));
         Assert.Equal("entryId", exception.ParamName);
         Assert.Contains("Int32", exception.Message);
     }
@@ -121,7 +121,7 @@ public class EfCoreOutboxRepositoryTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => repository.GetBatchAsync(batchSize));
+            () => repository.GetBatchAsync("service", ["kafka"], batchSize));
         Assert.Equal("batchSize", exception.ParamName);
     }
 

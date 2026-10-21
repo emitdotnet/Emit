@@ -18,6 +18,17 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 public static class MongoDbEmitBuilderExtensions
 {
     /// <summary>
+    /// The index node registrations are read through.
+    /// </summary>
+    internal const string NodeServiceNameIndex = "serviceName";
+
+    /// <summary>
+    /// Name of the unique index of daemon assignments by service and daemon. A service's assignments are read
+    /// through it: no write changes its keys, so a read never returns an assignment twice.
+    /// </summary>
+    internal const string AssignmentServiceNameDaemonIdIndex = "serviceName_daemonId";
+
+    /// <summary>
     /// Adds MongoDB as a persistence provider.
     /// </summary>
     /// <param name="builder">The Emit builder.</param>
@@ -83,6 +94,11 @@ public static class MongoDbEmitBuilderExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Resolves Emit's collections. They read from the primary whatever the client's read preference: a
+    /// secondary that lags would show a node an assignment that already moved, or an outbox entry that was
+    /// already delivered and deleted.
+    /// </summary>
     private static void ResolveCollections(
         MongoDbContext context,
         bool outboxEnabled,
@@ -92,30 +108,36 @@ public static class MongoDbEmitBuilderExtensions
         {
             context.OutboxCollection = context.Database
                 .GetCollection<OutboxEntry>(CollectionNames.Outbox)
-                .WithWriteConcern(WriteConcern.WMajority);
+                .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
             context.SequenceCollection = context.Database
                 .GetCollection<SequenceCounter>(CollectionNames.Sequence)
-                .WithWriteConcern(WriteConcern.WMajority);
+                .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
         }
 
         if (distributedLockEnabled)
         {
             context.LockCollection = context.Database
                 .GetCollection<LockDocument>(CollectionNames.Locks)
-                .WithWriteConcern(WriteConcern.WMajority);
+                .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
         }
 
         context.LeaderCollection = context.Database
             .GetCollection<LeaderDocument>(CollectionNames.Leader)
-            .WithWriteConcern(WriteConcern.WMajority);
+            .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
 
         context.NodeCollection = context.Database
             .GetCollection<NodeDocument>(CollectionNames.Nodes)
-            .WithWriteConcern(WriteConcern.WMajority);
+            .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
 
         context.DaemonAssignmentCollection = context.Database
             .GetCollection<DaemonAssignmentDocument>(CollectionNames.DaemonAssignments)
-            .WithWriteConcern(WriteConcern.WMajority);
+            .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
     }
 
     private static void CreateIndexes(
@@ -125,10 +147,11 @@ public static class MongoDbEmitBuilderExtensions
     {
         if (outboxEnabled)
         {
+            // Each service's outbox daemon reads only its own entries of the providers its node has, in sequence order
             context.OutboxCollection!.Indexes.CreateOne(
                 new CreateIndexModel<OutboxEntry>(
-                    Builders<OutboxEntry>.IndexKeys.Ascending(x => x.Sequence),
-                    new CreateIndexOptions { Name = "sequence" }));
+                    Builders<OutboxEntry>.IndexKeys.Ascending(x => x.ServiceName).Ascending(x => x.SystemId).Ascending(x => x.Sequence),
+                    new CreateIndexOptions { Name = "serviceName_systemId_sequence" }));
         }
 
         if (distributedLockEnabled)
@@ -139,9 +162,30 @@ public static class MongoDbEmitBuilderExtensions
                     new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
         }
 
+        // One lease per service
+        context.LeaderCollection.Indexes.CreateOne(
+            new CreateIndexModel<LeaderDocument>(
+                Builders<LeaderDocument>.IndexKeys.Ascending(x => x.ServiceName),
+                new CreateIndexOptions { Name = "serviceName", Unique = true }));
+
+        // Keyed only on what a heartbeat never rewrites: an index scan can skip a document whose key moves behind
+        // it, and a node missing from the leader's read is moved off at once
+        context.NodeCollection.Indexes.CreateOne(
+            new CreateIndexModel<NodeDocument>(
+                Builders<NodeDocument>.IndexKeys.Ascending(x => x.ServiceName),
+                new CreateIndexOptions { Name = NodeServiceNameIndex }));
+
+        // One assignment per service and daemon
         context.DaemonAssignmentCollection.Indexes.CreateOne(
             new CreateIndexModel<DaemonAssignmentDocument>(
-                Builders<DaemonAssignmentDocument>.IndexKeys.Ascending(x => x.AssignedNodeId)));
+                Builders<DaemonAssignmentDocument>.IndexKeys.Ascending(x => x.ServiceName).Ascending(x => x.DaemonId),
+                new CreateIndexOptions { Name = AssignmentServiceNameDaemonIdIndex, Unique = true }));
+
+        // A node reads the assignments of its service
+        context.DaemonAssignmentCollection.Indexes.CreateOne(
+            new CreateIndexModel<DaemonAssignmentDocument>(
+                Builders<DaemonAssignmentDocument>.IndexKeys.Ascending(x => x.ServiceName).Ascending(x => x.AssignedNodeId),
+                new CreateIndexOptions { Name = "serviceName_assignedNodeId" }));
     }
 
     private static void RegisterOutboxServices(EmitBuilder builder, MongoDbBuilder mongoBuilder)

@@ -9,12 +9,14 @@ using Xunit;
 /// <c>IClassFixture</c> but shares the same container. Ryuk handles cleanup on process exit.
 /// </summary>
 /// <remarks>
-/// The container uses a single-node replica set to support transactions.
+/// The container uses a single-node replica set to support transactions, and enables test commands so
+/// tests can stall chosen commands with the <c>failCommand</c> fail point.
 /// </remarks>
 public sealed class MongoDbContainerFixture : IAsyncLifetime
 {
     private static readonly MongoDbContainer Container = new MongoDbBuilder("mongo:7.0")
         .WithReplicaSet()
+        .WithCommand("--setParameter", "enableTestCommands=1")
         .Build();
 
     private static readonly Lazy<Task> StartTask = new(() => Container.StartAsync());

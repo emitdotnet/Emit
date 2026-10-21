@@ -63,42 +63,60 @@ internal sealed class EfCoreOutboxRepository<TDbContext> : IOutboxRepository
     }
 
     /// <inheritdoc/>
-    public async Task DeleteAsync(object entryId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(IReadOnlyCollection<object> entryIds, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(entryId);
+        ArgumentNullException.ThrowIfNull(entryIds);
 
-        var id = ConvertToGuid(entryId);
+        List<Guid> ids = [.. entryIds.Select(ConvertToGuid)];
+        if (ids is [])
+        {
+            return;
+        }
 
         // Worker operation - create own DbContext via factory
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken)
+        await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken)
             .ConfigureAwait(false);
 
         var deletedCount = await dbContext.Set<OutboxEntry>()
-            .Where(e => e.Id != null && (Guid)e.Id == id)
+            .Where(e => e.Id != null && ids.Contains((Guid)e.Id))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (deletedCount == 0)
+        if (deletedCount < ids.Count)
         {
-            logger.LogWarning("Outbox entry not found for deletion: id={Id}", id);
+            logger.LogWarning("{Missing} of {Count} outbox entries were not found for deletion", ids.Count - deletedCount, ids.Count);
         }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<OutboxEntry>> GetBatchAsync(
+        string serviceName,
+        IReadOnlyCollection<string> systemIds,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
 
         // Worker operation - create own DbContext via factory
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken)
+        await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return await dbContext.Set<OutboxEntry>()
+        if (systemIds.Count == 0)
+        {
+            return [];
+        }
+
+        // Each provider's oldest entries are read in sequence order from the index, then merged: a single condition
+        // on all providers would make the database read and sort every pending entry of the service
+        var entries = dbContext.Set<OutboxEntry>().AsNoTracking();
+        return await systemIds
+            .Select(systemId => entries
+                .Where(e => e.ServiceName == serviceName && e.SystemId == systemId)
+                .OrderBy(e => e.Sequence)
+                .Take(batchSize))
+            .Aggregate(Queryable.Concat)
             .OrderBy(e => e.Sequence)
             .Take(batchSize)
-            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
     }

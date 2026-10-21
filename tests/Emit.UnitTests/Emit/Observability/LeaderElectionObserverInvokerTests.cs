@@ -2,6 +2,7 @@ namespace Emit.UnitTests.Observability;
 
 using global::Emit.Abstractions.Observability;
 using global::Emit.Observability;
+using global::Emit.UnitTests.Coordination;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -11,84 +12,83 @@ public class LeaderElectionObserverInvokerTests
     private static readonly Guid TestNodeId = Guid.NewGuid();
 
     [Fact]
-    public async Task GivenNoObservers_WhenOnLeaderElectedAsync_ThenNoException()
+    public async Task GivenObserverThatHasNotReturned_WhenMoreEventsAreRaised_ThenTheCallerDoesNotWaitAndTheyFollowInOrder()
     {
-        // Arrange
-        var invoker = CreateInvoker([]);
+        // Arrange: notifications are raised on the heartbeat, which must not wait for observer code
+        var returned = new TaskCompletionSource();
+        List<string> calls = [];
+        var observer = new Mock<ILeaderElectionObserver>();
+        observer.Setup(o => o.OnLeaderElectedAsync(TestNodeId, It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("elected"))
+            .Returns(returned.Task);
+        observer.Setup(o => o.OnLeaderLostAsync(TestNodeId, It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("lost"))
+            .Returns(Task.CompletedTask);
+        var invoker = CreateInvoker(observer.Object);
 
         // Act
-        await invoker.OnLeaderElectedAsync(TestNodeId, CancellationToken.None);
+        invoker.OnLeaderElected(TestNodeId);
+        invoker.OnLeaderLost(TestNodeId);
 
-        // Assert - no exception thrown
+        // Assert
+        Assert.Equal(["elected"], calls);
+
+        // Act
+        await ReturnAsync(returned);
+
+        // Assert
+        Assert.Equal(["elected", "lost"], calls);
     }
 
     [Fact]
-    public async Task GivenObserver_WhenOnLeaderElectedAsync_ThenObserverCalled()
+    public void GivenObserverThatThrows_WhenEventsAreRaised_ThenTheOtherObserversAndLaterEventsAreStillNotified()
     {
         // Arrange
-        var mock = new Mock<ILeaderElectionObserver>();
-        var invoker = CreateInvoker([mock.Object]);
+        var failing = new Mock<ILeaderElectionObserver>();
+        failing.Setup(o => o.OnNodeRegisteredAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Observer failed"));
+        var other = new Mock<ILeaderElectionObserver>();
+        var invoker = CreateInvoker(failing.Object, other.Object);
 
         // Act
-        await invoker.OnLeaderElectedAsync(TestNodeId, CancellationToken.None);
+        invoker.OnNodeRegistered(TestNodeId);
+        invoker.OnNodeRemoved(TestNodeId);
 
         // Assert
-        mock.Verify(o => o.OnLeaderElectedAsync(TestNodeId, CancellationToken.None), Times.Once);
+        other.Verify(o => o.OnNodeRegisteredAsync(TestNodeId, It.IsAny<CancellationToken>()), Times.Once);
+        other.Verify(o => o.OnNodeRemovedAsync(TestNodeId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task GivenMultipleObservers_WhenOnLeaderLostAsync_ThenAllObserversCalled()
+    public async Task GivenObserverThatNeverReturns_WhenEventsKeepBeingRaised_ThenOnlyABoundedBacklogIsKept()
     {
         // Arrange
-        var mock1 = new Mock<ILeaderElectionObserver>();
-        var mock2 = new Mock<ILeaderElectionObserver>();
-        var invoker = CreateInvoker([mock1.Object, mock2.Object]);
+        var returned = new TaskCompletionSource();
+        var calls = 0;
+        var observer = new Mock<ILeaderElectionObserver>();
+        observer.Setup(o => o.OnLeaderElectedAsync(TestNodeId, It.IsAny<CancellationToken>()))
+            .Callback(() => calls++)
+            .Returns(() => calls == 1 ? returned.Task : Task.CompletedTask);
+        var invoker = CreateInvoker(observer.Object);
 
         // Act
-        await invoker.OnLeaderLostAsync(TestNodeId, CancellationToken.None);
+        for (var i = 0; i < ObserverNotificationQueue.MaxPending + 10; i++)
+        {
+            invoker.OnLeaderElected(TestNodeId);
+        }
 
-        // Assert
-        mock1.Verify(o => o.OnLeaderLostAsync(TestNodeId, CancellationToken.None), Times.Once);
-        mock2.Verify(o => o.OnLeaderLostAsync(TestNodeId, CancellationToken.None), Times.Once);
+        await ReturnAsync(returned);
+
+        // Assert: the notification in progress, and the backlog behind it
+        Assert.Equal(ObserverNotificationQueue.MaxPending + 1, calls);
     }
 
-    [Fact]
-    public async Task GivenObserverThrows_WhenOnNodeRegisteredAsync_ThenOtherObserversStillCalled()
-    {
-        // Arrange
-        var mock1 = new Mock<ILeaderElectionObserver>();
-        var mock2 = new Mock<ILeaderElectionObserver>();
+    /// <summary>
+    /// Completes an observer call away from the test's synchronization context, so the notifications behind it
+    /// run before this returns.
+    /// </summary>
+    private static Task ReturnAsync(TaskCompletionSource observerCall) => Task.Run(observerCall.SetResult);
 
-        mock1.Setup(o => o.OnNodeRegisteredAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Observer1 failed"));
-
-        var invoker = CreateInvoker([mock1.Object, mock2.Object]);
-
-        // Act
-        await invoker.OnNodeRegisteredAsync(TestNodeId, CancellationToken.None);
-
-        // Assert
-        mock2.Verify(o => o.OnNodeRegisteredAsync(TestNodeId, CancellationToken.None), Times.Once);
-    }
-
-    [Fact]
-    public async Task GivenObserver_WhenOnNodeRemovedAsync_ThenObserverCalled()
-    {
-        // Arrange
-        var mock = new Mock<ILeaderElectionObserver>();
-        var invoker = CreateInvoker([mock.Object]);
-
-        // Act
-        await invoker.OnNodeRemovedAsync(TestNodeId, CancellationToken.None);
-
-        // Assert
-        mock.Verify(o => o.OnNodeRemovedAsync(TestNodeId, CancellationToken.None), Times.Once);
-    }
-
-    private static LeaderElectionObserverInvoker CreateInvoker(ILeaderElectionObserver[] observers)
-    {
-        return new LeaderElectionObserverInvoker(
-            observers,
-            NullLogger<LeaderElectionObserverInvoker>.Instance);
-    }
+    private static LeaderElectionObserverInvoker CreateInvoker(params ILeaderElectionObserver[] observers) =>
+        new(observers, InlineTaskScheduler.Instance, NullLogger<LeaderElectionObserverInvoker>.Instance);
 }

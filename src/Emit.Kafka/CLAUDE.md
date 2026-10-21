@@ -7,7 +7,7 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `README.md` | Kafka provider documentation: configuration, serialization, migration guide | Understand Kafka provider usage or configuration options |
-| `KafkaOutboxProvider.cs` | IOutboxProvider implementation: reads Body, Headers, and Properties from OutboxEntry and produces to Kafka | Understand Kafka entry processing flow |
+| `KafkaOutboxProvider.cs` | IOutboxProvider implementation: delivers each batch in a Kafka transaction with a transactional producer per run of the outbox daemon, fencing earlier runs; messages are handed to the idempotent producer in order without waiting for each; a send that could not reach the broker is reported as such so the daemon can move | Understand Kafka entry processing flow |
 | `KafkaPipelineProducer.cs` | IEventProducer implementation invoking outbound middleware pipeline before serializing and producing | Understand producer pipeline integration |
 | `KafkaSerializer.cs` | Shared serialization utilities for Kafka key/value serialization | Understand or modify Kafka message serialization |
 | `KafkaTopicVerifier.cs` | Hosted service that verifies all required Kafka topics exist before the application starts; auto-provisions missing topics when enabled | Troubleshoot topic provisioning or understand startup topic validation |

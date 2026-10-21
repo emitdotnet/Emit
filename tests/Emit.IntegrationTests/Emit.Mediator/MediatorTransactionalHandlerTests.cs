@@ -46,8 +46,6 @@ public sealed class MediatorTransactionalHandlerTests
 
     public async Task InitializeAsync()
     {
-        await postgresFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
 
         await using var adminConnection = new NpgsqlConnection(postgresFixture.ConnectionString);
         await adminConnection.OpenAsync();

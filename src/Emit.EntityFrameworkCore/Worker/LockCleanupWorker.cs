@@ -55,7 +55,7 @@ internal sealed class LockCleanupWorker<TDbContext>(
             DELETE FROM "{TableNames.Locks}" WHERE expires_at < clock_timestamp()
             """;
 
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open)
         {

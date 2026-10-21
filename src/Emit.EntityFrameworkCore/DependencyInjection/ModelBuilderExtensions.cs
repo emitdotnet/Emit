@@ -1,6 +1,7 @@
 namespace Emit.EntityFrameworkCore.DependencyInjection;
 
 using System.Text.Json;
+using Emit.Configuration;
 using Emit.EntityFrameworkCore.Models;
 using Emit.Models;
 using Microsoft.EntityFrameworkCore;
@@ -93,6 +94,12 @@ public static class ModelBuilderExtensions
             .HasColumnName("node_id")
             .IsRequired();
 
+        // Service that enqueued the entry
+        entity.Property(e => e.ServiceName)
+            .HasColumnName("service_name")
+            .HasMaxLength(ValidationConstants.MaxServiceNameLength)
+            .IsRequired();
+
         // Body - nullable binary blob (null for tombstones)
         entity.Property(e => e.Body)
             .HasColumnName("body");
@@ -124,9 +131,9 @@ public static class ModelBuilderExtensions
                 v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, JsonSerializerOptions.Default) ?? new Dictionary<string, string>(),
                 propertiesComparer);
 
-        // Index for ORDER BY sequence LIMIT N in outbox polling
-        entity.HasIndex(e => e.Sequence)
-            .HasDatabaseName("ix_outbox_sequence");
+        // Index for outbox polling: a service's entries of the node's providers, in sequence order
+        entity.HasIndex(e => new { e.ServiceName, e.SystemId, e.Sequence })
+            .HasDatabaseName("ix_outbox_service_name_system_id_sequence");
     }
 
     private static string SerializeHeaders(List<KeyValuePair<string, byte[]>> headers)
@@ -182,21 +189,26 @@ public static class ModelBuilderExtensions
 
         entity.ToTable(TableNames.Leader);
 
-        // Primary key - always "leader"
-        entity.HasKey(e => e.Key);
-        entity.Property(e => e.Key)
-            .HasColumnName("key")
-            .HasMaxLength(50);
+        // Primary key - one lease per service
+        entity.HasKey(e => e.ServiceName);
+        entity.Property(e => e.ServiceName)
+            .HasColumnName("service_name")
+            .HasMaxLength(ValidationConstants.MaxServiceNameLength);
 
         // Leader node ID
         entity.Property(e => e.NodeId)
             .HasColumnName("node_id")
             .IsRequired();
 
-        // Lease expiry - UTC timestamp
-        entity.Property(e => e.ExpiresAt)
-            .HasColumnName("expires_at")
-            .HasColumnType("timestamp with time zone")
+        // Heartbeat that last acquired or renewed the lease
+        entity.Property(e => e.HeartbeatId)
+            .HasColumnName("heartbeat_id")
+            .IsRequired();
+
+        // How long the lease lasts without renewal
+        entity.Property(e => e.LeaseDuration)
+            .HasColumnName("lease_duration")
+            .HasColumnType("interval")
             .IsRequired();
     }
 
@@ -211,10 +223,21 @@ public static class ModelBuilderExtensions
         entity.Property(e => e.NodeId)
             .HasColumnName("node_id");
 
+        // Service the node belongs to
+        entity.Property(e => e.ServiceName)
+            .HasColumnName("service_name")
+            .HasMaxLength(ValidationConstants.MaxServiceNameLength)
+            .IsRequired();
+
         // Instance identifier
         entity.Property(e => e.InstanceId)
             .HasColumnName("instance_id")
-            .HasMaxLength(200)
+            .HasMaxLength(ValidationConstants.MaxInstanceIdLength)
+            .IsRequired();
+
+        // Daemons the node is able to run
+        entity.Property(e => e.DaemonIds)
+            .HasColumnName("daemon_ids")
             .IsRequired();
 
         // Started at - UTC timestamp
@@ -229,9 +252,18 @@ public static class ModelBuilderExtensions
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // Index for RemoveExpiredNodesAsync DELETE WHERE last_seen_at < clock_timestamp() - @ttl
-        entity.HasIndex(e => e.LastSeenAt)
-            .HasDatabaseName("ix_nodes_last_seen_at");
+        // Last heartbeat, from which the leader judges liveness
+        entity.Property(e => e.HeartbeatId)
+            .HasColumnName("heartbeat_id")
+            .IsRequired();
+
+        entity.Property(e => e.RegistrationTtl)
+            .HasColumnName("registration_ttl")
+            .HasColumnType("interval");
+
+        // Index for the per-service node queries
+        entity.HasIndex(e => e.ServiceName)
+            .HasDatabaseName("ix_nodes_service_name");
     }
 
     private static void ConfigureDaemonAssignmentEntity(ModelBuilder modelBuilder)
@@ -240,8 +272,11 @@ public static class ModelBuilderExtensions
 
         entity.ToTable(TableNames.DaemonAssignments);
 
-        // Primary key - daemon ID
-        entity.HasKey(e => e.DaemonId);
+        // Primary key: service name and daemon ID
+        entity.HasKey(e => new { e.ServiceName, e.DaemonId });
+        entity.Property(e => e.ServiceName)
+            .HasColumnName("service_name")
+            .HasMaxLength(ValidationConstants.MaxServiceNameLength);
         entity.Property(e => e.DaemonId)
             .HasColumnName("daemon_id")
             .HasMaxLength(200);
@@ -268,13 +303,13 @@ public static class ModelBuilderExtensions
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // Drain deadline - nullable UTC timestamp
-        entity.Property(e => e.DrainDeadline)
-            .HasColumnName("drain_deadline")
-            .HasColumnType("timestamp with time zone");
+        // Fencing key - written once, the same for every assignment of the daemon
+        entity.Property(e => e.FencingKey)
+            .HasColumnName("fencing_key")
+            .IsRequired();
 
-        // Index on assigned_node_id for GetNodeAssignmentsAsync
-        entity.HasIndex(e => e.AssignedNodeId)
-            .HasDatabaseName("ix_daemon_assignments_assigned_node_id");
+        // A node reads the assignments of its service
+        entity.HasIndex(e => new { e.ServiceName, e.AssignedNodeId })
+            .HasDatabaseName("ix_daemon_assignments_service_name_assigned_node_id");
     }
 }

@@ -82,23 +82,9 @@ public class MongoDbOutboxRepositoryTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => repository.EnqueueAsync(entry));
         Assert.Contains("transaction", exception.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task GivenMongoDbOutboxRepository_WhenEnqueueWithoutTransaction_ThenThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockEmitContext = new Mock<IEmitContext>();
-        mockEmitContext.Setup(x => x.Transaction).Returns((ITransactionContext?)null);
-
-        var repository = CreateRepository(mockEmitContext.Object);
-        var entry = new OutboxEntry { GroupKey = "test", SystemId = "kafka", Destination = "kafka://localhost:9092/test-topic" };
-
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => repository.EnqueueAsync(entry));
         Assert.Contains("unit of work", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
 
     [Fact]
     public async Task GivenMongoDbOutboxRepository_WhenEnqueueWithWrongTransactionType_ThenThrowsInvalidOperationException()
@@ -130,7 +116,7 @@ public class MongoDbOutboxRepositoryTests
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentNullException>(
             () => repository.DeleteAsync(null!));
-        Assert.Equal("entryId", exception.ParamName);
+        Assert.Equal("entryIds", exception.ParamName);
     }
 
     [Fact]
@@ -141,7 +127,7 @@ public class MongoDbOutboxRepositoryTests
 
         // Act & Assert
         await Assert.ThrowsAsync<FormatException>(
-            () => repository.DeleteAsync("not-a-valid-objectid"));
+            () => repository.DeleteAsync(["not-a-valid-objectid"]));
     }
 
     [Fact]
@@ -153,7 +139,7 @@ public class MongoDbOutboxRepositoryTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => repository.DeleteAsync(unsupportedId));
+            () => repository.DeleteAsync([unsupportedId]));
         Assert.Equal("entryId", exception.ParamName);
         Assert.Contains("Int32", exception.Message);
     }
@@ -173,7 +159,7 @@ public class MongoDbOutboxRepositoryTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => repository.GetBatchAsync(batchSize));
+            () => repository.GetBatchAsync("service", ["kafka"], batchSize));
         Assert.Equal("batchSize", exception.ParamName);
     }
 

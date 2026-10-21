@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 /// <remarks>
 /// <para>
 /// This implementation is designed for sharded MongoDB deployments with GroupKey as the shard key.
-/// All queries include GroupKey as the first filter criterion for optimal shard routing.
+/// Each service reads only its own entries, through the <c>serviceName</c> and <c>sequence</c> index.
 /// </para>
 /// <para>
 /// The sequence counter uses a non-transactional <c>FindOneAndUpdate</c> with <c>$inc</c> on a
@@ -90,31 +90,46 @@ internal sealed class MongoDbOutboxRepository : IOutboxRepository
     }
 
     /// <inheritdoc/>
-    public async Task DeleteAsync(object entryId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(IReadOnlyCollection<object> entryIds, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(entryId);
+        ArgumentNullException.ThrowIfNull(entryIds);
 
-        var objectId = ConvertToObjectId(entryId);
-        var filter = Builders<OutboxEntry>.Filter.Eq(x => x.Id, objectId);
-
-        var result = await outboxCollection.DeleteOneAsync(filter, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        if (result.DeletedCount == 0)
+        List<object> objectIds = [.. entryIds.Select(id => (object)ConvertToObjectId(id))];
+        if (objectIds is [])
         {
-            logger.LogWarning("Outbox entry not found for deletion: id={Id}", entryId);
+            return;
+        }
+
+        // In a transaction, so the entries are deleted together or not at all: a delete interrupted part way would
+        // leave some of a batch to be delivered again after later entries of their group
+        var filter = Builders<OutboxEntry>.Filter.In(x => x.Id, objectIds);
+        using var session = await outboxCollection.Database.Client.StartSessionAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        var result = await session.WithTransactionAsync(
+            (transaction, token) => outboxCollection.DeleteManyAsync(transaction, filter, cancellationToken: token),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (result.DeletedCount < objectIds.Count)
+        {
+            logger.LogWarning(
+                "{Missing} of {Count} outbox entries were not found for deletion",
+                objectIds.Count - result.DeletedCount, objectIds.Count);
         }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<OutboxEntry>> GetBatchAsync(
+        string serviceName,
+        IReadOnlyCollection<string> systemIds,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
 
         return await outboxCollection
-            .Find(Builders<OutboxEntry>.Filter.Empty)
+            .Find(Builders<OutboxEntry>.Filter.And(
+                Builders<OutboxEntry>.Filter.Eq(x => x.ServiceName, serviceName),
+                Builders<OutboxEntry>.Filter.In(x => x.SystemId, systemIds)))
             .Sort(Builders<OutboxEntry>.Sort.Ascending(x => x.Sequence))
             .Limit(batchSize)
             .ToListAsync(cancellationToken)

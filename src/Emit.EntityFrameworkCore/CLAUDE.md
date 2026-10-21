@@ -14,6 +14,7 @@ EF Core persistence provider: outbox repository with PostgreSQL support and auto
 | `IEfCoreTransactionContext.cs` | EF Core-specific ITransactionContext adding access to the underlying DbTransaction | Enlist an EF Core transaction or access the raw DbTransaction |
 | `EfCoreTransactionContext.cs` | IEfCoreTransactionContext implementation wrapping IDbContextTransaction with commit/rollback state tracking | Debug EF Core transaction lifecycle or understand double-commit guard |
 | `EfCoreTransactionExtensions.cs` | BeginTransactionAsync extension on IEmitContext starting an EF Core transaction and associating it with the context | Open a transaction in an EF Core handler before producing messages |
+| `DbContextFactoryExtensions.cs` | Creates the contexts Emit's background work runs on, connected to the primary whatever the user's connection string targets | Change how coordination, locks or outbox delivery connect |
 | `TableNames.cs` | Table name constants (outbox, locks) | Reference or modify table naming |
 | `Emit.EntityFrameworkCore.csproj` | Project file with EF Core and Npgsql dependencies | Configure EF Core provider dependencies |
 

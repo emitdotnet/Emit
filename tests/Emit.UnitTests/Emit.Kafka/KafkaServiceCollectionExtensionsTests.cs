@@ -6,6 +6,7 @@ using global::Emit.DependencyInjection;
 using global::Emit.Kafka;
 using global::Emit.Kafka.DependencyInjection;
 using global::Emit.MongoDB.DependencyInjection;
+using global::Emit.Pipeline;
 using global::MongoDB.Driver;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -535,5 +536,71 @@ public sealed class KafkaServiceCollectionExtensionsTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    [Theory]
+    [InlineData(null, 5)]
+    [InlineData(1, 1)]
+    [InlineData(1_000, 5)]
+    public void GivenMaxInFlightRequests_WhenBuildingTheOutboxProducer_ThenItKeepsAtMostWhatIdempotenceKeepsInOrder(int? configured, int expected)
+    {
+        // Arrange: the outbox hands a group's entries over without waiting for each send, and an idempotent producer
+        // keeps a partition's messages in order with up to five requests in flight
+        var kafka = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        kafka.ConfigureClient(client =>
+        {
+            client.BootstrapServers = "localhost:9092";
+            client.MaxInFlightRequestsPerConnection = configured;
+        });
+
+        // Act
+        var config = KafkaEmitBuilderExtensions.BuildOutboxProducerConfig(kafka, TimeSpan.FromSeconds(15));
+
+        // Assert
+        Assert.Equal(expected, config.MaxInFlight);
+    }
+
+    [Theory]
+    [InlineData(null, null, null, 15_000, 15_000, 60_000, 5)]
+    [InlineData(0, null, null, 15_000, 15_000, 60_000, 5)]
+    [InlineData(3_600_000, null, null, 15_000, 15_000, 60_000, 5)]
+    [InlineData(5_000, null, null, 15_000, 5_000, 60_000, 5)]
+    [InlineData(null, null, null, 500, 500, 60_000, 5)]
+    [InlineData(null, null, null, 0.5, 1, 60_000, 0)]
+    [InlineData(null, null, null, 3_600_000, 900_000, 900_000, 5)]
+    [InlineData(null, 120_000, null, 15_000, 15_000, 120_000, 5)]
+    [InlineData(null, 1_000, null, 15_000, 15_000, 15_000, 5)]
+    [InlineData(null, null, 30_000, 15_000, 15_000, 60_000, 14_999)]
+    public void GivenProducerTimings_WhenBuildingTheOutboxProducer_ThenItIsTransactionalAndItsSendsSettleWithinTheDrainTimeoutAndItsTransactionsFitABatchWithinKafkasLimits(
+        int? configuredMessageMilliseconds,
+        int? configuredTransactionMilliseconds,
+        int? configuredLingerMilliseconds,
+        double drainMilliseconds,
+        int expectedMessageMilliseconds,
+        int expectedTransactionMilliseconds,
+        int expectedLingerMilliseconds)
+    {
+        // Arrange: a stopped outbox daemon waits for its sends to settle, and must stop within the drain timeout. A
+        // transaction covers a whole batch, so it gets Kafka's default unless the producer sets one, never less than a
+        // send, at least a second (the client's minimum) and at most fifteen minutes (the brokers' default maximum).
+        // Messages wait no longer to be batched than they may take to be sent, or the producer cannot be created.
+        var kafka = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        kafka.ConfigureClient(client => client.BootstrapServers = "localhost:9092");
+        kafka.ConfigureProducer(producer =>
+        {
+            producer.MessageTimeout = Milliseconds(configuredMessageMilliseconds);
+            producer.TransactionTimeout = Milliseconds(configuredTransactionMilliseconds);
+            producer.Linger = Milliseconds(configuredLingerMilliseconds);
+        });
+
+        // Act
+        var config = KafkaEmitBuilderExtensions.BuildOutboxProducerConfig(kafka, TimeSpan.FromMilliseconds(drainMilliseconds));
+
+        // Assert
+        Assert.Equal(
+            (expectedMessageMilliseconds, expectedTransactionMilliseconds, expectedLingerMilliseconds, true, ConfluentKafka.Acks.All),
+            (config.MessageTimeoutMs, config.TransactionTimeoutMs, config.LingerMs, config.EnableIdempotence, config.Acks));
+
+        static TimeSpan? Milliseconds(int? value) => value is { } ms ? TimeSpan.FromMilliseconds(ms) : null;
     }
 }

@@ -375,42 +375,57 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
                 messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
 
-            // Convert all context.Headers (user + trace) to byte headers for the outbox entry
-            var headers = new List<KeyValuePair<string, byte[]>>();
-            if (context.Headers is { Count: > 0 })
-            {
-                foreach (var (key, value) in context.Headers)
-                    headers.Add(new(key, System.Text.Encoding.UTF8.GetBytes(value)));
-            }
-
-            // Build properties with provider metadata
-            var properties = new Dictionary<string, string>
-            {
-                [OutboxPropertyKeys.Topic] = topicName,
-                [OutboxPropertyKeys.KeyType] = typeof(TKey).FullName ?? typeof(TKey).Name,
-                [OutboxPropertyKeys.ValueType] = typeof(TValue).FullName ?? typeof(TValue).Name,
-            };
-
-            // Store the serialized key as base64 in properties
-            if (keyBytes is not null)
-            {
-                properties[OutboxPropertyKeys.Key] = Convert.ToBase64String(keyBytes);
-            }
-
-            var groupKey = keyBytes is not null
-                ? $"{Provider.Identifier}:{topicName}:{Convert.ToBase64String(keyBytes)}"
-                : $"{Provider.Identifier}:{topicName}";
-
-            return new Models.OutboxEntry
-            {
-                SystemId = Provider.Identifier,
-                Destination = destination,
-                GroupKey = groupKey,
-                Body = valueBytes,
-                Headers = headers,
-                Properties = properties,
-            };
+            return CreateOutboxEntry(destination, topicName, typeof(TKey), typeof(TValue), keyBytes, valueBytes, context.Headers);
         });
+    }
+
+    /// <summary>
+    /// Creates the outbox entry of a serialized Kafka message. Messages with the same key on the same topic share
+    /// a group, so they are delivered in order.
+    /// </summary>
+    internal static Models.OutboxEntry CreateOutboxEntry(
+        string destination,
+        string topicName,
+        Type keyType,
+        Type valueType,
+        byte[]? keyBytes,
+        byte[]? valueBytes,
+        IEnumerable<KeyValuePair<string, string>>? headers)
+    {
+        // Convert all headers (user + trace) to byte headers for the outbox entry
+        var byteHeaders = new List<KeyValuePair<string, byte[]>>();
+        foreach (var (key, value) in headers ?? [])
+        {
+            byteHeaders.Add(new(key, System.Text.Encoding.UTF8.GetBytes(value)));
+        }
+
+        // Build properties with provider metadata
+        var properties = new Dictionary<string, string>
+        {
+            [OutboxPropertyKeys.Topic] = topicName,
+            [OutboxPropertyKeys.KeyType] = keyType.FullName ?? keyType.Name,
+            [OutboxPropertyKeys.ValueType] = valueType.FullName ?? valueType.Name,
+        };
+
+        // Store the serialized key as base64 in properties
+        if (keyBytes is not null)
+        {
+            properties[OutboxPropertyKeys.Key] = Convert.ToBase64String(keyBytes);
+        }
+
+        var groupKey = keyBytes is not null
+            ? $"{Provider.Identifier}:{topicName}:{Convert.ToBase64String(keyBytes)}"
+            : $"{Provider.Identifier}:{topicName}";
+
+        return new Models.OutboxEntry
+        {
+            SystemId = Provider.Identifier,
+            Destination = destination,
+            GroupKey = groupKey,
+            Body = valueBytes,
+            Headers = byteHeaders,
+            Properties = properties,
+        };
     }
 
     private static IMiddlewarePipeline<SendContext<TValue>> CreateDirectTerminal<TKey, TValue>(

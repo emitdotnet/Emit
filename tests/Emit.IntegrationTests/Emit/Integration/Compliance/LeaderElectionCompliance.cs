@@ -1,61 +1,53 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
-using Emit.Abstractions;
-using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
-using Emit.Abstractions.Observability;
-using Emit.Configuration;
-using Emit.Daemon;
-using Emit.LeaderElection;
-using Emit.Observability;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using Moq;
 using Xunit;
 using static Emit.IntegrationTests.Integration.TestHelpers;
 
 /// <summary>
-/// Compliance tests for leader election behavior. Derived classes provide a database-specific
-/// <see cref="ILeaderElectionPersistence"/> instance. Uses short intervals to keep tests fast
-/// but not flaky.
+/// Compliance tests for leader election persistence. Derived classes provide a database-specific
+/// <see cref="ILeaderElectionPersistence"/> instance.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class LeaderElectionCompliance : IAsyncLifetime
 {
     /// <summary>
-    /// Short lease for tests that need lease expiry (2s).
+    /// Instance identifier every heartbeat sends. It contains quotes, operators and non-ASCII characters, so
+    /// every test also proves the providers never read it as an expression or a field path.
     /// </summary>
-    protected static readonly TimeSpan ShortLeaseDuration = TimeSpan.FromSeconds(2);
+    private const string InstanceId = "it's \"quoted\" $set: { $where: 1 } \\ ' é ✓";
 
     /// <summary>
-    /// Wait time for lease expiry tests (3s = 2s lease + 1s buffer).
+    /// Lease every heartbeat requests. No test waits for it to run out: a lease is taken over by naming the
+    /// heartbeat recorded on it.
     /// </summary>
-    protected static readonly TimeSpan ExpiryWaitTime = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// Long lease for tests that don't need expiry (10s).
+    /// Registration TTL every heartbeat requests, longer than the lease as the options require.
     /// </summary>
-    protected static readonly TimeSpan LongLeaseDuration = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan NodeRegistrationTtl = TimeSpan.FromSeconds(12);
 
-    /// <summary>
-    /// Heartbeat interval for tests (500ms).
-    /// </summary>
-    protected static readonly TimeSpan TestHeartbeatInterval = TimeSpan.FromMilliseconds(500);
+    public enum LeaseHolder
+    {
+        ThisNode,
+        AnotherNode,
+        Nobody,
+    }
 
-    /// <summary>
-    /// Query timeout for tests (250ms).
-    /// </summary>
-    protected static readonly TimeSpan TestQueryTimeout = TimeSpan.FromMilliseconds(250);
+    public enum TakeOver
+    {
+        None,
+        OfTheRecordedHeartbeat,
+        OfAHeartbeatRenewedSince,
+    }
 
-    /// <summary>
-    /// Node registration TTL for tests (must be > LeaseDuration).
-    /// </summary>
-    protected static readonly TimeSpan TestNodeRegistrationTtl = TimeSpan.FromSeconds(12);
-
-    /// <summary>
-    /// Short node TTL for dead node cleanup tests.
-    /// </summary>
-    protected static readonly TimeSpan ShortNodeRegistrationTtl = TimeSpan.FromSeconds(3);
+    public enum Resign
+    {
+        NamingTheRenewingHeartbeat,
+        NamingOnlyAnEarlierHeartbeat,
+        UnderAnotherServiceName,
+    }
 
     /// <summary>
     /// Gets the persistence implementation under test.
@@ -68,427 +60,222 @@ public abstract class LeaderElectionCompliance : IAsyncLifetime
     /// <inheritdoc/>
     public abstract Task DisposeAsync();
 
-    // --- Group 1: Basic Election ---
+    // --- Heartbeats that do not claim the lease ---
 
-    [Fact]
-    public async Task GivenSingleNode_WhenStarted_ThenBecomesLeader()
+    [Theory]
+    [InlineData(LeaseHolder.ThisNode)]
+    [InlineData(LeaseHolder.AnotherNode)]
+    [InlineData(LeaseHolder.Nobody)]
+    public async Task GivenHeartbeatThatDoesNotClaimTheLease_WhenSent_ThenItRegistersTheNodeWithoutTakingOrRenewingTheLeaseAndReportsWhoHoldsIt(LeaseHolder leaseHolder)
     {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node.Worker.StartAsync(CancellationToken.None);
-
-        // Assert
-        await WaitUntilAsync(
-            () => node.Worker.IsLeader,
-            "Single node did not become leader within timeout.");
-
-        // Cleanup
-        await node.Worker.StopAsync(CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task GivenSingleNode_WhenStarted_ThenNodeIsRegistered()
-    {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node.Worker.StartAsync(CancellationToken.None);
-
-        // Assert
-        await WaitUntilAsync(
-            () => node.Observer.NodeRegistered,
-            "Single node was not registered within timeout.");
-
-        // Cleanup
-        await node.Worker.StopAsync(CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task GivenSingleNode_WhenStarted_ThenObserverNotified()
-    {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node.Worker.StartAsync(CancellationToken.None);
-
-        // Assert
-        await WaitUntilAsync(
-            () => node.Observer.LeaderElected && node.Observer.NodeRegistered,
-            "Observer was not notified of leadership and registration within timeout.");
-
-        // Cleanup
-        await node.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 2: Contention ---
-
-    [Fact]
-    public async Task GivenTwoNodes_WhenBothStarted_ThenExactlyOneIsLeader()
-    {
-        // Arrange
-        await using var node1 = CreateNode(LongLeaseDuration);
-        await using var node2 = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node1.Worker.StartAsync(CancellationToken.None);
-        await node2.Worker.StartAsync(CancellationToken.None);
-
-        // Assert — wait for a leader to emerge, then confirm exactly one
-        var workers = new[] { node1.Worker, node2.Worker };
-        await WaitUntilAsync(
-            () => workers.Any(w => w.IsLeader),
-            "No leader emerged among two nodes within timeout.");
-        Assert.Equal(1, workers.Count(w => w.IsLeader));
-
-        // Cleanup
-        await node1.Worker.StopAsync(CancellationToken.None);
-        await node2.Worker.StopAsync(CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task GivenThreeNodes_WhenAllStarted_ThenExactlyOneIsLeader()
-    {
-        // Arrange
-        await using var node1 = CreateNode(LongLeaseDuration);
-        await using var node2 = CreateNode(LongLeaseDuration);
-        await using var node3 = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node1.Worker.StartAsync(CancellationToken.None);
-        await node2.Worker.StartAsync(CancellationToken.None);
-        await node3.Worker.StartAsync(CancellationToken.None);
-
-        // Assert — wait for a leader to emerge, then confirm exactly one
-        var workers = new[] { node1.Worker, node2.Worker, node3.Worker };
-        await WaitUntilAsync(
-            () => workers.Any(w => w.IsLeader),
-            "No leader emerged among three nodes within timeout.");
-        Assert.Equal(1, workers.Count(w => w.IsLeader));
-
-        // Cleanup
-        await node1.Worker.StopAsync(CancellationToken.None);
-        await node2.Worker.StopAsync(CancellationToken.None);
-        await node3.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 3: Lease Expiry & Failover ---
-
-    [Fact]
-    public async Task GivenLeader_WhenStopped_ThenFollowerTakesOver()
-    {
-        // Arrange
-        await using var leader = CreateNode(ShortLeaseDuration);
-        await using var follower = CreateNode(ShortLeaseDuration);
-
-        await leader.Worker.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(
-            () => leader.Worker.IsLeader,
-            "Leader did not establish leadership within timeout.");
-
-        await follower.Worker.StartAsync(CancellationToken.None);
-
-        // Act — stop leader without graceful resign (simulate crash by cancelling)
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        await leader.Worker.StopAsync(cts.Token);
-
-        // Assert — wait for the lease to expire and the follower to take over.
-        // Budget: lease duration + generous slack for several heartbeat cycles, DB
-        // round-trips, and CI host jitter. Polls every 200ms and returns as soon as
-        // the follower acquires leadership, so the happy path stays fast.
-        await WaitUntilAsync(
-            () => follower.Worker.IsLeader,
-            "Follower did not take over after leader stopped.",
-            timeout: ShortLeaseDuration + TimeSpan.FromSeconds(15));
-
-        // Cleanup
-        await follower.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 4: Split-Brain Prevention ---
-
-    [Fact]
-    public async Task GivenTwoNodes_WhenBothAttemptLeadership_ThenNeverTwoLeadersSimultaneously()
-    {
-        // Arrange
-        await using var node1 = CreateNode(LongLeaseDuration);
-        await using var node2 = CreateNode(LongLeaseDuration);
-
-        await node1.Worker.StartAsync(CancellationToken.None);
-        await node2.Worker.StartAsync(CancellationToken.None);
-
-        // Act — poll rapidly over several heartbeat cycles
-        var maxLeaders = 0;
-        for (var i = 0; i < 10; i++)
+        // Arrange: a node whose last heartbeat failed may have written the lease without knowing it, and renewing
+        // it again would keep restarting every other node's wait to take it over; a node leaving its service sends
+        // one right after giving its lease up. A node waits out the lease it is told of, for the duration its holder
+        // recorded, before taking it over.
+        var service = NewServiceName();
+        var node = Guid.NewGuid();
+        var holder = leaseHolder == LeaseHolder.ThisNode ? node : Guid.NewGuid();
+        var claim = Request(service, holder) with { LeaseDuration = TimeSpan.FromSeconds(42) };
+        if (leaseHolder != LeaseHolder.Nobody)
         {
-            await Task.Delay(TestHeartbeatInterval / 2);
-            var leaders = new[] { node1.Worker, node2.Worker }.Count(w => w.IsLeader);
-            maxLeaders = Math.Max(maxLeaders, leaders);
+            Assert.True((await Persistence.HeartbeatAsync(claim)).IsLeader);
         }
 
-        // Assert
-        Assert.True(maxLeaders <= 1, $"Expected at most 1 leader at any time, but found {maxLeaders}");
-
-        // Cleanup
-        await node1.Worker.StopAsync(CancellationToken.None);
-        await node2.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 5: Resignation ---
-
-    [Fact]
-    public async Task GivenLeader_WhenGracefulShutdown_ThenResignsAndDeregisters()
-    {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-        await node.Worker.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(
-            () => node.Worker.IsLeader,
-            "Node did not become leader within timeout.");
+        var request = Request(service, node) with { ClaimsLease = false };
 
         // Act
-        await node.Worker.StopAsync(CancellationToken.None);
-
-        // Assert — a new node can immediately become leader (no lease to wait out)
-        await using var newNode = CreateNode(LongLeaseDuration);
-        await newNode.Worker.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(
-            () => newNode.Worker.IsLeader,
-            "New node did not take over leadership after graceful resignation within timeout.");
-
-        // Cleanup
-        await newNode.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 6: Node Registration ---
-
-    [Fact]
-    public async Task GivenMultipleNodes_WhenStarted_ThenAllRegisteredInDb()
-    {
-        // Arrange
-        await using var node1 = CreateNode(LongLeaseDuration);
-        await using var node2 = CreateNode(LongLeaseDuration);
-
-        // Act
-        await node1.Worker.StartAsync(CancellationToken.None);
-        await node2.Worker.StartAsync(CancellationToken.None);
+        var result = await Persistence.HeartbeatAsync(request);
 
         // Assert
-        await WaitUntilAsync(
-            () => node1.Observer.NodeRegistered && node2.Observer.NodeRegistered,
-            "Not all nodes were registered within timeout.");
-
-        // Cleanup
-        await node1.Worker.StopAsync(CancellationToken.None);
-        await node2.Worker.StopAsync(CancellationToken.None);
+        Assert.Equal(
+            leaseHolder == LeaseHolder.Nobody ? (false, Guid.Empty, Guid.Empty, TimeSpan.Zero) : (false, holder, claim.HeartbeatId, claim.LeaseDuration),
+            (result.IsLeader, result.LeaderNodeId, result.LeaseHeartbeatId, result.LeaseDuration));
+        Assert.Equal(request.HeartbeatId, Assert.Single(await Persistence.GetNodesAsync(service), n => n.NodeId == node).HeartbeatId);
+        Assert.Equal(leaseHolder == LeaseHolder.Nobody, (await Persistence.HeartbeatAsync(Request(service, Guid.NewGuid()))).IsLeader);
     }
 
-    // --- Group 7: Dead Node Cleanup ---
+    // --- Lease takeover ---
 
-    [Fact]
-    public async Task GivenDeadNode_WhenLeaderCleans_ThenNodeRemoved()
+    [Theory]
+    [InlineData(TakeOver.None, false)]
+    [InlineData(TakeOver.OfTheRecordedHeartbeat, true)]
+    [InlineData(TakeOver.OfAHeartbeatRenewedSince, false)]
+    public async Task GivenAnotherNodesLease_WhenANodeAsksToTakeItOver_ThenItGetsItOnlyIfTheHeartbeatItSawGoUnrenewedIsStillRecorded(
+        TakeOver takeOver,
+        bool obtains)
     {
-        // Arrange — register a dead node directly via persistence (simulating a crash
-        // where the node never gets to run its shutdown cleanup)
-        var deadNodeId = Guid.NewGuid();
-        await Persistence.HeartbeatAsync(
-            new HeartbeatRequest(deadNodeId, "dead-instance", ShortLeaseDuration, ShortNodeRegistrationTtl),
-            CancellationToken.None);
+        // Arrange: the node judged on its own clock that the lease went unrenewed; the database only checks that
+        // the lease was not renewed since, so no time it records decides the takeover
+        var service = NewServiceName();
+        var holder = Guid.NewGuid();
+        var node = Guid.NewGuid();
+        var first = Request(service, holder);
+        Assert.True((await Persistence.HeartbeatAsync(first)).IsLeader);
+        if (takeOver == TakeOver.OfAHeartbeatRenewedSince)
+        {
+            Assert.True((await Persistence.HeartbeatAsync(Request(service, holder))).IsLeader);
+        }
 
-        // Start the leader with short TTL for dead node detection
-        await using var leader = CreateNode(ShortLeaseDuration, ShortNodeRegistrationTtl);
-        await leader.Worker.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(
-            () => leader.Worker.IsLeader,
-            "Leader did not establish leadership within timeout.");
-
-        // Act — wait for the dead node's TTL to expire and leader to clean up
-        await Task.Delay(ShortNodeRegistrationTtl + TestHeartbeatInterval);
+        // Act
+        var result = await Persistence.HeartbeatAsync(Request(service, node) with
+        {
+            TakeOverLeaseHeartbeatId = takeOver == TakeOver.None ? null : first.HeartbeatId,
+        });
 
         // Assert
-        Assert.True(leader.Observer.RemovedNodeIds.Count > 0);
-
-        // Cleanup
-        await leader.Worker.StopAsync(CancellationToken.None);
+        Assert.Equal(obtains, result.IsLeader);
+        Assert.Equal(obtains ? node : holder, result.LeaderNodeId);
+        Assert.Equal(obtains, (await Persistence.HeartbeatAsync(Request(service, holder))).LeaderNodeId == node);
     }
 
-    // --- Group 8: Node Deregistration ---
+    // --- Services sharing a database ---
 
     [Fact]
-    public async Task GivenNode_WhenStopped_ThenDeregistersGracefully()
+    public async Task GivenNodesOfTwoServices_WhenGettingTheirRegistrations_ThenReturnsOnlyTheServicesNodesAsTheyLastHeartbeated()
     {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-        await node.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
+        // Arrange: a node declares a new daemon on a later heartbeat, as after a rolling deployment
+        var serviceA = NewServiceName();
+        var serviceB = NewServiceName();
+        var nodeA1 = Guid.NewGuid();
+        var nodeA2 = Guid.NewGuid();
+        await Persistence.HeartbeatAsync(Request(serviceA, nodeA1, ["outbox"]));
+        var latest = Request(serviceA, nodeA1, ["outbox", "search-index"]) with { NodeTtl = TimeSpan.FromSeconds(42) };
+        await Persistence.HeartbeatAsync(latest);
+        await Persistence.HeartbeatAsync(Request(serviceA, nodeA2, []));
+        await Persistence.HeartbeatAsync(Request(serviceB, Guid.NewGuid(), ["outbox"]));
 
         // Act
-        await node.Worker.StopAsync(CancellationToken.None);
+        var nodes = await Persistence.GetNodesAsync(serviceA);
 
-        // Assert — a new node's first heartbeat should not find the old node
-        // (We verify by checking no old node cleanup is needed)
-        await using var newNode = CreateNode(LongLeaseDuration);
-        await newNode.Worker.StartAsync(CancellationToken.None);
-        await WaitForHeartbeats(2);
-        await newNode.Worker.StopAsync(CancellationToken.None);
-    }
-
-    // --- Group 9: Edge Cases ---
-
-    [Fact]
-    public async Task GivenLeader_WhenExtendSucceeds_ThenRemainsLeader()
-    {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
-        await node.Worker.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(
-            () => node.Worker.IsLeader,
-            "Node did not become leader within timeout.");
-
-        // Act — wait for several more heartbeat cycles
-        await WaitForHeartbeats(4);
-
-        // Assert — leadership is retained across lease extensions
-        Assert.True(node.Worker.IsLeader);
-
-        // Cleanup
-        await node.Worker.StopAsync(CancellationToken.None);
+        // Assert
+        Assert.Equal(2, nodes.Count);
+        var a1 = nodes.Single(n => n.NodeId == nodeA1);
+        Assert.Equal(["outbox", "search-index"], a1.DaemonIds.Order());
+        Assert.Equal((latest.HeartbeatId, latest.NodeTtl), (a1.HeartbeatId, a1.RegistrationTtl));
+        Assert.Empty(nodes.Single(n => n.NodeId == nodeA2).DaemonIds);
     }
 
     [Fact]
-    public async Task GivenNoNodes_WhenFirstNodeStarts_ThenBecomesLeaderImmediately()
+    public async Task GivenRemovalThatIsCancelled_WhenRemovingRegistrations_ThenItReportsOnlyWhatItRemovedWithoutFailing()
     {
-        // Arrange
-        await using var node = CreateNode(LongLeaseDuration);
+        // Arrange: the leader moves the daemons of the nodes reported removed, and tries the others again later
+        var service = NewServiceName();
+        var node = Guid.NewGuid();
+        await Persistence.HeartbeatAsync(Request(service, node));
+        var registration = Assert.Single(await Persistence.GetNodesAsync(service));
 
         // Act
-        await node.Worker.StartAsync(CancellationToken.None);
+        var removed = await Persistence.RemoveNodesAsync(service, [registration], new CancellationToken(canceled: true));
 
-        // Assert — the first node to start acquires leadership on its first heartbeat
-        await WaitUntilAsync(
-            () => node.Worker.IsLeader,
-            "First node did not acquire leadership within timeout.");
+        // Assert
+        var remaining = await Persistence.GetNodesAsync(service);
+        Assert.Equal(removed.Contains(node), !remaining.Any(n => n.NodeId == node));
+    }
 
-        // Cleanup
-        await node.Worker.StopAsync(CancellationToken.None);
+    [Fact]
+    public async Task GivenRegistrationsAsTheLeaderRead_WhenRemovingThem_ThenOnlyThoseOfTheServiceNotRenewedSinceAreRemoved()
+    {
+        // Arrange: the leader read the registrations, then judged them dead on its own clock
+        var service = NewServiceName();
+        var otherService = NewServiceName();
+        var silent = Guid.NewGuid();
+        var renewed = Guid.NewGuid();
+        var otherServicesNode = Guid.NewGuid();
+        await Persistence.HeartbeatAsync(Request(service, silent));
+        await Persistence.HeartbeatAsync(Request(service, renewed));
+        await Persistence.HeartbeatAsync(Request(otherService, otherServicesNode));
+        var read = (await Persistence.GetNodesAsync(service)).Concat(await Persistence.GetNodesAsync(otherService)).ToList();
+        await Persistence.HeartbeatAsync(Request(service, renewed));
+
+        // Act
+        var removed = await Persistence.RemoveNodesAsync(service, read);
+
+        // Assert
+        Assert.Equal([silent], removed);
+        Assert.Equal([renewed], (await Persistence.GetNodesAsync(service)).Select(n => n.NodeId));
+        Assert.Equal([otherServicesNode], (await Persistence.GetNodesAsync(otherService)).Select(n => n.NodeId));
+    }
+
+    [Theory]
+    [InlineData(Resign.NamingTheRenewingHeartbeat, true)]
+    [InlineData(Resign.NamingOnlyAnEarlierHeartbeat, false)]
+    [InlineData(Resign.UnderAnotherServiceName, false)]
+    public async Task GivenLeadersOfTwoServices_WhenOneResigns_ThenItsLeaseIsFreedAtOnceOnlyByAResignForItsServiceNamingTheHeartbeatThatRenewedIt(
+        Resign resign,
+        bool freed)
+    {
+        // Arrange: each service elects its own leader; a resign naming only earlier heartbeats is one that reached
+        // the database after the leader renewed its lease
+        var service = NewServiceName();
+        var otherService = NewServiceName();
+        var leader = Guid.NewGuid();
+        var first = Request(service, leader);
+        var renewal = Request(service, leader);
+        Assert.True((await Persistence.HeartbeatAsync(first)).IsLeader);
+        Assert.Equal(renewal.HeartbeatId, (await Persistence.HeartbeatAsync(renewal)).LeaseHeartbeatId);
+        Assert.True((await Persistence.HeartbeatAsync(Request(otherService, Guid.NewGuid()))).IsLeader);
+
+        // Act
+        await (resign switch
+        {
+            Resign.NamingTheRenewingHeartbeat => Persistence.ResignLeadershipAsync(service, leader, [first.HeartbeatId, renewal.HeartbeatId]),
+            Resign.NamingOnlyAnEarlierHeartbeat => Persistence.ResignLeadershipAsync(service, leader, [first.HeartbeatId]),
+            _ => Persistence.ResignLeadershipAsync(otherService, leader, [first.HeartbeatId, renewal.HeartbeatId]),
+        });
+
+        // Assert
+        Assert.Equal(freed, (await Persistence.HeartbeatAsync(Request(service, Guid.NewGuid()))).IsLeader);
+    }
+
+    [Fact]
+    public async Task GivenNodesOfTwoServices_WhenOneNodeAndAnUnknownOneDeregister_ThenOnlyThatNodesRegistrationIsRemoved()
+    {
+        // Arrange
+        var service = NewServiceName();
+        var otherService = NewServiceName();
+        var (leaving, staying, otherServicesNode) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await Persistence.HeartbeatAsync(Request(service, leaving));
+        await Persistence.HeartbeatAsync(Request(service, staying));
+        await Persistence.HeartbeatAsync(Request(otherService, otherServicesNode));
+
+        // Act
+        await Persistence.DeregisterNodeAsync(leaving);
+        await Persistence.DeregisterNodeAsync(Guid.NewGuid());
+
+        // Assert
+        Assert.Equal([staying], (await Persistence.GetNodesAsync(service)).Select(n => n.NodeId));
+        Assert.Equal([otherServicesNode], (await Persistence.GetNodesAsync(otherService)).Select(n => n.NodeId));
+    }
+
+    [Fact]
+    public async Task GivenManyNodesOfOneService_WhenTheyHeartbeatOrTakeOverTheSameLeaseConcurrently_ThenExactlyOneLeadsAndAllAgreeOnIt()
+    {
+        for (var round = 0; round < 5; round++)
+        {
+            // Arrange
+            var service = NewServiceName();
+            var nodes = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid()).ToList();
+
+            // Act: first nobody holds the lease, then all the others saw it go unrenewed; the holder would renew it
+            // whatever the others do, so it stays out of the race
+            var acquired = await Task.WhenAll(nodes.Select(n => Task.Run(() => Persistence.HeartbeatAsync(Request(service, n)))));
+            var unrenewed = acquired[0].LeaseHeartbeatId;
+            var holder = acquired[0].LeaderNodeId;
+            var takenOver = await Task.WhenAll(nodes.Where(n => n != holder).Select(n => Task.Run(() =>
+                Persistence.HeartbeatAsync(Request(service, n) with { TakeOverLeaseHeartbeatId = unrenewed }))));
+
+            // Assert
+            foreach (var results in new[] { acquired, takenOver })
+            {
+                var leader = Assert.Single(results, r => r.IsLeader).LeaderNodeId;
+                Assert.All(results, r => Assert.Equal(leader, r.LeaderNodeId));
+            }
+        }
     }
 
     // --- Helpers ---
 
-    private TestNode CreateNode(TimeSpan leaseDuration, TimeSpan? nodeTtl = null)
-    {
-        var observer = new TestLeaderElectionObserver();
-        var invoker = new LeaderElectionObserverInvoker(
-            [observer],
-            NullLogger<LeaderElectionObserverInvoker>.Instance);
+    protected static HeartbeatRequest Request(string serviceName, Guid nodeId, IReadOnlyList<string>? daemonIds = null) =>
+        new(serviceName, nodeId, InstanceId, daemonIds ?? [], LeaseDuration, NodeRegistrationTtl, Guid.NewGuid());
 
-        var options = new LeaderElectionOptions
-        {
-            HeartbeatInterval = TestHeartbeatInterval,
-            LeaseDuration = leaseDuration,
-            QueryTimeout = TestQueryTimeout,
-            NodeRegistrationTtl = nodeTtl ?? TestNodeRegistrationTtl
-        };
-
-        var daemonCoordinator = new DaemonCoordinator(
-            new NoOpDaemonAssignmentPersistence(),
-            Persistence,
-            [],
-            new DaemonObserverInvoker([], NullLogger<DaemonObserverInvoker>.Instance),
-            Options.Create(new DaemonOptions()),
-            TimeProvider.System,
-            NullLogger<DaemonCoordinator>.Instance);
-
-        var worker = new HeartbeatWorker(
-            Persistence,
-            daemonCoordinator,
-            invoker,
-            Options.Create(options),
-            Mock.Of<INodeIdentity>(n => n.NodeId == Guid.NewGuid()),
-            NullLogger<HeartbeatWorker>.Instance);
-
-        return new TestNode(worker, observer);
-    }
-
-    private static async Task WaitForHeartbeats(int count)
-    {
-        await Task.Delay(TestHeartbeatInterval * count + TimeSpan.FromMilliseconds(500));
-    }
-
-    /// <summary>
-    /// Holds a worker and its observer for test assertions.
-    /// </summary>
-    private sealed class TestNode(HeartbeatWorker worker, TestLeaderElectionObserver observer) : IAsyncDisposable
-    {
-        public HeartbeatWorker Worker { get; } = worker;
-        public TestLeaderElectionObserver Observer { get; } = observer;
-
-        public async ValueTask DisposeAsync()
-        {
-            Worker.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// No-op daemon assignment persistence for leader election tests (no daemons registered).
-    /// </summary>
-    private sealed class NoOpDaemonAssignmentPersistence : IDaemonAssignmentPersistence
-    {
-        public Task<DaemonAssignment> AssignAsync(string daemonId, Guid nodeId, CancellationToken ct) =>
-            throw new NotSupportedException();
-
-        public Task<DaemonAssignment?> RevokeAsync(string daemonId, TimeSpan drainTimeout, CancellationToken ct) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<DaemonAssignment>> GetAllAssignmentsAsync(CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<DaemonAssignment>>([]);
-
-        public Task<IReadOnlyList<DaemonAssignment>> GetNodeAssignmentsAsync(Guid nodeId, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<DaemonAssignment>>([]);
-
-        public Task<bool> AcknowledgeAsync(string daemonId, long generation, CancellationToken ct) =>
-            Task.FromResult(false);
-
-        public Task<bool> ConfirmDrainAsync(string daemonId, long generation, CancellationToken ct) =>
-            Task.FromResult(false);
-    }
-
-    /// <summary>
-    /// Test observer that records events for assertions.
-    /// </summary>
-    private sealed class TestLeaderElectionObserver : ILeaderElectionObserver
-    {
-        public bool LeaderElected { get; private set; }
-        public bool LeaderLost { get; private set; }
-        public bool NodeRegistered { get; private set; }
-        public List<Guid> RemovedNodeIds { get; } = [];
-
-        public Task OnLeaderElectedAsync(Guid nodeId, CancellationToken cancellationToken)
-        {
-            LeaderElected = true;
-            return Task.CompletedTask;
-        }
-
-        public Task OnLeaderLostAsync(Guid nodeId, CancellationToken cancellationToken)
-        {
-            LeaderLost = true;
-            return Task.CompletedTask;
-        }
-
-        public Task OnNodeRegisteredAsync(Guid nodeId, CancellationToken cancellationToken)
-        {
-            NodeRegistered = true;
-            return Task.CompletedTask;
-        }
-
-        public Task OnNodeRemovedAsync(Guid nodeId, CancellationToken cancellationToken)
-        {
-            RemovedNodeIds.Add(nodeId);
-            return Task.CompletedTask;
-        }
-    }
 }

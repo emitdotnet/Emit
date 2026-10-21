@@ -7,6 +7,14 @@ public class OutboxOptionsValidatorTests
 {
     private readonly OutboxOptionsValidator validator = new();
 
+    public enum Bound
+    {
+        LeastBatchSize,
+        LargestBatchSize,
+        LeastConcurrentGroups,
+        ShortestPollingInterval,
+    }
+
     [Fact]
     public void GivenDefaultOptions_WhenValidated_ThenSucceeds()
     {
@@ -21,84 +29,36 @@ public class OutboxOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void GivenZeroOrNegativeBatchSize_WhenValidated_ThenFails(int batchSize)
+    [InlineData(Bound.LeastBatchSize, true)]
+    [InlineData(Bound.LeastBatchSize, false)]
+    [InlineData(Bound.LargestBatchSize, true)]
+    [InlineData(Bound.LargestBatchSize, false)]
+    [InlineData(Bound.LeastConcurrentGroups, true)]
+    [InlineData(Bound.LeastConcurrentGroups, false)]
+    [InlineData(Bound.ShortestPollingInterval, true)]
+    [InlineData(Bound.ShortestPollingInterval, false)]
+    public void GivenOptionAtOrJustPastItsBound_WhenValidated_ThenOnlyTheBoundItselfIsAccepted(Bound bound, bool atBound)
     {
         // Arrange
-        var options = new OutboxOptions { BatchSize = batchSize };
-
-        // Act
-        var result = validator.Validate(null, options);
-
-        // Assert
-        Assert.True(result.Failed);
-        Assert.Contains($"{nameof(OutboxOptions.BatchSize)} must be greater than 0", result.FailureMessage);
-    }
-
-    [Fact]
-    public void GivenBatchSizeExceedsMax_WhenValidated_ThenFails()
-    {
-        // Arrange
-        var options = new OutboxOptions { BatchSize = ValidationConstants.MaxBatchSize + 1 };
-
-        // Act
-        var result = validator.Validate(null, options);
-
-        // Assert
-        Assert.True(result.Failed);
-        Assert.Contains($"{nameof(OutboxOptions.BatchSize)} must be at most {ValidationConstants.MaxBatchSize}", result.FailureMessage);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void GivenZeroOrNegativeMaxConcurrentGroups_WhenValidated_ThenFails(int maxConcurrentGroups)
-    {
-        // Arrange
-        var options = new OutboxOptions { MaxConcurrentGroups = maxConcurrentGroups };
-
-        // Act
-        var result = validator.Validate(null, options);
-
-        // Assert
-        Assert.True(result.Failed);
-        Assert.Contains($"{nameof(OutboxOptions.MaxConcurrentGroups)} must be greater than 0", result.FailureMessage);
-    }
-
-    [Fact]
-    public void GivenPollingIntervalBelowMinimum_WhenValidated_ThenFails()
-    {
-        // Arrange
-        var options = new OutboxOptions
+        var (option, options) = bound switch
         {
-            PollingInterval = ValidationConstants.MinPollingInterval - TimeSpan.FromMilliseconds(1)
+            Bound.LeastBatchSize => (nameof(OutboxOptions.BatchSize), new OutboxOptions { BatchSize = atBound ? 1 : 0 }),
+            Bound.LargestBatchSize => (nameof(OutboxOptions.BatchSize), new OutboxOptions { BatchSize = ValidationConstants.MaxBatchSize + (atBound ? 0 : 1) }),
+            Bound.LeastConcurrentGroups => (nameof(OutboxOptions.MaxConcurrentGroups), new OutboxOptions { MaxConcurrentGroups = atBound ? 1 : 0 }),
+            _ => (nameof(OutboxOptions.PollingInterval), new OutboxOptions
+            {
+                PollingInterval = ValidationConstants.MinPollingInterval - (atBound ? TimeSpan.Zero : TimeSpan.FromMilliseconds(1)),
+            }),
         };
 
         // Act
         var result = validator.Validate(null, options);
 
         // Assert
-        Assert.True(result.Failed);
-        Assert.Contains($"{nameof(OutboxOptions.PollingInterval)} must be at least", result.FailureMessage);
-    }
-
-    [Fact]
-    public void GivenMultipleViolations_WhenValidated_ThenReportsAll()
-    {
-        // Arrange
-        var options = new OutboxOptions
+        Assert.Equal(atBound, result.Succeeded);
+        if (!atBound)
         {
-            PollingInterval = TimeSpan.Zero,
-            BatchSize = 0
-        };
-
-        // Act
-        var result = validator.Validate(null, options);
-
-        // Assert
-        Assert.True(result.Failed);
-        Assert.Contains($"{nameof(OutboxOptions.PollingInterval)} must be at least", result.FailureMessage);
-        Assert.Contains($"{nameof(OutboxOptions.BatchSize)} must be greater than 0", result.FailureMessage);
+            Assert.All(result.Failures!, f => Assert.StartsWith($"{option} ", f, StringComparison.Ordinal));
+        }
     }
 }

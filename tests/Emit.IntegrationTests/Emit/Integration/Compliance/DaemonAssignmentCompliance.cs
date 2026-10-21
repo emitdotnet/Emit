@@ -2,6 +2,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using Emit.Abstractions.Daemon;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 
 /// <summary>
 /// Compliance tests for daemon assignment persistence. Derived classes provide a database-specific
@@ -10,15 +11,36 @@ using Xunit;
 [Trait("Category", "Integration")]
 public abstract class DaemonAssignmentCompliance : IAsyncLifetime
 {
-    private static readonly Guid NodeA = Guid.NewGuid();
-    private static readonly Guid NodeB = Guid.NewGuid();
     private const string DaemonId = "test:daemon";
     private const string DaemonId2 = "test:daemon-2";
+    private const string SharedDaemonId = "emit:outbox";
+
+    public enum Write
+    {
+        Assign,
+        Acknowledge,
+        Revoke,
+        ConfirmDrain,
+        Remove,
+    }
+
+    public enum Release
+    {
+        Removed,
+        DrainedOnceActive,
+        DrainedBeforeAcknowledged,
+    }
 
     /// <summary>
     /// Gets the persistence implementation under test.
     /// </summary>
     protected abstract IDaemonAssignmentPersistence Persistence { get; }
+
+    private readonly Guid nodeA = Guid.NewGuid();
+    private readonly Guid nodeB = Guid.NewGuid();
+    private readonly string serviceName = NewServiceName();
+    private readonly string serviceA = NewServiceName();
+    private readonly string serviceB = NewServiceName();
 
     /// <inheritdoc/>
     public abstract Task InitializeAsync();
@@ -26,228 +48,251 @@ public abstract class DaemonAssignmentCompliance : IAsyncLifetime
     /// <inheritdoc/>
     public abstract Task DisposeAsync();
 
-    // --- Group 1: Basic Assignment ---
+    // --- Assignment ---
 
-    [Fact]
-    public async Task GivenNoPriorAssignment_WhenAssign_ThenCreatesWithGeneration1()
+    [Theory]
+    [InlineData(DaemonAssignmentState.Assigning)]
+    [InlineData(DaemonAssignmentState.Active)]
+    [InlineData(DaemonAssignmentState.Revoking)]
+    public async Task GivenExistingAssignment_WhenReassignedFromItAsRead_ThenTheNextGenerationIsAssigned(DaemonAssignmentState readState)
     {
-        // Arrange & Act
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-
-        // Assert
-        Assert.Equal(DaemonId, assignment.DaemonId);
-        Assert.Equal(NodeA, assignment.AssignedNodeId);
-        Assert.Equal(1, assignment.Generation);
-        Assert.Equal(DaemonAssignmentState.Assigning, assignment.State);
-        Assert.Null(assignment.DrainDeadline);
-    }
-
-    [Fact]
-    public async Task GivenExistingAssignment_WhenReassign_ThenIncrementsGeneration()
-    {
-        // Arrange
-        var first = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
+        // Arrange: the leader reassigns an unacknowledged daemon, or a running or revoked one whose node is gone
+        var read = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(read);
+        if (readState != DaemonAssignmentState.Assigning)
+        {
+            Assert.True(await Persistence.AcknowledgeAsync(serviceName, DaemonId, read.Generation, CancellationToken.None));
+            read = readState == DaemonAssignmentState.Active
+                ? Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None))
+                : await Persistence.RevokeAsync(serviceName, DaemonId, read.Generation, CancellationToken.None);
+            Assert.NotNull(read);
+            Assert.Equal(readState, read.State);
+        }
 
         // Act
-        var second = await Persistence.AssignAsync(DaemonId, NodeB, CancellationToken.None);
+        var reassigned = await Persistence.AssignAsync(serviceName, DaemonId, nodeB, read, CancellationToken.None);
 
         // Assert
-        Assert.Equal(first.Generation + 1, second.Generation);
-        Assert.Equal(NodeB, second.AssignedNodeId);
-        Assert.Equal(DaemonAssignmentState.Assigning, second.State);
+        Assert.NotNull(reassigned);
+        Assert.Equal(read.Generation + 1, reassigned.Generation);
+        Assert.Equal(nodeB, reassigned.AssignedNodeId);
+        Assert.NotEqual(Guid.Empty, reassigned.FencingKey);
+        Assert.Equal(read.FencingKey, reassigned.FencingKey);
+        Assert.Equal(DaemonAssignmentState.Assigning, reassigned.State);
     }
 
     [Fact]
-    public async Task GivenMultipleAssignments_WhenGetAll_ThenReturnsAll()
+    public async Task GivenAssignmentsOnTwoNodes_WhenRead_ThenTheServiceSeesBothAndEachNodeOnlyItsOwnInItsServiceUnderItsServicesFencingKey()
     {
-        // Arrange
-        await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AssignAsync(DaemonId2, NodeB, CancellationToken.None);
+        // Arrange: a node id can come back in another service, for example a stable id after the service was
+        // renamed, and a row its earlier process left there must not be run as one of its own. A daemon's fencing
+        // key is its own in each service, so a run in one service never fences a run in another.
+        var assigned = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        await Persistence.AssignAsync(serviceName, DaemonId2, nodeB, expected: null, CancellationToken.None);
+        var inOtherService = await Persistence.AssignAsync(serviceA, DaemonId, nodeA, expected: null, CancellationToken.None);
 
         // Act
-        var all = await Persistence.GetAllAssignmentsAsync(CancellationToken.None);
+        var all = await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None);
+        var onNodeA = await Persistence.GetNodeAssignmentsAsync(serviceName, nodeA, CancellationToken.None);
 
         // Assert
-        Assert.Equal(2, all.Count);
-        Assert.Contains(all, a => a.DaemonId == DaemonId);
-        Assert.Contains(all, a => a.DaemonId == DaemonId2);
+        Assert.Equal([DaemonId, DaemonId2], all.Select(a => a.DaemonId).Order());
+        Assert.Equal((DaemonId, assigned!.FencingKey), (Assert.Single(onNodeA).DaemonId, Assert.Single(onNodeA).FencingKey));
+        Assert.NotEqual(assigned.FencingKey, inOtherService!.FencingKey);
     }
 
-    [Fact]
-    public async Task GivenAssignmentsOnDifferentNodes_WhenGetNodeAssignments_ThenFiltersCorrectly()
+    // --- State transitions ---
+
+    [Theory]
+    [InlineData(DaemonAssignmentState.Active, Write.Acknowledge)]
+    [InlineData(DaemonAssignmentState.Active, Write.ConfirmDrain)]
+    [InlineData(DaemonAssignmentState.Assigning, Write.ConfirmDrain)]
+    [InlineData(DaemonAssignmentState.Revoking, Write.Acknowledge)]
+    public async Task GivenAssignmentInAState_WhenAWriteOfItsGenerationThatStateDoesNotAllow_ThenItIsRefusedAndNothingChanges(
+        DaemonAssignmentState state,
+        Write write)
     {
-        // Arrange
-        await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AssignAsync(DaemonId2, NodeB, CancellationToken.None);
+        // Arrange: only an assignment being assigned can be acknowledged, and only a revoked one confirmed drained
+        var assignment = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(assignment);
+        if (state != DaemonAssignmentState.Assigning)
+        {
+            Assert.True(await Persistence.AcknowledgeAsync(serviceName, DaemonId, assignment.Generation, CancellationToken.None));
+        }
+
+        if (state == DaemonAssignmentState.Revoking)
+        {
+            assignment = await Persistence.RevokeAsync(serviceName, DaemonId, assignment.Generation, CancellationToken.None);
+            Assert.NotNull(assignment);
+        }
 
         // Act
-        var nodeAAssignments = await Persistence.GetNodeAssignmentsAsync(NodeA, CancellationToken.None);
+        var applied = write == Write.Acknowledge
+            ? await Persistence.AcknowledgeAsync(serviceName, DaemonId, assignment.Generation, CancellationToken.None)
+            : await Persistence.ConfirmDrainAsync(serviceName, DaemonId, assignment.Generation, CancellationToken.None);
 
         // Assert
-        Assert.Single(nodeAAssignments);
-        Assert.Equal(DaemonId, nodeAAssignments[0].DaemonId);
+        Assert.False(applied);
+        var unchanged = Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None));
+        Assert.Equal((assignment.Generation, state), (unchanged.Generation, unchanged.State));
     }
 
-    // --- Group 2: Acknowledge ---
+    // --- Revoke ---
 
     [Fact]
-    public async Task GivenAssigningState_WhenAcknowledge_ThenTransitionsToActive()
-    {
-        // Arrange
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-
-        // Act
-        var acknowledged = await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-
-        // Assert
-        Assert.True(acknowledged);
-
-        var all = await Persistence.GetAllAssignmentsAsync(CancellationToken.None);
-        var updated = Assert.Single(all);
-        Assert.Equal(DaemonAssignmentState.Active, updated.State);
-    }
-
-    [Fact]
-    public async Task GivenStaleGeneration_WhenAcknowledge_ThenReturnsFalse()
-    {
-        // Arrange
-        var first = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AssignAsync(DaemonId, NodeB, CancellationToken.None); // Overwrites with gen+1
-
-        // Act
-        var acknowledged = await Persistence.AcknowledgeAsync(DaemonId, first.Generation, CancellationToken.None);
-
-        // Assert
-        Assert.False(acknowledged);
-    }
-
-    [Fact]
-    public async Task GivenActiveState_WhenAcknowledge_ThenReturnsFalse()
-    {
-        // Arrange
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-
-        // Act — try to acknowledge again when already Active
-        var acknowledged = await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-
-        // Assert
-        Assert.False(acknowledged);
-    }
-
-    // --- Group 3: Revoke ---
-
-    [Fact]
-    public async Task GivenActiveAssignment_WhenRevoke_ThenTransitionsToRevoking()
-    {
-        // Arrange
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-
-        // Act
-        var revoked = await Persistence.RevokeAsync(DaemonId, TimeSpan.FromSeconds(30), CancellationToken.None);
-
-        // Assert
-        Assert.NotNull(revoked);
-        Assert.Equal(DaemonAssignmentState.Revoking, revoked.State);
-        Assert.Equal(assignment.Generation + 1, revoked.Generation);
-        Assert.NotNull(revoked.DrainDeadline);
-    }
-
-    [Fact]
-    public async Task GivenNonExistentDaemon_WhenRevoke_ThenReturnsNull()
+    public async Task GivenDaemonNeverAssigned_WhenRevoked_ThenNothingIsRevokedNorCreated()
     {
         // Act
-        var result = await Persistence.RevokeAsync("nonexistent", TimeSpan.FromSeconds(30), CancellationToken.None);
+        var result = await Persistence.RevokeAsync(serviceName, DaemonId, expectedGeneration: 1, CancellationToken.None);
 
         // Assert
         Assert.Null(result);
+        Assert.Empty(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None));
     }
 
-    // --- Group 4: ConfirmDrain ---
+    // --- Services sharing a database ---
 
-    [Fact]
-    public async Task GivenRevokingState_WhenConfirmDrain_ThenDeletesAssignment()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GivenSameDaemonIdInTwoServices_WhenOneServiceReleasesIt_ThenTheOtherServicesAssignmentIsUntouched(bool releasedByDrain)
     {
         // Arrange
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-        var revoked = await Persistence.RevokeAsync(DaemonId, TimeSpan.FromSeconds(30), CancellationToken.None);
+        var inA = await Persistence.AssignAsync(serviceA, SharedDaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(inA);
+        var inB = await Persistence.AssignAsync(serviceB, SharedDaemonId, nodeB, expected: null, CancellationToken.None);
+        Assert.NotNull(inB);
+        Assert.Equal((1L, 1L), (inA.Generation, inB.Generation));
 
         // Act
-        var confirmed = await Persistence.ConfirmDrainAsync(DaemonId, revoked!.Generation, CancellationToken.None);
+        Assert.True(await Persistence.AcknowledgeAsync(serviceA, SharedDaemonId, inA.Generation, CancellationToken.None));
+        if (releasedByDrain)
+        {
+            var revoked = await Persistence.RevokeAsync(serviceA, SharedDaemonId, inA.Generation, CancellationToken.None);
+            Assert.True(await Persistence.ConfirmDrainAsync(serviceA, SharedDaemonId, revoked!.Generation, CancellationToken.None));
+        }
+        else
+        {
+            Assert.True(await Persistence.RemoveAsync(serviceA, SharedDaemonId, inA.Generation, CancellationToken.None));
+        }
 
         // Assert
-        Assert.True(confirmed);
-
-        var all = await Persistence.GetAllAssignmentsAsync(CancellationToken.None);
-        Assert.Empty(all);
+        Assert.Empty(await Persistence.GetAllAssignmentsAsync(serviceA, CancellationToken.None));
+        var remaining = Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceB, CancellationToken.None));
+        Assert.Equal((nodeB, 1L, DaemonAssignmentState.Assigning), (remaining.AssignedNodeId, remaining.Generation, remaining.State));
     }
 
-    [Fact]
-    public async Task GivenStaleGeneration_WhenConfirmDrain_ThenReturnsFalse()
-    {
-        // Arrange
-        var assignment = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        await Persistence.AcknowledgeAsync(DaemonId, assignment.Generation, CancellationToken.None);
-        await Persistence.RevokeAsync(DaemonId, TimeSpan.FromSeconds(30), CancellationToken.None);
+    // --- Compare-and-swap writes ---
 
-        // Act — use the original (stale) generation
-        var confirmed = await Persistence.ConfirmDrainAsync(DaemonId, assignment.Generation, CancellationToken.None);
+    [Fact]
+    public async Task GivenAssignmentAcknowledgedSinceItWasRead_WhenReassignedFromThatRead_ThenNothingChanges()
+    {
+        // Arrange: the acknowledgement keeps the generation, so only the state tells the read is stale; reassigning
+        // it would move a daemon its node has started
+        var read = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(read);
+        Assert.True(await Persistence.AcknowledgeAsync(serviceName, DaemonId, read.Generation, CancellationToken.None));
+
+        // Act
+        var assigned = await Persistence.AssignAsync(serviceName, DaemonId, nodeB, read, CancellationToken.None);
 
         // Assert
-        Assert.False(confirmed);
+        Assert.Null(assigned);
+        var unchanged = Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None));
+        Assert.Equal((nodeA, read.Generation, DaemonAssignmentState.Active), (unchanged.AssignedNodeId, unchanged.Generation, unchanged.State));
     }
 
-    // --- Group 5: Full Lifecycle ---
-
-    [Fact]
-    public async Task GivenFullLifecycle_WhenAssignAcknowledgeRevokeDrain_ThenCompletesSuccessfully()
+    [Theory]
+    [InlineData(Write.Assign)]
+    [InlineData(Write.Acknowledge)]
+    [InlineData(Write.Revoke)]
+    [InlineData(Write.ConfirmDrain)]
+    [InlineData(Write.Remove)]
+    public async Task GivenAssignmentThatMovedPastAGeneration_WhenAWriteUsesThatGeneration_ThenItIsRefusedAndNothingChanges(Write write)
     {
-        // Arrange & Act — Assign
-        var assigned = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
-        Assert.Equal(DaemonAssignmentState.Assigning, assigned.State);
+        // Arrange: the revoke moved the assignment to the next generation, so writes based on the earlier read
+        // come from a node or leader that no longer owns it
+        var stale = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(stale);
+        Assert.True(await Persistence.AcknowledgeAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None));
+        var current = await Persistence.RevokeAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None);
+        Assert.NotNull(current);
 
-        // Acknowledge
-        var acked = await Persistence.AcknowledgeAsync(DaemonId, assigned.Generation, CancellationToken.None);
-        Assert.True(acked);
+        // Act
+        var applied = write switch
+        {
+            Write.Assign => await Persistence.AssignAsync(serviceName, DaemonId, nodeB, stale, CancellationToken.None) is not null,
+            Write.Acknowledge => await Persistence.AcknowledgeAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None),
+            Write.Revoke => await Persistence.RevokeAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None) is not null,
+            Write.ConfirmDrain => await Persistence.ConfirmDrainAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None),
+            _ => await Persistence.RemoveAsync(serviceName, DaemonId, stale.Generation, CancellationToken.None),
+        };
 
-        // Verify Active
-        var active = (await Persistence.GetAllAssignmentsAsync(CancellationToken.None))[0];
-        Assert.Equal(DaemonAssignmentState.Active, active.State);
+        // Assert
+        Assert.False(applied);
+        var unchanged = Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None));
+        Assert.Equal(
+            (nodeA, current.Generation, DaemonAssignmentState.Revoking),
+            (unchanged.AssignedNodeId, unchanged.Generation, unchanged.State));
+    }
 
-        // Revoke
-        var revoked = await Persistence.RevokeAsync(DaemonId, TimeSpan.FromSeconds(30), CancellationToken.None);
-        Assert.NotNull(revoked);
-        Assert.Equal(DaemonAssignmentState.Revoking, revoked.State);
+    [Theory]
+    [InlineData(Release.Removed)]
+    [InlineData(Release.DrainedOnceActive)]
+    [InlineData(Release.DrainedBeforeAcknowledged)]
+    public async Task GivenReleasedAssignment_WhenTheDaemonIsAssignedAgain_ThenItsGenerationsNeverRepeatAndItKeepsItsFencingKey(Release release)
+    {
+        // Arrange: a generation is a fencing token, so it must never be handed out twice, whichever way it was
+        // released; the released row that remembers it is not an assignment of any node. The leader also revokes
+        // an assignment its node has not acknowledged yet.
+        var first = await Persistence.AssignAsync(serviceName, DaemonId, nodeA, expected: null, CancellationToken.None);
+        Assert.NotNull(first);
+        var lastGeneration = first.Generation;
+        if (release != Release.Removed)
+        {
+            if (release == Release.DrainedOnceActive)
+            {
+                Assert.True(await Persistence.AcknowledgeAsync(serviceName, DaemonId, first.Generation, CancellationToken.None));
+            }
 
-        // Confirm drain
-        var drained = await Persistence.ConfirmDrainAsync(DaemonId, revoked.Generation, CancellationToken.None);
-        Assert.True(drained);
+            var revoked = await Persistence.RevokeAsync(serviceName, DaemonId, first.Generation, CancellationToken.None);
+            Assert.NotNull(revoked);
+            lastGeneration = revoked.Generation;
+            Assert.True(await Persistence.ConfirmDrainAsync(serviceName, DaemonId, revoked.Generation, CancellationToken.None));
+        }
+        else
+        {
+            Assert.True(await Persistence.RemoveAsync(serviceName, DaemonId, first.Generation, CancellationToken.None));
+        }
 
-        // Assert — assignment is gone
-        var remaining = await Persistence.GetAllAssignmentsAsync(CancellationToken.None);
-        Assert.Empty(remaining);
+        Assert.Empty(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None));
+        Assert.Empty(await Persistence.GetNodeAssignmentsAsync(serviceName, nodeA, CancellationToken.None));
+
+        // Act
+        var again = await Persistence.AssignAsync(serviceName, DaemonId, nodeB, expected: null, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(again);
+        Assert.True(again.Generation > lastGeneration);
+        Assert.Equal(first.FencingKey, again.FencingKey);
     }
 
     [Fact]
-    public async Task GivenReassignment_WhenOldNodeAcknowledges_ThenRejectedByGeneration()
+    public async Task GivenManyLeadersAssigningTheSameNewDaemonAtOnce_WhenRacing_ThenExactlyOneSucceeds()
     {
-        // Arrange — Assign to NodeA
-        var assignedToA = await Persistence.AssignAsync(DaemonId, NodeA, CancellationToken.None);
+        for (var round = 0; round < 5; round++)
+        {
+            // Arrange
+            var daemonId = $"race-{round}";
 
-        // Reassign to NodeB (leader detected NodeA as dead)
-        var assignedToB = await Persistence.AssignAsync(DaemonId, NodeB, CancellationToken.None);
-        Assert.True(assignedToB.Generation > assignedToA.Generation);
+            // Act
+            var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+                Task.Run(() => Persistence.AssignAsync(serviceName, daemonId, Guid.NewGuid(), expected: null, CancellationToken.None))));
 
-        // Act — NodeA tries to acknowledge with stale generation
-        var oldAck = await Persistence.AcknowledgeAsync(DaemonId, assignedToA.Generation, CancellationToken.None);
-
-        // Assert — stale acknowledgment rejected
-        Assert.False(oldAck);
-
-        // NodeB can still acknowledge
-        var newAck = await Persistence.AcknowledgeAsync(DaemonId, assignedToB.Generation, CancellationToken.None);
-        Assert.True(newAck);
+            // Assert
+            var winner = Assert.Single(results, r => r is not null)!;
+            var stored = Assert.Single(await Persistence.GetAllAssignmentsAsync(serviceName, CancellationToken.None), a => a.DaemonId == daemonId);
+            Assert.Equal((winner.AssignedNodeId, 1L), (stored.AssignedNodeId, stored.Generation));
+        }
     }
 }

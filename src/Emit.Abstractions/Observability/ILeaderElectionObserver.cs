@@ -10,8 +10,10 @@ namespace Emit.Abstractions.Observability;
 /// so implementors only need to override the callbacks they care about.
 /// </para>
 /// <para>
-/// Observer exceptions are caught and logged individually — a failing observer never
-/// blocks other observers or interrupts leader election.
+/// Observer exceptions are caught and logged individually, so a failing observer never
+/// blocks other observers or interrupts leader election. Observers are notified in order, away from the
+/// heartbeat, and the cancellation token they receive is not cancelled. A slow observer delays later
+/// notifications, never leader election; notifications waiting behind it beyond a bounded backlog are dropped.
 /// </para>
 /// </remarks>
 public interface ILeaderElectionObserver : IObserver

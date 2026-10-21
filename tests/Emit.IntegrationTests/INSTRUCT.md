@@ -14,12 +14,27 @@ DistributedLockCompliance (abstract, has [Fact] methods)
     └── PostgreSqlDistributedLockCompliance
 
 LeaderElectionCompliance (abstract, has [Fact] methods)
-    ├── MongoDbLeaderElectionCompliance
-    └── PostgreSqlLeaderElectionCompliance
+    ├── DatabaseLeaderElectionCompliance      (abstract, tests that need database locking)
+    │       ├── MongoDbLeaderElectionCompliance
+    │       └── PostgreSqlLeaderElectionCompliance
+    └── InMemoryLeaderElectionCompliance      (the unit-test simulation store, no Docker)
 
-CircuitBreakerCompliance (abstract)        → KafkaCircuitBreakerComplianceTests
-ExternalMessageCompliance (abstract)       → KafkaExternalMessageComplianceTests
-ProduceConsumeCompliance (abstract)        → KafkaProduceConsumeComplianceTests
+DaemonAssignmentCompliance (abstract)
+    ├── MongoDbDaemonAssignmentCompliance
+    ├── PostgreSqlDaemonAssignmentCompliance
+    └── InMemoryDaemonAssignmentCompliance
+
+ServiceCoordinationCompliance (abstract, real hosts)
+    ├── MongoDbServiceCoordinationCompliance
+    └── PostgreSqlServiceCoordinationCompliance
+
+OutboxDeliveryCompliance (abstract, real hosts and Kafka)
+    ├── MongoDbOutboxDeliveryCompliance
+    └── EfCoreOutboxDeliveryCompliance
+
+CircuitBreakerCompliance (abstract)        → KafkaCircuitBreakerCompliance
+ExternalMessageCompliance (abstract)       → KafkaExternalMessageCompliance
+ProduceConsumeCompliance (abstract)        → KafkaProduceConsumeCompliance
 ```
 
 **Rules:**

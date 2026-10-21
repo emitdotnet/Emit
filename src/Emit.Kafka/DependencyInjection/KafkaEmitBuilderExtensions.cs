@@ -3,6 +3,7 @@ namespace Emit.Kafka.DependencyInjection;
 using System.Diagnostics.Metrics;
 using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
+using Emit.Configuration;
 using Emit.DependencyInjection;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.Metrics;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -18,6 +20,33 @@ using ConfluentKafka = Confluent.Kafka;
 /// </summary>
 public static class KafkaEmitBuilderExtensions
 {
+    /// <summary>
+    /// The shortest transaction timeout, in milliseconds, the Kafka client accepts.
+    /// </summary>
+    internal const int MinTransactionTimeoutMs = 1_000;
+
+    /// <summary>
+    /// The longest transaction timeout, in milliseconds, brokers accept by default
+    /// (<c>transaction.max.timeout.ms</c>).
+    /// </summary>
+    internal const int BrokerMaxTransactionTimeoutMs = 900_000;
+
+    /// <summary>
+    /// The transaction timeout, in milliseconds, the Kafka client applies when none is set.
+    /// </summary>
+    internal const int DefaultTransactionTimeoutMs = 60_000;
+
+    /// <summary>
+    /// The time, in milliseconds, the Kafka client waits to batch messages when none is set.
+    /// </summary>
+    internal const int DefaultLingerMs = 5;
+
+    /// <summary>
+    /// The most requests an idempotent producer may have in flight to a broker while keeping each partition's
+    /// messages in the order they were produced.
+    /// </summary>
+    internal const int MaxInFlightKeepingOrder = 5;
+
     /// <summary>
     /// Adds the Kafka provider registration. Supports both producing and consuming.
     /// </summary>
@@ -65,7 +94,7 @@ public static class KafkaEmitBuilderExtensions
         // a persistence provider may be registered after AddKafka. The outbox provider is only
         // ever consumed by the outbox daemon, which core registers solely when the outbox is on,
         // so an unused descriptor costs nothing when it is off.
-        RegisterOutboxProvider(builder.Services);
+        RegisterOutboxProvider(builder.Services, kafkaBuilder);
         builder.Services.AddSingleton(new OutboxProviderMarker());
 
         // Register AdminClient singleton and topic verifier at position 0
@@ -88,33 +117,81 @@ public static class KafkaEmitBuilderExtensions
 
     private static void RegisterProducer(IServiceCollection services, KafkaBuilder kafkaBuilder)
     {
-        var clientConfigAction = kafkaBuilder.ClientConfigAction;
-        var producerConfigAction = kafkaBuilder.ProducerConfigAction;
+        services.AddSingleton(sp => BuildProducer(sp, BuildProducerConfig(kafkaBuilder)));
+    }
 
-        services.AddSingleton(sp =>
+    /// <summary>
+    /// Builds the producer configuration from the client and producer settings.
+    /// </summary>
+    internal static ConfluentKafka.ProducerConfig BuildProducerConfig(KafkaBuilder kafkaBuilder)
+    {
+        var config = new ConfluentKafka.ProducerConfig();
+
+        if (kafkaBuilder.ClientConfigAction is { } clientConfigAction)
         {
-            var config = new ConfluentKafka.ProducerConfig();
+            var kafkaClientConfig = new KafkaClientOptions();
+            clientConfigAction(kafkaClientConfig);
+            kafkaClientConfig.ApplyTo(config);
+        }
 
-            if (clientConfigAction is not null)
-            {
-                var kafkaClientConfig = new KafkaClientOptions();
-                clientConfigAction(kafkaClientConfig);
-                kafkaClientConfig.ApplyTo(config);
-            }
+        if (kafkaBuilder.ProducerConfigAction is { } producerConfigAction)
+        {
+            var kafkaProducerConfig = new KafkaProducerOptions();
+            producerConfigAction(kafkaProducerConfig);
+            kafkaProducerConfig.ApplyTo(config);
+        }
 
-            if (producerConfigAction is not null)
-            {
-                var kafkaProducerConfig = new KafkaProducerOptions();
-                producerConfigAction(kafkaProducerConfig);
-                kafkaProducerConfig.ApplyTo(config);
-            }
+        return config;
+    }
 
-            var brokerMetrics = sp.GetRequiredService<KafkaBrokerMetrics>();
-            config.StatisticsIntervalMs ??= 5000;
-            return new ConfluentKafka.ProducerBuilder<byte[], byte[]>(config)
-                .SetStatisticsHandler((_, json) => brokerMetrics.HandleStatistics(json))
-                .Build();
-        });
+    /// <summary>
+    /// Builds the configuration of the producer the outbox daemon sends with.
+    /// </summary>
+    /// <remarks>
+    /// The outbox delivers in Kafka transactions, which need idempotence and acknowledgement by all replicas. A
+    /// stopped outbox daemon waits for its sends to settle, and must stop within the drain timeout, so a send is given
+    /// at most that long. A transaction covers a whole batch, so it keeps the producer's transaction timeout, or
+    /// Kafka's default, within what Kafka accepts: no shorter than a send nor <see cref="MinTransactionTimeoutMs"/>,
+    /// and no longer than <see cref="BrokerMaxTransactionTimeoutMs"/>, the limit brokers apply by default. A send that
+    /// times out is retried from the outbox.
+    /// </remarks>
+    internal static ConfluentKafka.ProducerConfig BuildOutboxProducerConfig(KafkaBuilder kafkaBuilder, TimeSpan drainTimeout)
+    {
+        var config = BuildProducerConfig(kafkaBuilder);
+
+        // A drain timeout under a millisecond still bounds the send: zero would mean no limit
+        var limit = (int)Math.Clamp(drainTimeout.TotalMilliseconds, 1, BrokerMaxTransactionTimeoutMs);
+
+        // Zero means no limit, and no value means librdkafka's default of five minutes
+        if (config.MessageTimeoutMs is not > 0 || config.MessageTimeoutMs > limit)
+        {
+            config.MessageTimeoutMs = limit;
+        }
+
+        // An open transaction holds back what consumers reading committed messages see, until it is aborted
+        config.TransactionTimeoutMs = Math.Clamp(
+            config.TransactionTimeoutMs ?? DefaultTransactionTimeoutMs,
+            Math.Max(config.MessageTimeoutMs.Value, MinTransactionTimeoutMs),
+            BrokerMaxTransactionTimeoutMs);
+
+        // The client refuses to create a producer that may wait to batch a message longer than it may take to send it
+        config.LingerMs = Math.Min(config.LingerMs ?? DefaultLingerMs, config.MessageTimeoutMs.Value - 1);
+
+        // Idempotence keeps a partition's messages in the order they were produced, with up to five requests in
+        // flight, so the outbox hands over a group's entries without waiting for each
+        config.EnableIdempotence = true;
+        config.Acks = ConfluentKafka.Acks.All;
+        config.MaxInFlight = Math.Min(config.MaxInFlight ?? MaxInFlightKeepingOrder, MaxInFlightKeepingOrder);
+        return config;
+    }
+
+    private static ConfluentKafka.IProducer<byte[], byte[]> BuildProducer(IServiceProvider services, ConfluentKafka.ProducerConfig config)
+    {
+        var brokerMetrics = services.GetRequiredService<KafkaBrokerMetrics>();
+        config.StatisticsIntervalMs ??= 5000;
+        return new ConfluentKafka.ProducerBuilder<byte[], byte[]>(config)
+            .SetStatisticsHandler((_, json) => brokerMetrics.HandleStatistics(json))
+            .Build();
     }
 
     private static void RegisterAdminClient(IServiceCollection services, KafkaBuilder kafkaBuilder)
@@ -152,9 +229,20 @@ public static class KafkaEmitBuilderExtensions
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<KafkaTopicVerifier>())));
     }
 
-    private static void RegisterOutboxProvider(IServiceCollection services)
+    private static void RegisterOutboxProvider(IServiceCollection services, KafkaBuilder kafkaBuilder)
     {
-        services.AddSingleton<IOutboxProvider, KafkaOutboxProvider>();
+        services.AddSingleton<IOutboxProvider>(sp =>
+        {
+            var config = BuildOutboxProducerConfig(kafkaBuilder, sp.GetRequiredService<IOptions<DaemonOptions>>().Value.DrainTimeout);
+            return new KafkaOutboxProvider(
+                transactionalId => BuildProducer(sp, new ConfluentKafka.ProducerConfig(config.ToDictionary()) { TransactionalId = transactionalId }),
+                // Starting and committing a transaction may take as long as a send, so a node cut off from the broker
+                // gives up within the drain timeout
+                TimeSpan.FromMilliseconds(Math.Max(config.MessageTimeoutMs!.Value, MinTransactionTimeoutMs)),
+                sp.GetRequiredService<KafkaMetrics>(),
+                sp.GetRequiredService<INodeIdentity>(),
+                sp.GetRequiredService<ILogger<KafkaOutboxProvider>>());
+        });
     }
 
     private sealed class KafkaMarkerService;

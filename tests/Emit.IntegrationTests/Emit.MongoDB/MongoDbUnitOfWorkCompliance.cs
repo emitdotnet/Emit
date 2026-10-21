@@ -21,11 +21,7 @@ public class MongoDbUnitOfWorkCompliance(
 
     protected override string BootstrapServers => kafkaFixture.BootstrapServers;
 
-    public override async Task InitializeAsync()
-    {
-        await mongoFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
-    }
+    public override Task InitializeAsync() => Task.CompletedTask;
 
     public override async Task DisposeAsync()
     {

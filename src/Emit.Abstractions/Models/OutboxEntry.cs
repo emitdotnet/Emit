@@ -82,6 +82,15 @@ public sealed class OutboxEntry
     public Guid NodeId { get; set; }
 
     /// <summary>
+    /// Gets or sets the name of the service that enqueued this entry.
+    /// </summary>
+    /// <remarks>
+    /// Assigned automatically at enqueue time from <see cref="Emit.Abstractions.INodeIdentity.ServiceName"/>.
+    /// Only the outbox daemon of the same service processes the entry.
+    /// </remarks>
+    public string ServiceName { get; set; } = null!;
+
+    /// <summary>
     /// Gets or sets the serialized message value bytes.
     /// </summary>
     /// <remarks>

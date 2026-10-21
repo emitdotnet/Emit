@@ -8,6 +8,7 @@ using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -249,12 +250,14 @@ public abstract class TransactionalMiddlewareCompliance : IAsyncLifetime
                     // identically.
                     if (order == EmitRegistrationOrder.PersistenceFirst)
                     {
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit, pollingInterval);
                         ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
                     }
                     else
                     {
                         ConfigureKafka(emit, inputTopic, outputTopic, groupId, consumerType);
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit, pollingInterval);
                     }
                 });

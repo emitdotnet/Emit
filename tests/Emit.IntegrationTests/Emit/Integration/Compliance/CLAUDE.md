@@ -10,8 +10,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior | Add circuit breaker tests or debug circuit breaker issues |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
 | `ConsumerObserverCompliance.cs` | IConsumerObserver lifecycle event delivery | Add consumer observer tests or debug observer invocation |
-| `DaemonAssignmentCompliance.cs` | Daemon assignment and redistribution by leader | Add daemon tests or debug distributed daemon behavior |
-| `DaemonObserverCompliance.cs` | IDaemonObserver lifecycle event delivery | Add daemon observer tests or debug daemon observer invocation |
+| `DaemonAssignmentCompliance.cs` | Daemon assignment persistence per service: compare-and-swap writes, release, and generations that never repeat | Add daemon tests or debug distributed daemon behavior |
 | `DeadLetterCompliance.cs` | Dead-letter queue delivery after exhausted retries | Add DLQ tests or debug dead-letter routing |
 | `DistributedLockCompliance.cs` | Mutual exclusion, TTL expiry, and lock renewal | Add distributed lock tests or debug locking behavior |
 | `ErrorPolicyCompliance.cs` | Error policy evaluation: retry, discard, and dead-letter branching | Add error policy tests or debug error handling |
@@ -19,10 +18,12 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `FanOutCompliance.cs` | Multiple consumer groups independently consuming the same topic | Add fan-out tests or debug independent consumer group behavior |
 | `FilterCompliance.cs` | Consumer filter predicate evaluation | Add filter tests or debug filter skipping behavior |
 | `GlobalPipelineCompliance.cs` | Global middleware execution order and context propagation | Add global pipeline tests or debug cross-cutting middleware |
-| `LeaderElectionCompliance.cs` | Leader election, failover, and follower promotion | Add leader election tests or debug leadership transitions |
+| `LeaderElectionCompliance.cs` | Leader election persistence contract: lease acquisition, renewal and takeover by recorded heartbeat, heartbeats that do not claim the lease, resign, services sharing a database, conditional registration removal, and deregistration | Add leader election tests or debug leadership transitions |
+| `DatabaseLeaderElectionCompliance.cs` | Leader election contract that needs a real database: a heartbeat stalled on a lock leaves no registration when it times out | Add leader election tests that depend on database locking |
+| `ServiceCoordinationCompliance.cs` | Real hosts: services sharing a database each elect a leader and run their own daemons (issue #85 scenario), daemon observers registered through DI hear about them, and a node that shuts down hands its daemon and leadership to another node of its service | Debug daemon coordination end to end |
 | `OffsetCommitCompliance.cs` | Watermark-based offset commit correctness | Add offset commit tests or debug at-least-once delivery |
 | `OutboundMiddlewareHeadersCompliance.cs` | Header propagation through outbound middleware pipeline | Verify or change outbound header forwarding behavior |
-| `OutboxDeliveryCompliance.cs` | Transactional outbox enqueue and Kafka delivery | Add outbox delivery tests or debug outbox-to-Kafka flow |
+| `OutboxDeliveryCompliance.cs` | Transactional outbox delivery to Kafka: per-group order, also when the outbox daemon moves to another node of the service, and services sharing a database each delivering only their own entries | Add outbox delivery tests or debug outbox-to-Kafka flow or per-service outbox processing |
 | `OutboxHeadersCompliance.cs` | Message header propagation through the outbox | Verify or change outbox header forwarding behavior |
 | `OutboxObserverCompliance.cs` | IOutboxObserver lifecycle event delivery | Add outbox observer tests or debug outbox observer invocation |
 | `PerConsumerMiddlewareCompliance.cs` | Per-consumer middleware scoping and execution | Add per-consumer middleware tests |

@@ -1,5 +1,6 @@
 namespace Emit.EntityFrameworkCore.DependencyInjection;
 
+using Emit.EntityFrameworkCore.Models;
 using Emit.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -53,6 +54,10 @@ public sealed class EmitModelBuilder
 
         outboxEntry.Property(e => e.Properties)
             .HasColumnType("jsonb");
+
+        modelBuilder.Entity<NodeEntity>()
+            .Property(e => e.DaemonIds)
+            .HasColumnType("text[]");
 
         return this;
     }

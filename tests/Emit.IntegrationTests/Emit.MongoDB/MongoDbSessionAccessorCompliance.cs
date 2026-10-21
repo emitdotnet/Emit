@@ -23,10 +23,7 @@ public class MongoDbSessionAccessorCompliance
         mongoClient = new MongoClient(mongoFixture.ConnectionString);
     }
 
-    public override async Task InitializeAsync()
-    {
-        await mongoFixture.InitializeAsync();
-    }
+    public override Task InitializeAsync() => Task.CompletedTask;
 
     public override async Task DisposeAsync()
     {

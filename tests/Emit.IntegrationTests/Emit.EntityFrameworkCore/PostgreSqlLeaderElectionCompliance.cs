@@ -8,18 +8,18 @@ using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
 using Emit.IntegrationTests.Integration.Compliance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Xunit;
 
 /// <summary>
 /// PostgreSQL integration tests for <see cref="EfCoreLeaderElectionPersistence{TDbContext}"/>.
 /// </summary>
 [Trait("Category", "Integration")]
-public class PostgreSqlLeaderElectionCompliance : LeaderElectionCompliance, IClassFixture<PostgreSqlContainerFixture>
+public class PostgreSqlLeaderElectionCompliance : DatabaseLeaderElectionCompliance, IClassFixture<PostgreSqlContainerFixture>
 {
     private readonly PostgreSqlContainerFixture containerFixture;
     private PostgreSqlTestDatabase testDb = null!;
     private ServiceProvider serviceProvider = null!;
-    private IDbContextFactory<IntegrationTestDbContext> dbContextFactory = null!;
     private ILeaderElectionPersistence persistence = null!;
 
     public PostgreSqlLeaderElectionCompliance(PostgreSqlContainerFixture containerFixture)
@@ -29,6 +29,20 @@ public class PostgreSqlLeaderElectionCompliance : LeaderElectionCompliance, ICla
 
     /// <inheritdoc/>
     protected override ILeaderElectionPersistence Persistence => persistence;
+
+    /// <inheritdoc/>
+    protected override async Task<IAsyncDisposable> BlockLeaseAsync(string serviceName)
+    {
+        var connection = new NpgsqlConnection(testDb.ConnectionString);
+        await connection.OpenAsync();
+        var transaction = await connection.BeginTransactionAsync();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """SELECT 1 FROM "emit_leader" WHERE service_name = @serviceName FOR UPDATE""";
+        command.Parameters.AddWithValue("serviceName", serviceName);
+        await command.ExecuteNonQueryAsync();
+        return new LeaseBlock(connection, transaction);
+    }
 
     /// <inheritdoc/>
     public override async Task InitializeAsync()
@@ -50,12 +64,7 @@ public class PostgreSqlLeaderElectionCompliance : LeaderElectionCompliance, ICla
         });
 
         serviceProvider = services.BuildServiceProvider();
-        dbContextFactory = serviceProvider.GetRequiredService<IDbContextFactory<IntegrationTestDbContext>>();
         persistence = serviceProvider.GetRequiredService<ILeaderElectionPersistence>();
-
-        // Ensure schema is created (includes leader and nodes tables from AddEmitModel)
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
-        await dbContext.Database.EnsureCreatedAsync();
     }
 
     /// <inheritdoc/>
@@ -63,5 +72,15 @@ public class PostgreSqlLeaderElectionCompliance : LeaderElectionCompliance, ICla
     {
         serviceProvider.Dispose();
         await testDb.DropAsync();
+    }
+
+    private sealed class LeaseBlock(NpgsqlConnection connection, NpgsqlTransaction transaction) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await transaction.RollbackAsync();
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+        }
     }
 }

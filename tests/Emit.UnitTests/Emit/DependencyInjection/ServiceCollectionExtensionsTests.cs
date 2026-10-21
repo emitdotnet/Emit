@@ -1,10 +1,14 @@
 namespace Emit.UnitTests.DependencyInjection;
 
+using System.Reflection;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.DependencyInjection;
 using global::Emit.Kafka.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Moq;
 using Xunit;
 
 public class ServiceCollectionExtensionsTests
@@ -94,6 +98,64 @@ public class ServiceCollectionExtensionsTests
 
         // Assert
         Assert.Same(first, second);
+    }
+
+    [Theory]
+    [InlineData("", 1)]
+    [InlineData("product-sync", 3_600)]
+    public void GivenPersistenceAndUnsafeCoordinationOptions_WhenTheHostStarts_ThenItRefusesToStart(string serviceName, int drainSeconds)
+    {
+        // Arrange: a node without a service name, or one whose daemons may outlast the time the leader waits
+        // before moving them, must never run; the validators only protect a host they run in
+        var services = new ServiceCollection();
+        services.AddEmit(builder =>
+        {
+            builder.Services.AddSingleton(new PersistenceProviderMarker("test"));
+            builder.ConfigureLeaderElection(options => options.ServiceName = serviceName);
+            builder.ConfigureDaemons(options => options.DrainTimeout = TimeSpan.FromSeconds(drainSeconds));
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var failure = Record.Exception(() => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        // Assert
+        Assert.IsType<OptionsValidationException>(failure);
+    }
+
+    [Theory]
+    [InlineData("Product.Worker", null, "Product.Worker")]
+    [InlineData("Product.Worker", "product-sync", "product-sync")]
+    [InlineData(null, null, null)]
+    [InlineData(null, "product-sync", "product-sync")]
+    public void GivenHostEnvironmentAndExplicitServiceName_WhenResolvingINodeIdentity_ThenTheExplicitNameWinsOverTheApplicationNameAndThenTheEntryAssembly(
+        string? applicationName,
+        string? explicitServiceName,
+        string? expected)
+    {
+        // Arrange: a null application name means no host environment, and a null expectation the entry assembly's name
+        var services = new ServiceCollection();
+        if (applicationName is not null)
+        {
+            services.AddSingleton(Mock.Of<IHostEnvironment>(e => e.ApplicationName == applicationName));
+        }
+
+        services.AddEmit(builder =>
+        {
+            if (explicitServiceName is not null)
+            {
+                builder.ConfigureLeaderElection(options => options.ServiceName = explicitServiceName);
+            }
+
+            builder.AddKafka(kafka => kafka.ConfigureClient(_ => { }));
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var serviceName = provider.GetRequiredService<INodeIdentity>().ServiceName;
+
+        // Assert
+        Assert.Equal(expected ?? Assembly.GetEntryAssembly()!.GetName().Name, serviceName);
     }
 
     [Fact]
