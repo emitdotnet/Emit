@@ -1,11 +1,11 @@
 namespace Emit.UnitTests.Consumer;
 
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
-using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -18,23 +18,21 @@ public sealed class RetryMiddlewareTests
 
     // ── Helpers ──
 
-    private static RetryMiddleware<string> CreateMiddleware(int maxAttempts)
-    {
-        var config = new RetryConfig(maxAttempts, Backoff.None);
-        return new RetryMiddleware<string>(
-            config,
-            Metrics,
-            NodeIdentity.Object,
-            NullLogger<RetryMiddleware<string>>.Instance);
-    }
+    private static RetryMiddleware<string> CreateMiddleware(int maxAttempts) =>
+        CreateMiddleware(_ => ErrorAction.Retry(maxAttempts, Backoff.None, ErrorAction.DeadLetter()));
 
-    private static ConsumeContext<string> CreateContext(IServiceProvider services)
+    private static RetryMiddleware<string> CreateMiddleware(Func<Exception, ErrorAction> policy) =>
+        new(policy, Metrics, NodeIdentity.Object, NullLogger<RetryMiddleware<string>>.Instance);
+
+    private static ConsumeContext<string> CreateContext(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
     {
         return new ConsumeContext<string>
         {
             MessageId = "test-id",
             Timestamp = DateTimeOffset.UtcNow,
-            CancellationToken = CancellationToken.None,
+            CancellationToken = cancellationToken,
             Services = services,
             Message = "test-message",
             TransportContext = TestTransportContext.Create(services),
@@ -199,5 +197,120 @@ public sealed class RetryMiddlewareTests
 
         // One scope per retry attempt (3 retries)
         Assert.Equal(3, scopeServiceProviders.Count);
+    }
+
+    [Fact]
+    public async Task GivenClauseThatDoesNotRetry_WhenItsExceptionIsThrown_ThenNotRetried()
+    {
+        // Arrange
+        var middleware = CreateMiddleware(ex => ex is ArgumentException
+            ? ErrorAction.DeadLetter()
+            : ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter()));
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider());
+        var calls = 0;
+        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        {
+            calls++;
+            throw new ArgumentException("not retryable");
+        });
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentException>(() => middleware.InvokeAsync(context, next));
+
+        // Assert
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task GivenClauseThatRetries_WhenOnlyThatClauseRetries_ThenItsAttemptsAreUsed()
+    {
+        // Arrange
+        var middleware = CreateMiddleware(ex => ex is TimeoutException
+            ? ErrorAction.Retry(2, Backoff.None, ErrorAction.DeadLetter())
+            : ErrorAction.DeadLetter());
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider());
+        var calls = 0;
+        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        {
+            calls++;
+            throw new TimeoutException("transient");
+        });
+
+        // Act
+        await Assert.ThrowsAsync<TimeoutException>(() => middleware.InvokeAsync(context, next));
+
+        // Assert: the first attempt plus two retries
+        Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public async Task GivenDifferentExceptionsAcrossAttempts_WhenALaterOneIsNotRetryable_ThenRetryStopsAtIt()
+    {
+        // Arrange
+        var middleware = CreateMiddleware(ex => ex is TimeoutException
+            ? ErrorAction.Retry(5, Backoff.None, ErrorAction.DeadLetter())
+            : ErrorAction.Discard());
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider());
+        var calls = 0;
+        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        {
+            calls++;
+            throw calls == 1
+                ? new TimeoutException("transient")
+                : new ArgumentException("permanent");
+        });
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentException>(() => middleware.InvokeAsync(context, next));
+
+        // Assert
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task GivenRetryMiddleware_WhenAnAttemptFails_ThenWillRetryMatchesWhetherAnotherAttemptRuns()
+    {
+        // Arrange
+        var middleware = CreateMiddleware(maxAttempts: 1);
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider());
+        var decisions = new List<bool>();
+        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        {
+            var exception = new InvalidOperationException("attempt failed");
+            decisions.Add(ctx.WillRetry!(exception));
+            throw exception;
+        });
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
+
+        // Assert: the first attempt is retried, the single retry is not
+        Assert.Equal([true, false], decisions);
+    }
+
+    [Fact]
+    public async Task GivenShutdown_WhenAttemptIsCancelled_ThenNotRetried()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        var middleware = CreateMiddleware(maxAttempts: 3);
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider(), cts.Token);
+        var calls = 0;
+        bool? willRetry = null;
+        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        {
+            calls++;
+            cts.Cancel();
+            var exception = new OperationCanceledException(ctx.CancellationToken);
+            willRetry = ctx.WillRetry!(exception);
+            throw exception;
+        });
+
+        // Act
+        await Assert.ThrowsAsync<OperationCanceledException>(() => middleware.InvokeAsync(context, next));
+
+        // Assert
+        Assert.Equal(1, calls);
+        Assert.False(willRetry);
     }
 }

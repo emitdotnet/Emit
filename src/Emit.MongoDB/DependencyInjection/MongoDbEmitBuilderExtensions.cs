@@ -78,6 +78,8 @@ public static class MongoDbEmitBuilderExtensions
             return context;
         });
 
+        RegisterUnitOfWorkServices(builder);
+
         if (outboxEnabled)
         {
             RegisterOutboxServices(builder, mongoBuilder);
@@ -200,7 +202,12 @@ public static class MongoDbEmitBuilderExtensions
 
         builder.Services.AddScoped<MongoDbOutboxRepository>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<MongoDbOutboxRepository>());
+    }
 
+    // Transactions are a capability of the persistence provider, not of the outbox, so the
+    // unit of work and the session accessor are available whether or not UseOutbox() is called.
+    private static void RegisterUnitOfWorkServices(EmitBuilder builder)
+    {
         builder.Services.AddScoped<MongoSessionHolder>();
         builder.Services.AddScoped<IMongoSessionAccessor>(sp => sp.GetRequiredService<MongoSessionHolder>());
         builder.Services.AddScoped<IUnitOfWork>(sp =>

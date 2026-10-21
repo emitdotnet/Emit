@@ -12,6 +12,7 @@ using Emit.Middleware;
 using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Extension methods for adding mediator services to the Emit builder.
@@ -112,10 +113,6 @@ public static class MediatorEmitBuilderExtensions
         // and invokes the typed pipeline with no runtime reflection.
         services.AddSingleton(sp =>
         {
-            // Resolved here, not during registration: the outbox may be enabled by a provider
-            // registered after AddMediator, and this factory runs once everything is registered.
-            var outboxEnabled = sp.IsOutboxEnabled();
-
             var dispatchers = new Dictionary<Type, MediatorDispatch>();
 
             foreach (var (requestType, invoker) in invokerMap)
@@ -129,7 +126,7 @@ public static class MediatorEmitBuilderExtensions
                 var genericMethod = BuildDispatcherMethod.MakeGenericMethod(requestType);
                 var dispatch = (MediatorDispatch)genericMethod.Invoke(
                     null,
-                    [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, outboxEnabled, registration.HandlerType])!;
+                    [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, registration.HandlerType])!;
 
                 dispatchers[requestType] = dispatch;
             }
@@ -153,23 +150,22 @@ public static class MediatorEmitBuilderExtensions
             IMessagePipelineBuilder mediatorInbound,
             IMessagePipelineBuilder globalInbound,
             IMessagePipelineBuilder? handlerPipeline,
-            bool outboxEnabled,
             Type handlerType)
     {
-        var typedInvoker = (IMiddlewarePipeline<MediatorContext<TRequest>>)invoker;
+        IMiddlewarePipeline<MediatorContext<TRequest>> terminal = (IMiddlewarePipeline<MediatorContext<TRequest>>)invoker;
 
-        // Wrap handler invoker with transactional middleware when outbox is enabled
-        IMiddlewarePipeline<MediatorContext<TRequest>> terminal = typedInvoker;
-        if (outboxEnabled)
-        {
-            var transactionalMw = new TransactionalOutboxMiddleware<MediatorContext<TRequest>>(handlerType);
-            terminal = new MiddlewarePipeline<MediatorContext<TRequest>>(transactionalMw, terminal);
-        }
+        // The handler's own middleware runs inside its unit of work, so nothing it does can fail
+        // after the commit.
+        if (handlerPipeline is not null)
+            terminal = handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, terminal);
 
-        // Pipeline layering: global → mediator → per-handler → terminal
-        var pipeline = handlerPipeline is not null
-            ? handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound, mediatorInbound)
-            : mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound);
+        var unitOfWorkMw = new UnitOfWorkMiddleware<MediatorContext<TRequest>>(
+            handlerType,
+            sp.GetRequiredService<ILogger<UnitOfWorkMiddleware<MediatorContext<TRequest>>>>());
+        terminal = new MiddlewarePipeline<MediatorContext<TRequest>>(unitOfWorkMw, terminal);
+
+        // Pipeline layering: global → mediator → unit of work → per-handler → terminal
+        var pipeline = mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound);
 
         return (request, services, timeProvider, ct, configureFeatures) =>
         {

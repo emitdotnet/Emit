@@ -1,0 +1,85 @@
+---
+title: Unit of Work
+description: How Emit bounds the work of each consumer and handler, wraps it in a transaction, and runs callbacks once its outcome is final.
+---
+
+Every consumer, routed consumer, batch consumer, and mediator handler runs inside a **unit of work**. The unit of work covers the handler and the middleware registered on that handler alone (per-consumer, per-route, or per-handler middleware). It is where Emit opens and commits the handler's transaction, and where it runs the callbacks you register to act on the outcome.
+
+Retry sits directly outside the unit of work, so each retry attempt is a fresh unit of work: a new transaction, and a clean set of callbacks.
+
+## Transactions
+
+Decorate the handler class with `[Transactional]` and the unit of work begins a transaction before the handler runs, commits it when the handler and its middleware succeed, and rolls it back when anything inside throws:
+
+```csharp
+[Transactional]
+public sealed class ApproveInvoiceHandler(IInvoiceRepository invoices)
+    : IRequestHandler<ApproveInvoice>
+{
+    public async Task HandleAsync(ApproveInvoice request, CancellationToken ct)
+    {
+        await invoices.ApproveAsync(request.InvoiceId, ct);
+        // Committed by the unit of work once the handler returns.
+    }
+}
+```
+
+`[Transactional]` needs a persistence provider (`AddEntityFrameworkCore` or `AddMongoDb`). It does not need the outbox: the transaction is a capability of the persistence provider, and `UseOutbox()` only decides whether producers enqueue into it. A `[Transactional]` handler registered without a persistence provider is rejected at startup, naming the handler.
+
+A consumer or handler called while another one's transaction is open in the same scope, such as a mediator handler sent from a `[Transactional]` consumer, writes into that transaction. Decorating the inner handler with `[Transactional]` as well is rejected when it runs, because a scope holds one transaction at a time.
+
+## Callbacks after the outcome
+
+Some side effects must never be seen before the work is durable: a real-time notification, a cache invalidation, a call to another service. Register them on `IEmitContext` and Emit runs them once the outcome of the unit of work is final:
+
+```csharp
+[Transactional]
+public sealed class ApproveInvoiceHandler(
+    IInvoiceRepository invoices,
+    IEmitContext emitContext,
+    IHubContext<InvoiceHub> hub)
+    : IRequestHandler<ApproveInvoice>
+{
+    public async Task HandleAsync(ApproveInvoice request, CancellationToken ct)
+    {
+        await invoices.ApproveAsync(request.InvoiceId, ct);
+
+        emitContext.OnSucceeded(token =>
+            hub.Clients.All.SendAsync("InvoiceApproved", request.InvoiceId, token));
+
+        emitContext.OnFailed((exception, token) =>
+            hub.Clients.All.SendAsync("InvoiceApprovalFailed", request.InvoiceId, token));
+    }
+}
+```
+
+Callbacks work the same way for every handler kind, `[Transactional]` or not, with or without the outbox.
+
+| Callback | Runs when |
+|---|---|
+| `OnSucceeded` | After the transaction commits. Without `[Transactional]`, after the handler and its middleware complete. |
+| `OnFailed` | When the unit of work throws and no retry follows: after the last retry attempt, or on the first failure when nothing retries. The callback receives the exception. |
+
+**Once per unit of work.** A failed attempt that is retried discards its callbacks without running them; the next attempt registers its own. So a message that fails twice and then succeeds runs `OnSucceeded` once, and a message that fails every attempt runs `OnFailed` once.
+
+**Before the error policy.** `OnFailed` runs after the transaction has rolled back and before the error policy dead-letters or discards the message.
+
+**Cancellation is a failure.** A request cancelled by its caller, or a consumer stopped by shutdown, runs `OnFailed` with the `OperationCanceledException`. On shutdown the token passed to the callback is already cancelled. The message is delivered again after restart, and that delivery is a new unit of work with its own callbacks.
+
+**In registration order.** Callbacks run one after another, in the order they were registered. A callback that throws is logged and the remaining callbacks still run; it never changes the outcome, because the work is already committed or rolled back.
+
+**Nested handlers.** Callbacks registered by a handler that writes into an enclosing transaction (see above) run when that transaction commits, not when the inner handler returns. A handler that runs outside any transaction owns its callbacks: they run when it completes. Requests sent concurrently in one scope, for example with `Task.WhenAll`, each run only their own callbacks.
+
+**While the handler runs.** Register callbacks from a consumer, a mediator handler, or their middleware. Registering when no consumer or handler is running, from work that outlives it, or from inside another callback throws `InvalidOperationException`, because the callback would never run.
+
+### What callbacks are not
+
+Callbacks are not durable. If the process stops after the commit and before a callback runs, the callback is lost, and it carries none of the delivery guarantees of the outbox. Use the outbox for work that must happen; use callbacks for immediate side effects that only need the right ordering.
+
+For Kafka consumers, callbacks run before the message's offset is committed. If the process stops between the two, the message is delivered again and its callbacks run again.
+
+With the outbox off, a message produced inside a transaction is sent to the broker immediately and is not rolled back with the transaction. To send a message only once the work is committed, produce it from an `OnSucceeded` callback.
+
+### Manual transactions
+
+Callbacks follow the outcome of the consumer or handler, not of transactions you manage yourself. When you begin a transaction with `IUnitOfWork.BeginAsync` and commit it explicitly, or commit with EF Core's `SaveChangesAsync`, you already know when the commit happens: run the follow-up work after it in your own code. Callbacks registered while such a transaction is open still run when the consumer or handler completes, not when your transaction commits.

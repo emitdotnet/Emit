@@ -800,6 +800,62 @@ public sealed class ConsumerWorkerTests
         Assert.NotNull(item.TransportContext.Services);
     }
 
+    [Fact]
+    public async Task GivenBatchMode_WhenBatchCompletes_ThenItsOffsetsAreCommitted()
+    {
+        // Arrange
+        var registration = CreateBatchRegistration(_ => Task.CompletedTask);
+        var (worker, committer, mockKafkaConsumer) = CreateBatchWorkerWithRealOffsets(registration);
+        await using var _ = committer;
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+        committer.Flush();
+
+        // Assert
+        mockKafkaConsumer.Verify(c => c.Commit(It.Is<IEnumerable<ConfluentKafka.TopicPartitionOffset>>(
+            offsets => offsets.Single().Offset.Value == 1)), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenBatchMode_WhenShutdownCancelsTheBatch_ThenItsOffsetsAreNotCommitted()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        var registration = CreateBatchRegistration(ctx =>
+        {
+            cts.Cancel();
+            ctx.CancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        });
+        var (worker, committer, mockKafkaConsumer) = CreateBatchWorkerWithRealOffsets(registration);
+        await using var _ = committer;
+
+        // Act
+        await worker.RunAsync(cts.Token);
+        committer.Flush();
+
+        // Assert: the rolled-back batch is delivered again after restart
+        mockKafkaConsumer.Verify(c => c.Commit(It.IsAny<IEnumerable<ConfluentKafka.TopicPartitionOffset>>()), Times.Never);
+    }
+
+    private static (ConsumerWorker<string, string> Worker, OffsetCommitter Committer, Mock<ConfluentKafka.IConsumer<byte[], byte[]>> KafkaConsumer)
+        CreateBatchWorkerWithRealOffsets(ConsumerGroupRegistration<string, string> registration)
+    {
+        var mockKafkaConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
+        var committer = new OffsetCommitter(mockKafkaConsumer.Object, TimeSpan.FromMinutes(1), "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), NullLogger.Instance);
+        var offsetManager = new OffsetManager(committer);
+        var worker = new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, CreateScopeFactory(typeof(TestConsumer), new TestConsumer()), "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), null, NullLogger.Instance);
+
+        // Simulate ConsumerGroupWorker enqueuing the offset before dispatching
+        offsetManager.Enqueue("test-topic", 0, 0);
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 0));
+        worker.Complete();
+
+        return (worker, committer, mockKafkaConsumer);
+    }
+
     private static ConsumerGroupRegistration<string, string> CreateBatchRegistration(
         Func<ConsumeContext<MessageBatch<string>>, Task> onBatchConsumed)
     {

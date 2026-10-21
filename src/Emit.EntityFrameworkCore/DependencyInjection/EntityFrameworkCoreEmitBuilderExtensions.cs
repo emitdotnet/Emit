@@ -58,6 +58,8 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
             RegisterNpgsqlServices<TDbContext>(builder);
         }
 
+        RegisterUnitOfWorkServices<TDbContext>(builder);
+
         if (efBuilder.OutboxEnabled)
         {
             RegisterOutboxServices<TDbContext>(builder, efBuilder);
@@ -129,7 +131,13 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
         // Register as SCOPED (not singleton) to use user's scoped DbContext
         builder.Services.AddScoped<EfCoreOutboxRepository<TDbContext>>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<EfCoreOutboxRepository<TDbContext>>());
+    }
 
+    // Transactions are a capability of the persistence provider, not of the outbox, so the
+    // unit of work is available whether or not UseOutbox() is called.
+    private static void RegisterUnitOfWorkServices<TDbContext>(EmitBuilder builder)
+        where TDbContext : DbContext
+    {
         builder.Services.AddScoped<IUnitOfWork>(sp =>
         {
             var dbContext = sp.GetRequiredService<TDbContext>();

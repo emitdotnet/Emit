@@ -25,11 +25,6 @@ public class ConsumeContext<T> : MessageContext<T>
     public int RetryAttempt { get; set; }
 
     /// <summary>
-    /// Transaction context for transactional consumers. Set by transaction middleware.
-    /// </summary>
-    public ITransactionContext? Transaction { get; set; }
-
-    /// <summary>
     /// Builds a per-item <see cref="ConsumeContext{T}"/> from a batch context and one of its
     /// items. Used by batch-aware middleware that needs to evaluate per-item logic (e.g. filters)
     /// against the same surface a single-message consumer would see.
@@ -38,7 +33,7 @@ public class ConsumeContext<T> : MessageContext<T>
     /// <see cref="MessageContext{T}.Message"/>, <see cref="TransportContext"/>, <see cref="MessageContext.SourceAddress"/>)
     /// comes from <paramref name="item"/>. Ambient state (<see cref="MessageContext.CancellationToken"/>,
     /// <see cref="MessageContext.Services"/>, <see cref="MessageContext.DestinationAddress"/>,
-    /// <see cref="RetryAttempt"/>, <see cref="Transaction"/>) comes from <paramref name="batchContext"/>.
+    /// <see cref="RetryAttempt"/>, and the retry decision) comes from <paramref name="batchContext"/>.
     /// </para>
     /// <para>
     /// MAINTAINER NOTE: when a new property is added to <see cref="MessageContext"/>,
@@ -65,12 +60,12 @@ public class ConsumeContext<T> : MessageContext<T>
             Timestamp = item.TransportContext.Timestamp,
             DestinationAddress = batchContext.DestinationAddress,
             SourceAddress = item.TransportContext.SourceAddress ?? batchContext.SourceAddress,
-            // MessageContext<T> — per-item
+            WillRetry = batchContext.WillRetry,
+            // MessageContext<T>: per-item
             Message = item.Message,
-            // ConsumeContext<T> — transport per-item, retry/transaction ambient
+            // ConsumeContext<T>: transport per-item, retry ambient
             TransportContext = item.TransportContext,
             RetryAttempt = batchContext.RetryAttempt,
-            Transaction = batchContext.Transaction,
         };
     }
 }

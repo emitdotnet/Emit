@@ -170,7 +170,7 @@ Validation sits early in the inbound pipeline, after deserialization but before 
 1. Message arrives and is deserialized
 2. **Validation runs here**
 3. Error policy evaluation (retry loop)
-4. Transaction begins (if `[Transactional]`)
-5. Handler executes
+4. Unit of work begins, with a transaction if the handler is `[Transactional]`
+5. Per-consumer middleware and the handler execute
 
 Because validation runs before the retry loop, a message that fails validation is never retried. It goes straight to the configured error action. This is by design: if a message has a missing required field, retrying it three times won't grow one.

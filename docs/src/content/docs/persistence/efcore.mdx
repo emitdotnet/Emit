@@ -95,7 +95,7 @@ await producer.ProduceAsync(..., ct);
 await tx.CommitAsync(ct);
 ```
 
-`CommitAsync` calls `SaveChangesAsync` internally before committing the database transaction. `IUnitOfWork` is registered automatically as a scoped service when `UseOutbox()` is called.
+`CommitAsync` calls `SaveChangesAsync` internally before committing the database transaction. `IUnitOfWork` is registered automatically as a scoped service by `AddEntityFrameworkCore`, whether or not `UseOutbox()` is called.
 
 ## Lock cleanup
 

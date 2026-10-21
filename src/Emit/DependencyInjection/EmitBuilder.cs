@@ -226,7 +226,7 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
         }
 
         // A handler decorated with [Transactional] needs a unit of work to open a transaction on,
-        // and only the outbox registration supplies one. Silently dropping the transaction would
+        // and only a persistence provider supplies one. Silently dropping the transaction would
         // leave the handler believing its writes are atomic when they are not, so this is rejected
         // here, after every integration has registered, rather than left to fail at request time.
         var transactionalHandlers = services
@@ -241,7 +241,7 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
             throw new InvalidOperationException(
                 $"{string.Join(", ", transactionalHandlers)} decorated with " +
                 $"[{nameof(TransactionalAttribute)}] but no {nameof(IUnitOfWork)} is registered. " +
-                "Enable the outbox on the persistence provider (UseOutbox()), or remove the attribute.");
+                "Add a persistence provider, or remove the attribute.");
         }
     }
 }

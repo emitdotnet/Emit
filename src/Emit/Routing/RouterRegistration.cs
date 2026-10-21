@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 /// Provides a <see cref="BuildInvoker"/> method to construct the router invoker
 /// at service resolution time.
 /// </summary>
-public sealed class RouterRegistration<TMessage>
+internal sealed class RouterRegistration<TMessage>
 {
     private readonly Func<ConsumeContext<TMessage>, object?> routeSelector;
     private readonly IReadOnlyList<RouteEntry<TMessage>> routes;
@@ -52,34 +52,30 @@ public sealed class RouterRegistration<TMessage>
     /// Pre-evaluated error action for unmatched messages. When <see cref="ErrorAction.DiscardAction"/>,
     /// the invoker discards unmatched messages inline without throwing. Pass <c>null</c> to always throw.
     /// </param>
-    /// <param name="outboxEnabled">
-    /// When <see langword="true"/>, each route's terminal is wrapped with
-    /// <see cref="TransactionalOutboxMiddleware{TContext}"/> so that handlers decorated with
-    /// <see cref="TransactionalAttribute"/> participate in a unit of work.
-    /// </param>
     /// <returns>The constructed router pipeline ready to participate in fan-out.</returns>
+    /// <remarks>
+    /// Each route is wrapped in a <see cref="UnitOfWorkMiddleware{TContext}"/> outside the route's
+    /// own middleware, so the route's handler and middleware share one unit of work.
+    /// </remarks>
     public IMiddlewarePipeline<ConsumeContext<TMessage>> BuildInvoker(
         Func<Type, IMiddlewarePipeline<ConsumeContext<TMessage>>> terminalFactory,
         IServiceProvider services,
         ILoggerFactory loggerFactory,
-        ErrorAction? unmatchedAction = null,
-        bool outboxEnabled = false)
+        ErrorAction? unmatchedAction = null)
     {
         ArgumentNullException.ThrowIfNull(terminalFactory);
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
+        var unitOfWorkLogger = loggerFactory.CreateLogger<UnitOfWorkMiddleware<ConsumeContext<TMessage>>>();
         var subPipelines = new Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)>();
         foreach (var route in routes)
         {
             IMiddlewarePipeline<ConsumeContext<TMessage>> subPipeline = terminalFactory(route.ConsumerType);
-            if (outboxEnabled)
-            {
-                var transactionalMw = new TransactionalOutboxMiddleware<ConsumeContext<TMessage>>(route.ConsumerType);
-                subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(transactionalMw, subPipeline);
-            }
             if (route.Pipeline is not null)
                 subPipeline = route.Pipeline.Build<ConsumeContext<TMessage>, TMessage>(services, subPipeline);
+            var unitOfWorkMw = new UnitOfWorkMiddleware<ConsumeContext<TMessage>>(route.ConsumerType, unitOfWorkLogger);
+            subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(unitOfWorkMw, subPipeline);
             subPipelines[route.RouteKey] = (route.ConsumerType, subPipeline);
         }
 

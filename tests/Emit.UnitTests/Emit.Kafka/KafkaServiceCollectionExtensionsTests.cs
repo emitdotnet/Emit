@@ -426,7 +426,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void GivenTransactionalConsumerAndNoOutbox_WhenAddEmit_ThenThrowsNamingTheConsumer()
+    public void GivenTransactionalConsumerAndNoPersistenceProvider_WhenAddEmit_ThenThrowsNamingTheConsumer()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -453,7 +453,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void GivenTransactionalBatchConsumerAndNoOutbox_WhenAddEmit_ThenThrowsNamingTheConsumer()
+    public void GivenTransactionalBatchConsumerAndNoPersistenceProvider_WhenAddEmit_ThenThrowsNamingTheConsumer()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -480,7 +480,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void GivenUndecoratedConsumerAndNoOutbox_WhenAddEmit_ThenDoesNotThrow()
+    public void GivenUndecoratedConsumerAndNoPersistenceProvider_WhenAddEmit_ThenDoesNotThrow()
     {
         // Arrange
         var services = new ServiceCollection();

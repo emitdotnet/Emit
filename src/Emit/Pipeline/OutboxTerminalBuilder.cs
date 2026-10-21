@@ -8,7 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Builds a terminal delegate that enqueues messages to the transactional outbox.
-/// Handles transaction validation, repository enqueue, and observer notification.
+/// Handles repository enqueue and observer notification. Whether a transaction is required is
+/// up to the persistence provider's repository, which joins the active transaction if there is one.
 /// Providers supply a delegate that serializes the message body, headers, and properties
 /// into a partially-populated <see cref="OutboxEntry"/>. The builder sets
 /// <see cref="OutboxEntry.EnqueuedAt"/> after the delegate returns.

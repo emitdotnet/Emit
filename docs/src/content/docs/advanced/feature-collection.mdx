@@ -95,7 +95,6 @@ Most metadata middleware needs is available directly on the context, without goi
 | `Timestamp` | `MessageContext` | When the message was created or received |
 | `Headers` | `ConsumeContext<T>` | Message headers (delegated from `TransportContext`) |
 | `RetryAttempt` | `ConsumeContext<T>` | Current retry count (0 on first attempt) |
-| `Transaction` | `ConsumeContext<T>` | Active transaction context, if any |
 | `TransportContext` | `ConsumeContext<T>` | Full transport metadata: raw bytes, headers, provider ID |
 
 ### Extracting transport info from URIs

@@ -190,7 +190,7 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
     }
 
     [Fact]
-    public void GivenEfCoreOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkNotRegistered()
+    public void GivenEfCoreOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkRegisteredAsScoped()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -201,7 +201,7 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
         builder.AddEntityFrameworkCore<TestDbContext>(ef => ef.UseNpgsql());
 
         // Assert
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
-        Assert.Null(descriptor);
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 }

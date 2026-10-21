@@ -20,4 +20,4 @@
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
-| `Modules/` | Deferred pipeline feature modules for circuit breaker, error, rate limit, retry, and validation configuration | Understand how pipeline features are configured at build time or add new pipeline modules |
+| `Modules/` | Deferred pipeline feature modules for circuit breaker and rate limit configuration, plus the filter and validation middleware | Understand how pipeline features are configured at build time or add new pipeline modules |

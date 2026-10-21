@@ -2,21 +2,22 @@ namespace Emit.Consumer;
 
 using System.Diagnostics;
 using Emit.Abstractions;
+using Emit.Abstractions.ErrorHandling;
 using Emit.Abstractions.Pipeline;
 using Emit.Metrics;
-using Emit.Pipeline.Modules;
 using Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Consume-pipeline middleware that retries message processing on failure.
-/// Creates an Activity per retry attempt. On exhaustion,
-/// rethrows the last exception for <c>ConsumeErrorMiddleware</c> to handle.
+/// Each failure is evaluated against the error policy: the clause matching the exception decides
+/// whether another attempt runs and with which backoff. Creates an Activity per retry attempt.
+/// When no further attempt runs, rethrows the last exception for <c>ConsumeErrorMiddleware</c>.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class RetryMiddleware<TMessage>(
-    RetryConfig config,
+    Func<Exception, ErrorAction> evaluatePolicy,
     EmitMetrics emitMetrics,
     INodeIdentity nodeIdentity,
     ILogger<RetryMiddleware<TMessage>> logger) : IMiddleware<ConsumeContext<TMessage>>
@@ -26,18 +27,31 @@ internal sealed class RetryMiddleware<TMessage>(
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
+        // Inner middleware asks the same question this middleware answers, so a failure it treats
+        // as final is exactly one that will not be retried.
+        context.WillRetry = exception => GetRetryAction(exception, context) is not null;
+
         try
         {
             await next.InvokeAsync(context).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception firstException)
+        catch (Exception firstException) when (GetRetryAction(firstException, context) is not null)
         {
             await ExecuteRetryAsync(firstException, context, next).ConfigureAwait(false);
         }
+    }
+
+    private ErrorAction.RetryAction? GetRetryAction(Exception exception, ConsumeContext<TMessage> context)
+    {
+        // A shutdown is never retried: the message is redelivered once the consumer restarts.
+        if (exception is OperationCanceledException && context.CancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        return evaluatePolicy(exception) is ErrorAction.RetryAction retry && context.RetryAttempt < retry.MaxAttempts
+            ? retry
+            : null;
     }
 
     private async Task ExecuteRetryAsync(
@@ -52,16 +66,16 @@ internal sealed class RetryMiddleware<TMessage>(
         // Capture parent Activity context for retry attempts
         var parentContext = Activity.Current?.Context ?? default;
 
-        for (var attempt = 0; attempt < config.MaxAttempts; attempt++)
+        while (GetRetryAction(lastException, context) is { } retry)
         {
-            var delay = config.Backoff.CalculateDelay(attempt);
+            var delay = retry.Backoff.CalculateDelay(context.RetryAttempt);
             if (delay > TimeSpan.Zero)
             {
                 await Task.Delay(delay, context.CancellationToken).ConfigureAwait(false);
             }
 
             // Set retry attempt on context for downstream middleware
-            context.RetryAttempt = attempt + 1;
+            context.RetryAttempt++;
 
             // Create a child scope so each retry gets fresh scoped services
             await using var retryScope = originalServices.CreateAsyncScope();
@@ -74,8 +88,8 @@ internal sealed class RetryMiddleware<TMessage>(
                 parentContext);
 
             retryActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
-            retryActivity?.SetTag(ActivityTagNames.MessagingRetryAttempt, attempt + 1);
-            retryActivity?.SetTag(ActivityTagNames.MessagingRetryMaxAttempts, config.MaxAttempts);
+            retryActivity?.SetTag(ActivityTagNames.MessagingRetryAttempt, context.RetryAttempt);
+            retryActivity?.SetTag(ActivityTagNames.MessagingRetryMaxAttempts, retry.MaxAttempts);
 
             try
             {
@@ -83,12 +97,12 @@ internal sealed class RetryMiddleware<TMessage>(
 
                 logger.LogDebug(
                     "Retry {Attempt}/{MaxAttempts} succeeded for message {MessageId}",
-                    attempt + 1, config.MaxAttempts, context.MessageId);
+                    context.RetryAttempt, retry.MaxAttempts, context.MessageId);
 
                 context.WithServices(originalServices);
 
                 var retryElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
-                emitMetrics.RecordRetryAttempts(attempt + 1, "success");
+                emitMetrics.RecordRetryAttempts(context.RetryAttempt, "success");
                 emitMetrics.RecordRetryDuration(retryElapsed, "success");
                 return;
             }
@@ -105,7 +119,7 @@ internal sealed class RetryMiddleware<TMessage>(
                 lastException = ex;
                 logger.LogWarning(ex,
                     "Retry {Attempt}/{MaxAttempts} failed for message {MessageId}",
-                    attempt + 1, config.MaxAttempts, context.MessageId);
+                    context.RetryAttempt, retry.MaxAttempts, context.MessageId);
             }
         }
 
@@ -113,10 +127,10 @@ internal sealed class RetryMiddleware<TMessage>(
         context.WithServices(originalServices);
 
         var exhaustedElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
-        emitMetrics.RecordRetryAttempts(config.MaxAttempts, "exhausted");
+        emitMetrics.RecordRetryAttempts(context.RetryAttempt, "exhausted");
         emitMetrics.RecordRetryDuration(exhaustedElapsed, "exhausted");
 
-        // All retries exhausted — rethrow for ConsumeErrorMiddleware to handle
+        // No further attempt runs: rethrow for ConsumeErrorMiddleware to handle
         throw lastException;
     }
 }

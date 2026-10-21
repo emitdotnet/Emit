@@ -187,7 +187,7 @@ public class MongoDbEmitBuilderExtensionsTests
     }
 
     [Fact]
-    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkNotRegistered()
+    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIUnitOfWorkRegisteredAsScoped()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -197,12 +197,12 @@ public class MongoDbEmitBuilderExtensionsTests
         builder.AddMongoDb(mongo => mongo.Configure((_, _) => { }));
 
         // Assert
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IUnitOfWork));
-        Assert.Null(descriptor);
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IUnitOfWork));
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 
     [Fact]
-    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIMongoSessionAccessorNotRegistered()
+    public void GivenMongoOutboxNotEnabled_WhenServicesBuilt_ThenIMongoSessionAccessorRegisteredAsScoped()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -212,7 +212,7 @@ public class MongoDbEmitBuilderExtensionsTests
         builder.AddMongoDb(mongo => mongo.Configure((_, _) => { }));
 
         // Assert
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IMongoSessionAccessor));
-        Assert.Null(descriptor);
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IMongoSessionAccessor));
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 }

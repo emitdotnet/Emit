@@ -8,7 +8,7 @@ using Emit.Abstractions.Pipeline;
 /// Used by consumer workers to dispatch each message through the consume pipeline.
 /// </summary>
 /// <typeparam name="TMessage">The message value type.</typeparam>
-public sealed class ConsumerPipelineEntry<TMessage>
+internal sealed class ConsumerPipelineEntry<TMessage>
 {
     /// <summary>
     /// The consumer identifier. For direct consumers this is the type name

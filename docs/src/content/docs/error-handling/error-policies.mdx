@@ -53,6 +53,8 @@ err.When<SomeException>(action => action.Discard());
 
 Retries the message up to `maxAttempts` times using a backoff strategy, then falls through to an exhaustion action. The exhaustion action is mandatory: chain `.DeadLetter()` or `.Discard()` after `.Retry()`.
 
+Retry is decided for each failure: the clause matching the exception decides whether another attempt runs and with which backoff. Attempts are counted per message, so a clause allowing five retries stops once five retries have run, whichever exceptions caused them, and an exception whose clause does not retry ends the retries at once.
+
 ```csharp
 err.When<HttpRequestException>(action => action
     .Retry(5, Backoff.Exponential(TimeSpan.FromSeconds(1)))
@@ -123,6 +125,8 @@ This is equivalent to `err.When<UnmatchedRouteException>(...)`.
 ## Retries and transactions
 
 When a consumer is decorated with `[Transactional]`, each retry attempt gets a fresh transaction. If the first attempt writes to the database and then fails, those writes are rolled back. If the second attempt succeeds, only its writes are committed. There is no accumulation of partial state across retries.
+
+Callbacks registered with `OnSucceeded` and `OnFailed` follow the same rule: a retried attempt's callbacks never run, and only the final attempt's do. See [Unit of Work](../../concepts/unit-of-work/).
 
 Each retry attempt also creates a fresh DI scope, so scoped services (database contexts, unit-of-work instances) are not reused between attempts.
 

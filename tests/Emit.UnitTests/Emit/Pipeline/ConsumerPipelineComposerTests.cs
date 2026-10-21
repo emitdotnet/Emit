@@ -108,6 +108,69 @@ public sealed class ConsumerPipelineComposerTests
         Assert.Equal("no-mw", entry.Identifier);
     }
 
+    [Fact]
+    public async Task GivenTransactionalConsumer_WhenItsOwnMiddlewareThrowsAfterTheHandler_ThenTransactionIsNotCommitted()
+    {
+        // Arrange
+        var mockTransaction = new Mock<IUnitOfWorkTransaction>();
+        var mockUow = new Mock<IUnitOfWork>();
+        mockUow.Setup(u => u.BeginAsync(It.IsAny<CancellationToken>())).ReturnsAsync(mockTransaction.Object);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(new EmitMetrics(null, new EmitMetricsEnrichment()));
+        services.AddSingleton<INodeIdentity>(new Mock<INodeIdentity>().Object);
+        services.AddSingleton<IOptions<EmitTracingOptions>>(Options.Create(new EmitTracingOptions()));
+        services.AddSingleton(new ActivityEnricherInvoker(NullLogger<ActivityEnricherInvoker>.Instance));
+        services.AddScoped<IEmitContext, EmitContext>();
+        services.AddSingleton(mockUow.Object);
+        var sp = services.BuildServiceProvider();
+
+        var perConsumer = new MessagePipelineBuilder();
+        perConsumer.Use<ConsumeContext<string>>(
+            _ => new ThrowAfterNextMiddleware(),
+            MiddlewareLifetime.Singleton);
+
+        var entry = CreateComposer(sp).Compose(
+            CreateTerminal(),
+            perConsumer,
+            identifier: "transactional",
+            kind: ConsumerKind.Direct,
+            consumerType: typeof(TransactionalConsumer));
+
+        var context = new ConsumeContext<string>
+        {
+            MessageId = "test-id",
+            Timestamp = DateTimeOffset.UtcNow,
+            CancellationToken = CancellationToken.None,
+            Services = sp,
+            Message = "test-message",
+            TransportContext = TestTransportContext.Create(sp),
+        };
+
+        // Act: the error middleware absorbs the failure (no policy configured, so discard)
+        await entry.Pipeline.InvokeAsync(context);
+
+        // Assert: the consumer's own middleware runs inside the unit of work, so its failure rolls back
+        mockUow.Verify(u => u.BeginAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mockTransaction.Verify(t => t.CommitAsync(It.IsAny<CancellationToken>()), Times.Never);
+        mockTransaction.Verify(t => t.DisposeAsync(), Times.Once);
+    }
+
+    [Transactional]
+    private sealed class TransactionalConsumer : IConsumer<string>
+    {
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class ThrowAfterNextMiddleware : IMiddleware<ConsumeContext<string>>
+    {
+        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        {
+            await next.InvokeAsync(context).ConfigureAwait(false);
+            throw new InvalidOperationException("failed after the handler");
+        }
+    }
+
     private sealed class OrderTrackingMiddleware(string name, List<string> order) : IMiddleware<ConsumeContext<string>>
     {
         public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
