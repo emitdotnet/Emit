@@ -9,6 +9,7 @@ using global::Emit.Daemon;
 using global::Emit.LeaderElection;
 using global::Emit.Observability;
 using global::Emit.UnitTests.Coordination;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -412,6 +413,50 @@ public class DaemonCoordinatorTests
         Assert.Equal(runsLastTheCooldown, agent.IsRunning);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GivenRunEndingWithOperationCanceledException_WhenItWasAskedToStopOrNot_ThenOnlyTheUnaskedEndIsAFailureReportedWithItsCause(bool askedToStop)
+    {
+        // Arrange: a daemon stopped through its token and one whose own operation timed out both end with an
+        // OperationCanceledException. Only the second failed, and its cause must reach the log. With a limit of one
+        // failure and another node offering the daemon, a failure makes this node stop offering it.
+        var logger = new CapturingLogger<DaemonCoordinator>();
+        var daemon = new TimingOutDaemonAgent(TestDaemonId);
+        OfferedByAnotherNode(TestDaemonId);
+        SetupNodeAssignments(MakeAssignment(nodeId, DaemonAssignmentState.Active, generation: 1));
+        var coordinator = CreateCoordinator([daemon], new DaemonOptions { MaxConsecutiveFailures = 1 }, logger: logger);
+        await FollowerTickAsync(coordinator);
+
+        // Act
+        if (askedToStop)
+        {
+            SetupNodeAssignments(MakeAssignment(nodeId, DaemonAssignmentState.Revoking, generation: 2));
+            await FollowerTickAsync(coordinator);
+        }
+        else
+        {
+            daemon.TimeOut();
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => daemon.Run!.WaitAsync(TimeSpan.FromSeconds(30)));
+        await FollowerTickAsync(coordinator);
+
+        // Assert
+        var errors = logger.Entries.Where(e => e.Level >= LogLevel.Error).ToList();
+        if (askedToStop)
+        {
+            Assert.Empty(errors);
+            Assert.Contains(TestDaemonId, DeclareDaemons(coordinator));
+        }
+        else
+        {
+            var failure = Assert.Single(errors);
+            Assert.Equal(TimingOutDaemonAgent.TimeoutMessage, Assert.IsAssignableFrom<OperationCanceledException>(failure.Exception).Message);
+            Assert.DoesNotContain(TestDaemonId, DeclareDaemons(coordinator));
+        }
+    }
+
     [Fact]
     public async Task GivenDaemonThatReturnsOnceItNoLongerHoldsItsAssignment_WhenItsLeaseRanOutBeforeItsTokenWasCancelled_ThenTheEndIsNotCountedAsAFailure()
     {
@@ -493,19 +538,24 @@ public class DaemonCoordinatorTests
     // --- Daemons that do not stop ---
 
     [Fact]
-    public async Task GivenDaemonIgnoringCancellation_WhenShuttingDown_ThenWaitsForItAtMostTheDrainTimeout()
+    public async Task GivenDaemonsSlowToStopOrIgnoringCancellation_WhenShuttingDown_ThenWaitsAtMostTheDrainTimeoutAndReportsOnlyTheRunsThatStopped()
     {
-        // Arrange
+        // Arrange: one run stops late but within the drain timeout, the other never does. Observers hear of a daemon
+        // stopping only once its run ended.
         agent.IgnoresCancellation = true;
+        var slow = new ControllableDaemonAgent("slow") { IgnoresCancellation = true };
         var time = NewTime();
         var daemonOptions = new DaemonOptions();
-        SetupNodeAssignments(MakeAssignment(nodeId, DaemonAssignmentState.Active));
-        var coordinator = CreateCoordinator([agent], daemonOptions, time);
+        SetupNodeAssignments(
+            MakeAssignment(nodeId, DaemonAssignmentState.Active),
+            MakeAssignment(nodeId, DaemonAssignmentState.Active, daemonId: slow.DaemonId));
+        var coordinator = CreateCoordinator([agent, slow], daemonOptions, time);
         await FollowerTickAsync(coordinator);
-        var stopping = coordinator.StopAllDaemonsAsync();
+        var stopping = coordinator.StopAllDaemonsAsync(nodeId);
 
         // Act
         time.Advance(daemonOptions.DrainTimeout - TimeSpan.FromMilliseconds(1));
+        slow.FinishStop();
 
         // Assert
         Assert.False(stopping.IsCompleted);
@@ -515,6 +565,8 @@ public class DaemonCoordinatorTests
 
         // Assert
         await stopping.WaitAsync(TimeSpan.FromSeconds(30));
+        mockObserver.Verify(o => o.OnDaemonStoppedAsync(slow.DaemonId, nodeId, It.IsAny<CancellationToken>()), Times.Once);
+        mockObserver.Verify(o => o.OnDaemonStoppedAsync(TestDaemonId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -716,14 +768,18 @@ public class DaemonCoordinatorTests
     [InlineData(InvalidDaemons.BlankId)]
     [InlineData(InvalidDaemons.IdLongerThanTheLimit)]
     [InlineData(InvalidDaemons.TwoWithTheSameId)]
+    [InlineData(InvalidDaemons.ReservedPrefix)]
+    [InlineData(InvalidDaemons.ReservedPrefixInAnotherCase)]
     public void GivenDaemonsWithoutUsableUniqueIds_WhenCreatingTheCoordinator_ThenThrows(InvalidDaemons daemons)
     {
-        // Arrange
+        // Arrange: identifiers starting with "emit:" belong to Emit's own daemons
         string[] ids = daemons switch
         {
             InvalidDaemons.EmptyId => [""],
             InvalidDaemons.BlankId => ["   "],
             InvalidDaemons.IdLongerThanTheLimit => [new string('d', ValidationConstants.MaxDaemonIdLength + 1)],
+            InvalidDaemons.ReservedPrefix => ["emit:custom"],
+            InvalidDaemons.ReservedPrefixInAnotherCase => ["EMIT:outbox"],
             _ => ["same", "same"],
         };
 
@@ -1379,7 +1435,8 @@ public class DaemonCoordinatorTests
         IEnumerable<IDaemonAgent> agents,
         DaemonOptions? daemonOptions = null,
         TimeProvider? timeProvider = null,
-        TaskScheduler? runScheduler = null)
+        TaskScheduler? runScheduler = null,
+        ILogger<DaemonCoordinator>? logger = null)
     {
         return TestNodes.CreateCoordinator(
             mockAssignmentPersistence.Object,
@@ -1391,7 +1448,8 @@ public class DaemonCoordinatorTests
             timeProvider ?? NewTime(),
             runScheduler ?? InlineTaskScheduler.Instance,
             [mockObserver.Object],
-            [mockLeaderElectionObserver.Object]);
+            [mockLeaderElectionObserver.Object],
+            logger);
     }
 
     public enum LeadershipLost
@@ -1443,6 +1501,8 @@ public class DaemonCoordinatorTests
         BlankId,
         IdLongerThanTheLimit,
         TwoWithTheSameId,
+        ReservedPrefix,
+        ReservedPrefixInAnotherCase,
     }
 
     public enum DaemonBlocks
@@ -1450,6 +1510,31 @@ public class DaemonCoordinatorTests
         WhenStarted,
         WhenStoppedByTheNode,
         WhenFenced,
+    }
+
+    /// <summary>
+    /// Daemon that runs until its token is cancelled, or until an operation with a timeout of its own times out, as an
+    /// HTTP call does. Either way its run ends with an <see cref="OperationCanceledException"/>.
+    /// </summary>
+    private sealed class TimingOutDaemonAgent(string daemonId) : IDaemonAgent
+    {
+        public const string TimeoutMessage = "An operation of the daemon timed out.";
+
+        private readonly TaskCompletionSource timedOut = new();
+
+        public string DaemonId { get; } = daemonId;
+
+        public Task? Run { get; private set; }
+
+        public Task RunAsync(DaemonRunContext context) => Run = RunUntilStoppedOrTimedOutAsync(context.AssignmentToken);
+
+        public void TimeOut() => timedOut.TrySetResult();
+
+        private async Task RunUntilStoppedOrTimedOutAsync(CancellationToken assignmentToken)
+        {
+            await timedOut.Task.WaitAsync(assignmentToken);
+            throw new OperationCanceledException(TimeoutMessage);
+        }
     }
 
     /// <summary>

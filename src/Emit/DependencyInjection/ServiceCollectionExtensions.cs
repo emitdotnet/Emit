@@ -65,11 +65,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPostConfigureOptions<LeaderElectionOptions>>(sp =>
             new LeaderElectionOptionsDefaults(sp.GetService<IHostEnvironment>()));
 
-        // Register metrics infrastructure (enrichment always includes emit.node.id)
+        // Register metrics infrastructure (enrichment always includes emit.node.id and emit.service.name)
         services.TryAddSingleton(sp =>
         {
             var nodeIdentity = sp.GetRequiredService<INodeIdentity>();
-            return new EmitMetricsEnrichment(new KeyValuePair<string, object?>[] { new("emit.node.id", nodeIdentity.NodeId.ToString()) });
+            return new EmitMetricsEnrichment(new KeyValuePair<string, object?>[]
+            {
+                new("emit.node.id", nodeIdentity.NodeId.ToString()),
+                new("emit.service.name", nodeIdentity.ServiceName),
+            });
         });
         services.TryAddSingleton(sp => new LockMetrics(
             sp.GetService<IMeterFactory>(),
@@ -78,6 +82,9 @@ public static class ServiceCollectionExtensions
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));
         services.TryAddSingleton(sp => new EmitMetrics(
+            sp.GetService<IMeterFactory>(),
+            sp.GetRequiredService<EmitMetricsEnrichment>()));
+        services.TryAddSingleton(sp => new DaemonMetrics(
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));
 

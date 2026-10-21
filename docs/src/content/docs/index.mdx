@@ -47,7 +47,7 @@ The outbox is one of several tools Emit provides. An in-process mediator, distri
 
 **Pluggable persistence** across MongoDB and PostgreSQL. You bring your own client; Emit handles the rest.
 
-**Cluster coordination** with [leader election](./concepts/leader-election/) for daemon scheduling and [distributed locks](./persistence/distributed-locks/) available to your own code.
+**Cluster coordination** with [daemons](./concepts/leader-election/#daemons) that run your work on exactly one node and move it when that node goes away, plus [leader election](./concepts/leader-election/) and [distributed locks](./persistence/distributed-locks/) for your own code.
 
 **Observability** through distributed tracing with W3C propagation, per-subsystem metrics, and structured logging throughout.
 

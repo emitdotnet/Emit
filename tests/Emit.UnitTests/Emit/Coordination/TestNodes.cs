@@ -3,11 +3,14 @@ namespace Emit.UnitTests.Coordination;
 using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
+using Emit.Abstractions.Metrics;
 using Emit.Abstractions.Observability;
 using Emit.Configuration;
 using Emit.Daemon;
 using Emit.LeaderElection;
+using Emit.Metrics;
 using Emit.Observability;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -27,7 +30,9 @@ internal static class TestNodes
         TimeProvider timeProvider,
         TaskScheduler runScheduler,
         IDaemonObserver[]? daemonObservers = null,
-        ILeaderElectionObserver[]? leaderElectionObservers = null)
+        ILeaderElectionObserver[]? leaderElectionObservers = null,
+        ILogger<DaemonCoordinator>? logger = null,
+        DaemonMetrics? metrics = null)
     {
         AssertValid(leaderElectionOptions, daemonOptions);
         return new(
@@ -42,7 +47,8 @@ internal static class TestNodes
             timeProvider,
             new NodeObservations(timeProvider),
             runScheduler,
-            NullLogger<DaemonCoordinator>.Instance);
+            metrics ?? new DaemonMetrics(null, new EmitMetricsEnrichment()),
+            logger ?? NullLogger<DaemonCoordinator>.Instance);
     }
 
     public static HeartbeatWorker CreateWorker(
@@ -52,7 +58,8 @@ internal static class TestNodes
         INodeIdentity identity,
         TimeProvider timeProvider,
         TaskScheduler callbackScheduler,
-        ILeaderElectionObserver[]? observers = null) =>
+        ILeaderElectionObserver[]? observers = null,
+        ILogger<HeartbeatWorker>? logger = null) =>
         new(
             persistence,
             coordinator,
@@ -61,7 +68,7 @@ internal static class TestNodes
             identity,
             timeProvider,
             callbackScheduler,
-            NullLogger<HeartbeatWorker>.Instance);
+            logger ?? NullLogger<HeartbeatWorker>.Instance);
 
     /// <summary>
     /// Fails unless a host would accept the timings: tests of the coordination must run a configuration the

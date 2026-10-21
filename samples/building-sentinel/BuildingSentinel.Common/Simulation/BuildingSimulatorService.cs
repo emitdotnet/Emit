@@ -127,6 +127,8 @@ public sealed class BuildingSimulatorService(
     private readonly Random _random = new();
     private int _suspectDenialCount;
     private int _tickCount;
+    private string? _silentDevice;
+    private int _silentAfterTicks;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -138,6 +140,11 @@ public sealed class BuildingSimulatorService(
         logger.LogInformation("[Simulator] Starting simulation loop.");
 
         var period = configuration.GetValue<TimeSpan?>("Simulation:Period") ?? TimeSpan.FromMilliseconds(800);
+
+        // One device stops reporting after a while, so the device offline daemon has something to find. An empty
+        // name keeps every device reporting.
+        _silentDevice = configuration.GetValue<string?>("Simulation:SilentDevice") ?? "basement-utility";
+        _silentAfterTicks = configuration.GetValue<int?>("Simulation:SilentAfterTicks") ?? 40;
         using var timer = new PeriodicTimer(period);
 
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
@@ -145,6 +152,11 @@ public sealed class BuildingSimulatorService(
             try
             {
                 _tickCount++;
+
+                if (_tickCount == _silentAfterTicks && !string.IsNullOrEmpty(_silentDevice))
+                {
+                    logger.LogWarning("[Simulator] Device {Device} stops reporting; the device offline daemon will notice", _silentDevice);
+                }
 
                 if (_tickCount % 20 == 0)
                 {
@@ -168,6 +180,21 @@ public sealed class BuildingSimulatorService(
         logger.LogInformation("[Simulator] Simulation loop stopped.");
     }
 
+    /// <summary>
+    /// Picks a device at random, leaving out the silent device once it stopped reporting.
+    /// </summary>
+    private string PickDevice(string[] devices)
+    {
+        string device;
+        do
+        {
+            device = devices[_random.Next(devices.Length)];
+        }
+        while (device == _silentDevice && _tickCount >= _silentAfterTicks);
+
+        return device;
+    }
+
     private async Task RunScenarioTickAsync(CancellationToken ct)
     {
         var roll = _random.Next(100);
@@ -186,7 +213,7 @@ public sealed class BuildingSimulatorService(
 
     private BuildingEventRequest GenerateNormalAccess()
     {
-        var device = Devices[_random.Next(Devices.Length)];
+        var device = PickDevice(Devices);
         var badge = EmployeeBadges[_random.Next(EmployeeBadges.Length)];
         var location = DeviceLocationMap[device];
 
@@ -220,7 +247,7 @@ public sealed class BuildingSimulatorService(
 
     private BuildingEventRequest GenerateMotion()
     {
-        var device = Devices[_random.Next(Devices.Length)];
+        var device = PickDevice(Devices);
         var location = DeviceLocationMap[device];
 
         logger.LogInformation(
@@ -261,7 +288,7 @@ public sealed class BuildingSimulatorService(
 
     private BuildingEventRequest GenerateDeviceGlitch()
     {
-        var device = Devices[_random.Next(Devices.Length)];
+        var device = PickDevice(Devices);
 
         logger.LogWarning(
             "[Simulator] Device glitch — {Device} sent an event with missing location (will fail validation)",

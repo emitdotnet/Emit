@@ -5,6 +5,7 @@ using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
 using Emit.Configuration;
 using Emit.LeaderElection;
+using Emit.Metrics;
 using Emit.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -54,9 +55,13 @@ internal sealed class DaemonCoordinator
     private readonly LeaderElectionOptions leaderElectionOptions;
     private readonly TimeProvider timeProvider;
     private readonly TaskScheduler runScheduler;
+    private readonly DaemonMetrics metrics;
     private readonly ILogger<DaemonCoordinator> logger;
     private readonly string serviceName;
     private readonly Guid ownNodeId;
+
+    // The latest run of each daemon, read by the metrics on the exporter's thread; the set of daemons never changes
+    private readonly Dictionary<string, RunSlot> runSlots;
 
     private readonly Dictionary<string, RunningDaemon> runningDaemons = new(StringComparer.Ordinal);
     private readonly Dictionary<string, StoppingRun> stoppingRuns = new(StringComparer.Ordinal);
@@ -90,6 +95,7 @@ internal sealed class DaemonCoordinator
         IOptions<LeaderElectionOptions> leaderElectionOptions,
         INodeIdentity nodeIdentity,
         TimeProvider timeProvider,
+        DaemonMetrics metrics,
         ILogger<DaemonCoordinator> logger)
         : this(
             assignmentPersistence,
@@ -103,6 +109,7 @@ internal sealed class DaemonCoordinator
             timeProvider,
             new NodeObservations(timeProvider),
             TaskScheduler.Default,
+            metrics,
             logger)
     {
     }
@@ -123,6 +130,7 @@ internal sealed class DaemonCoordinator
         TimeProvider timeProvider,
         NodeObservations nodeObservations,
         TaskScheduler runScheduler,
+        DaemonMetrics metrics,
         ILogger<DaemonCoordinator> logger)
     {
         ArgumentNullException.ThrowIfNull(assignmentPersistence);
@@ -136,6 +144,7 @@ internal sealed class DaemonCoordinator
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(nodeObservations);
         ArgumentNullException.ThrowIfNull(runScheduler);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.assignmentPersistence = assignmentPersistence;
@@ -147,6 +156,7 @@ internal sealed class DaemonCoordinator
         this.leaderElectionOptions = leaderElectionOptions.Value;
         this.timeProvider = timeProvider;
         this.runScheduler = runScheduler;
+        this.metrics = metrics;
         this.logger = logger;
         this.nodeObservations = nodeObservations;
         serviceName = nodeIdentity.ServiceName;
@@ -154,6 +164,8 @@ internal sealed class DaemonCoordinator
 
         declaredDaemonIds = this.daemons.Keys.ToHashSet(StringComparer.Ordinal);
         serviceObservedAt = timeProvider.GetTimestamp();
+        runSlots = this.daemons.Keys.ToDictionary(daemonId => daemonId, _ => new RunSlot(), StringComparer.Ordinal);
+        metrics.ObserveRunsWith(CountRuns);
     }
 
     /// <summary>
@@ -208,36 +220,49 @@ internal sealed class DaemonCoordinator
 
     /// <summary>
     /// Cancels all running daemons and waits up to <see cref="DaemonOptions.DrainTimeout"/> for every
-    /// cancelled run to end. Called during application shutdown.
+    /// cancelled run to end. Observers hear of each run that ended. Called during application shutdown.
     /// </summary>
-    public async Task StopAllDaemonsAsync()
+    public async Task StopAllDaemonsAsync(Guid nodeId)
     {
         foreach (var daemonId in runningDaemons.Keys.ToList())
         {
-            StopDaemon(daemonId, nodeId: null);
+            StopDaemon(daemonId, nodeId);
         }
 
         var stillRunning = stoppingRuns.Values.Select(r => r.Run).Where(run => !run.IsCompleted).ToList();
-        if (stillRunning is [])
+        if (stillRunning is not [])
         {
-            return;
+            try
+            {
+                await Task.WhenAll(stillRunning).WaitAsync(options.DrainTimeout, timeProvider).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                logger.LogWarning(
+                    "{Count} daemon(s) did not stop within {DrainTimeout} after they were cancelled",
+                    stillRunning.Count(run => !run.IsCompleted), options.DrainTimeout);
+            }
+            catch (Exception)
+            {
+                // A run that faulted while stopping has stopped
+            }
         }
 
-        try
+        // Completes the stop of every run that ended, which notifies the observers; one still going is not reported
+        foreach (var daemonId in stoppingRuns.Keys.ToList())
         {
-            await Task.WhenAll(stillRunning).WaitAsync(options.DrainTimeout, timeProvider).ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            logger.LogWarning(
-                "{Count} daemon(s) did not stop within {DrainTimeout} after they were cancelled",
-                stillRunning.Count(run => !run.IsCompleted), options.DrainTimeout);
-        }
-        catch (Exception)
-        {
-            // A run that faulted while stopping has stopped
+            _ = HasStoppingRun(daemonId);
         }
     }
+
+    /// <summary>
+    /// Waits, at most <paramref name="bound"/>, for the observers to be told of everything that happened so far.
+    /// Called last during application shutdown, before the host disposes them.
+    /// </summary>
+    public Task FlushObserversAsync(TimeSpan bound) =>
+        Task.WhenAll(
+            observerInvoker.FlushAsync(bound, timeProvider),
+            leaderElectionObserverInvoker.FlushAsync(bound, timeProvider));
 
     /// <summary>
     /// Stops this node's daemons and gives up its assignments. Called when the node's registration may have
@@ -792,6 +817,7 @@ internal sealed class DaemonCoordinator
             }
 
             runningDaemons.Remove(daemonId);
+            runSlots[daemonId].Current = null;
             running.WorkerLink.Unregister();
             running.Cts.Dispose();
 
@@ -799,13 +825,41 @@ internal sealed class DaemonCoordinator
             {
                 logger.LogError(exception.GetBaseException(), "Daemon {DaemonId} failed", daemonId);
             }
+            else if (CancellationOf(running.Run) is { } cancellation)
+            {
+                // Cancelled by a token of its own, such as an operation that timed out
+                logger.LogError(cancellation, "Daemon {DaemonId} was cancelled although it was not asked to stop", daemonId);
+            }
             else
             {
                 logger.LogError("Daemon {DaemonId} ended although it was not asked to stop", daemonId);
             }
 
             observerInvoker.OnDaemonStopped(daemonId, nodeId);
+            metrics.RecordFailure(daemonId);
             RecordFailure(daemonId, timeProvider.GetElapsedTime(running.StartedAt));
+        }
+    }
+
+    /// <summary>
+    /// Returns the exception a cancelled run ended with, which a cancelled task keeps, or <c>null</c> when the run
+    /// was not cancelled.
+    /// </summary>
+    private static OperationCanceledException? CancellationOf(Task run)
+    {
+        if (!run.IsCanceled)
+        {
+            return null;
+        }
+
+        try
+        {
+            run.GetAwaiter().GetResult();
+            return null;
+        }
+        catch (OperationCanceledException ex)
+        {
+            return ex;
         }
     }
 
@@ -1028,11 +1082,14 @@ internal sealed class DaemonCoordinator
             TaskCreationOptions.DenyChildAttach,
             runScheduler).Unwrap();
 
-        runningDaemons[assignment.DaemonId] = new RunningDaemon(cts, lease, workerLink, run, assignment.Generation, timeProvider.GetTimestamp(), stop);
+        var running = new RunningDaemon(cts, lease, workerLink, run, assignment.Generation, timeProvider.GetTimestamp(), stop);
+        runningDaemons[assignment.DaemonId] = running;
+        runSlots[assignment.DaemonId].Current = new ObservedRun(run, running);
 
         logger.LogInformation("Started daemon {DaemonId} on node {NodeId} (generation={Generation})",
             assignment.DaemonId, nodeId, assignment.Generation);
 
+        metrics.RecordStart(assignment.DaemonId);
         observerInvoker.OnDaemonStarted(assignment.DaemonId, nodeId);
     }
 
@@ -1051,6 +1108,7 @@ internal sealed class DaemonCoordinator
         running.WorkerLink.Unregister();
         CancelRun(running.Cts);
         stoppingRuns[daemonId] = new StoppingRun(running.Cts, running.Run, nodeId, timeProvider.GetTimestamp());
+        runSlots[daemonId].Current = new ObservedRun(running.Run, Running: null);
     }
 
     /// <summary>
@@ -1132,6 +1190,11 @@ internal sealed class DaemonCoordinator
 
         stoppingRuns.Remove(daemonId);
         stopping.Cts.Dispose();
+        if (runSlots[daemonId].Current?.Run == stopping.Run)
+        {
+            runSlots[daemonId].Current = null;
+        }
+
         if (stopping.Run.Exception is { } exception)
         {
             logger.LogWarning(exception.GetBaseException(), "Daemon {DaemonId} failed while stopping", daemonId);
@@ -1182,6 +1245,13 @@ internal sealed class DaemonCoordinator
                     nameof(daemons));
             }
 
+            if (daemonId.StartsWith(ValidationConstants.ReservedDaemonIdPrefix, StringComparison.OrdinalIgnoreCase) && daemon is not OutboxDaemon)
+            {
+                throw new ArgumentException(
+                    $"Daemon identifier '{daemonId}' starts with '{ValidationConstants.ReservedDaemonIdPrefix}', which is reserved for Emit's own daemons.",
+                    nameof(daemons));
+            }
+
             if (!byId.TryAdd(daemonId, daemon))
             {
                 throw new ArgumentException($"More than one daemon has the identifier '{daemonId}'.", nameof(daemons));
@@ -1190,6 +1260,21 @@ internal sealed class DaemonCoordinator
 
         return byId;
     }
+
+    /// <summary>
+    /// Counts each daemon's runs by state, for the metrics. Called on the exporter's thread: it reads only the run
+    /// slots and the thread-safe state of the runs. Reading whether a lease ran out may cancel it from that thread,
+    /// which fences the runs under it as the lease's own timer would.
+    /// </summary>
+    private IReadOnlyList<DaemonRunCount> CountRuns() =>
+    [
+        .. runSlots.Select(slot => slot.Value.Current switch
+        {
+            null or { Run.IsCompleted: true } => new DaemonRunCount(slot.Key, Running: 0, Stopping: 0),
+            { Running.StopRequested: false } => new DaemonRunCount(slot.Key, Running: 1, Stopping: 0),
+            _ => new DaemonRunCount(slot.Key, Running: 0, Stopping: 1),
+        }),
+    ];
 
     private static Guid PickNode(IReadOnlyList<LiveNode> candidates, Dictionary<Guid, int> load) =>
         candidates
@@ -1226,6 +1311,23 @@ internal sealed class DaemonCoordinator
 
         public void Request() => requested = true;
     }
+
+    /// <summary>
+    /// The latest run of a daemon, as the metrics see it: <see cref="ObservedRun.Running"/> is set while the run was
+    /// not asked to stop by this node.
+    /// </summary>
+    private sealed class RunSlot
+    {
+        private volatile ObservedRun? current;
+
+        public ObservedRun? Current
+        {
+            get => current;
+            set => current = value;
+        }
+    }
+
+    private sealed record ObservedRun(Task Run, RunningDaemon? Running);
 
     private sealed record StoppingRun(CancellationTokenSource Cts, Task Run, Guid? NodeId, long StoppedAt)
     {

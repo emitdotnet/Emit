@@ -1,3 +1,4 @@
+using BuildingSentinel.Common.Daemons;
 using BuildingSentinel.Common.Endpoints;
 using BuildingSentinel.Common.Extensions;
 using BuildingSentinel.Common.Repositories;
@@ -51,6 +52,7 @@ builder.Services.AddDbContextFactory<SampleDbContext>(options =>
 builder.Services.AddScoped<IBuildingEventRepository, EfBuildingEventRepository>();
 builder.Services.AddScoped<IAlertRepository, EfAlertRepository>();
 builder.Services.AddScoped<IDeviceHeartbeatRepository, EfDeviceHeartbeatRepository>();
+builder.Services.AddScoped<IDeviceAlertRepository, EfDeviceAlertRepository>();
 builder.Services.AddHostedService<BuildingSimulatorService>();
 builder.Services.AddValidatorsFromAssemblyContaining<BuildingEventValidator>();
 
@@ -81,6 +83,9 @@ builder.Services.AddEmit(emit =>
     });
 
     emit.AddMediator(m => m.AddBuildingSentinelHandlers());
+
+    // Runs on exactly one instance at a time, and moves to another when that instance goes away
+    emit.AddDaemon<DeviceOfflineDaemon>();
 });
 
 // ── Health checks ─────────────────────────────────────────────────────────────

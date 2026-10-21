@@ -9,6 +9,8 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbCont
     public DbSet<BuildingEventEntity> BuildingEvents { get; set; } = default!;
     public DbSet<AccessDenialAlertEntity> AccessDenialAlerts { get; set; } = default!;
     public DbSet<DeviceHeartbeatEntity> DeviceHeartbeats { get; set; } = default!;
+    public DbSet<DeviceOfflineAlertEntity> DeviceOfflineAlerts { get; set; } = default!;
+    public DbSet<DaemonFenceEntity> DaemonFences { get; set; } = default!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,6 +35,20 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : DbCont
         {
             e.HasKey(x => x.DeviceId);
             e.Property(x => x.DeviceId).IsRequired().HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<DeviceOfflineAlertEntity>(e =>
+        {
+            e.ToTable("device_offline_alerts");
+            e.HasKey(x => x.AlertId);
+            e.Property(x => x.AlertId).IsRequired().HasMaxLength(160);
+            e.Property(x => x.DeviceId).IsRequired().HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<DaemonFenceEntity>(e =>
+        {
+            e.ToTable("daemon_fences");
+            e.HasKey(x => x.FencingKey);
         });
     }
 }

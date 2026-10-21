@@ -1,12 +1,33 @@
 namespace Emit.OpenTelemetry.Tests;
 
+using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
+using global::Emit.DependencyInjection;
+using global::OpenTelemetry;
 using global::OpenTelemetry.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 public sealed class MeterProviderBuilderExtensionsTests
 {
+    [Fact]
+    public void GivenAddEmitInstrumentation_WhenResolvingTheEnrichment_ThenItCarriesTheNodeIdServiceNameAndCustomTags()
+    {
+        // Arrange: the instrumentation replaces the enrichment AddEmit registers, so it must keep the core tags
+        var services = new ServiceCollection();
+        services.AddEmit(emit => emit.ConfigureLeaderElection(options => options.ServiceName = "product-sync"));
+        services.ConfigureOpenTelemetryMeterProvider(metrics => metrics.AddEmitInstrumentation(options => options.EnrichWithTag("env", "prod")));
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var tags = provider.GetRequiredService<EmitMetricsEnrichment>().Tags.ToArray().ToDictionary(t => t.Key, t => t.Value);
+
+        // Assert
+        Assert.Equal(provider.GetRequiredService<INodeIdentity>().NodeId.ToString(), tags["emit.node.id"]);
+        Assert.Equal("product-sync", tags["emit.service.name"]);
+        Assert.Equal("prod", tags["env"]);
+    }
+
     [Fact]
     public void GivenDefaultOptions_WhenAddEmitInstrumentation_ThenNoExceptionIsThrown()
     {

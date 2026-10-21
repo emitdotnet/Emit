@@ -7,6 +7,11 @@ namespace Emit.Abstractions.Daemon;
 /// </summary>
 /// <remarks>
 /// <para>
+/// Register a daemon with <c>AddDaemon</c> on the Emit builder, in every replica of the service. It needs a
+/// persistence provider, and lives as long as the application: to use scoped services, such as a database context,
+/// inject <c>IServiceScopeFactory</c> and create a scope for each unit of work.
+/// </para>
+/// <para>
 /// Each daemon is identified by a unique <see cref="DaemonId"/>. When a node receives the
 /// assignment, <see cref="RunAsync"/> is called and runs until its token is cancelled: when the
 /// assignment is revoked, when the node loses contact with the database, or on shutdown.
@@ -32,7 +37,8 @@ namespace Emit.Abstractions.Daemon;
 public interface IDaemonAgent
 {
     /// <summary>
-    /// Gets the unique identifier for this daemon type.
+    /// Gets the unique identifier of this daemon. Keep it the same across deployments: a daemon whose identifier
+    /// changes is a new daemon. Identifiers starting with <c>emit:</c> are reserved for Emit's own daemons.
     /// </summary>
     string DaemonId { get; }
 

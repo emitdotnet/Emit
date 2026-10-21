@@ -15,5 +15,5 @@ PostgreSQL startup project for Building Sentinel. Wires up EF Core persistence a
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
-| `Entities/` | EF Core entity classes for building events, access denial alerts, and device heartbeats | Understand the relational schema or add new entities |
-| `Repositories/` | EF Core implementations of IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Understand EF Core query patterns or modify repository implementations |
+| `Entities/` | EF Core entity classes for building events, access denial alerts, device heartbeats, device offline alerts, and daemon fences | Understand the relational schema or add new entities |
+| `Repositories/` | EF Core implementations of IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository, IDeviceAlertRepository (fenced by generation) | Understand EF Core query patterns or modify repository implementations |

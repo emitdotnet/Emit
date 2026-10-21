@@ -122,7 +122,7 @@ With EF Core, entries within a single `SaveChangesAsync` batch are assigned iden
 
 ## Single-worker guarantee
 
-The outbox worker runs as a [daemon](../concepts/leader-election/#daemon-coordination): exactly one instance of your service processes the outbox at any time, and only the entries that service enqueued. If the assigned node goes down, the leader reassigns the daemon to another node once its registration expires (`NodeRegistrationTtl`, default: 90 seconds).
+The outbox worker runs as a [daemon](../concepts/leader-election/#daemons): exactly one instance of your service processes the outbox at any time, and only the entries that service enqueued. If the assigned node goes down, the leader reassigns the daemon to another node once its registration expires (`NodeRegistrationTtl`, default: 90 seconds).
 
 This prevents concurrent workers from racing on the same group and producing duplicate deliveries. Where the message broker supports transactions, as Kafka does, each batch is delivered atomically.
 

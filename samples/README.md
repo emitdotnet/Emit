@@ -4,7 +4,7 @@ Self-contained projects demonstrating real-world Emit usage.
 
 | Sample | What it demonstrates |
 |---|---|
-| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka consumers, dead-letter topics, FluentValidation, health checks, OpenTelemetry |
+| [building-sentinel](building-sentinel/) | Transactional outbox, mediator, Kafka consumers, dead-letter topics, a daemon running on one instance at a time, FluentValidation, health checks, OpenTelemetry |
 | [batch-consumer](batch-consumer/) | Batch consuming, transactional outbox on consumer side, per-item validation, rate limiting, circuit breaker, OpenTelemetry |
 | [distributed-locks](distributed-locks/) | Distributed locking with contention, lock TTL, OpenTelemetry lock metrics |
 
