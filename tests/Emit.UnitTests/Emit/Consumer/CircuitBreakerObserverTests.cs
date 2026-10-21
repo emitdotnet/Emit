@@ -29,6 +29,19 @@ public sealed class CircuitBreakerObserverTests
         return new CircuitBreakerObserver<string>(config, mockFlowControl.Object, new EmitMetrics(null, new EmitMetricsEnrichment()), logger);
     }
 
+    /// <summary>
+    /// Returns a task that completes when the circuit resumes the consumer, which it does as it goes half-open.
+    /// </summary>
+    private Task HalfOpenAsync()
+    {
+        var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        mockFlowControl
+            .Setup(f => f.ResumeAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => resumed.TrySetResult())
+            .Returns(Task.CompletedTask);
+        return resumed.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
     [Fact]
     public async Task GivenTripOnMatchingException_WhenFailureThresholdReached_ThenPauseAsyncCalled()
     {
@@ -113,6 +126,8 @@ public sealed class CircuitBreakerObserverTests
             samplingWindow: TimeSpan.FromSeconds(30),
             pauseDuration: TimeSpan.FromMilliseconds(600));
 
+        var halfOpen = HalfOpenAsync();
+
         // Trip the circuit
         await observer.ReportFailureAsync(new Exception("test"));
         await observer.ReportFailureAsync(new Exception("test"));
@@ -120,7 +135,7 @@ public sealed class CircuitBreakerObserverTests
         mockFlowControl.Verify(f => f.PauseAsync(It.IsAny<CancellationToken>()), Times.Once);
 
         // Wait for half-open transition
-        await Task.Delay(800);
+        await halfOpen;
 
         // Assert — ResumeAsync should be called (half-open transition resumes partitions)
         mockFlowControl.Verify(f => f.ResumeAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -141,12 +156,14 @@ public sealed class CircuitBreakerObserverTests
             samplingWindow: TimeSpan.FromSeconds(30),
             pauseDuration: TimeSpan.FromMilliseconds(600));
 
+        var halfOpen = HalfOpenAsync();
+
         // Trip the circuit
         await observer.ReportFailureAsync(new Exception("test"));
         await observer.ReportFailureAsync(new Exception("test"));
 
         // Wait for half-open
-        await Task.Delay(800);
+        await halfOpen;
 
         // Act — failing message in half-open state should re-open the circuit
         await observer.ReportFailureAsync(new Exception("half-open failure"));
