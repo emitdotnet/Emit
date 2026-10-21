@@ -50,4 +50,31 @@ public static class EmitBuilderObserverExtensions
         builder.Services.AddSingleton<IOutboxObserver, T>();
         return builder;
     }
+
+    /// <summary>
+    /// Registers a leader election observer that is notified when this node is elected or loses leadership, and when
+    /// nodes of its service register or are removed.
+    /// </summary>
+    /// <typeparam name="T">The observer type.</typeparam>
+    /// <param name="builder">The Emit builder.</param>
+    /// <returns>The Emit builder for method chaining.</returns>
+    public static EmitBuilder AddLeaderElectionObserver<T>(this EmitBuilder builder) where T : class, ILeaderElectionObserver
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddSingleton<ILeaderElectionObserver, T>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a daemon observer that is notified when daemons are assigned, started, stopped and revoked.
+    /// </summary>
+    /// <typeparam name="T">The observer type.</typeparam>
+    /// <param name="builder">The Emit builder.</param>
+    /// <returns>The Emit builder for method chaining.</returns>
+    public static EmitBuilder AddDaemonObserver<T>(this EmitBuilder builder) where T : class, IDaemonObserver
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddSingleton<IDaemonObserver, T>();
+        return builder;
+    }
 }

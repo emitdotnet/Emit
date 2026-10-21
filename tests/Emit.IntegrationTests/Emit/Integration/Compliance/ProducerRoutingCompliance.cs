@@ -9,6 +9,7 @@ using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -19,7 +20,6 @@ using ConfluentKafka = Confluent.Kafka;
 [Trait("Category", "Integration")]
 public abstract class ProducerRoutingCompliance : IAsyncLifetime
 {
-    private string? currentOutboxTopic;
 
     /// <summary>
     /// Gets the Kafka bootstrap servers address for producing and consuming messages.
@@ -64,7 +64,7 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
         try
         {
             // Act — produce to outbox topic via transaction.
-            await ProduceViaOutboxAsync(host.Services, "k", "outbox-msg");
+            await ProduceViaOutboxAsync(host.Services, 1, "outbox-msg");
 
             // Assert — message delivered via outbox daemon.
             var ctx = await outboxSink.WaitForMessageAsync();
@@ -136,7 +136,7 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
                     ;
             }
 
-            await ProduceViaOutboxAsync(host.Services, "k", "outbox-second");
+            await ProduceViaOutboxAsync(host.Services, 1, "outbox-second");
 
             // Assert — both delivered.
             var directCtx = await directSink.WaitForMessageAsync();
@@ -152,33 +152,9 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
         }
     }
 
-    private async Task ProduceViaOutboxAsync(
-        IServiceProvider services,
-        string key,
-        string value,
-        CancellationToken ct = default)
-    {
-        using var scope = services.CreateScope();
-        var sp = scope.ServiceProvider;
-        var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
-        var repository = sp.GetRequiredService<IOutboxRepository>();
-
-        await using var tx = await unitOfWork.BeginAsync(ct);
-
-        var keyBytes = Encoding.UTF8.GetBytes(key);
-        await repository.EnqueueAsync(new OutboxEntry
-        {
-            SystemId = "kafka",
-            Destination = $"kafka://localhost/{currentOutboxTopic}",
-            GroupKey = $"kafka:{currentOutboxTopic}:{Convert.ToBase64String(keyBytes)}",
-            Body = Encoding.UTF8.GetBytes(value),
-            EnqueuedAt = DateTime.UtcNow,
-            Properties = new Dictionary<string, string> { ["key"] = Convert.ToBase64String(keyBytes) },
-        }, ct);
-
-        await FlushBeforeCommitAsync(sp);
-        await tx.CommitAsync(ct);
-    }
+    // The outbox topic has its own key type, so its producer is the one the helper resolves
+    private Task ProduceViaOutboxAsync(IServiceProvider services, int key, string value) =>
+        TestHelpers.ProduceTransactionallyAsync(services, key, value, FlushBeforeCommitAsync);
 
     private IHost BuildHost(
         MessageSink<string> outboxSink,
@@ -188,8 +164,6 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
         string groupId,
         TimeSpan pollingInterval)
     {
-        currentOutboxTopic = outboxTopic;
-
         return Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
@@ -198,6 +172,7 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
                 services.AddSingleton(new DirectTopicSink(directSink));
                 services.AddEmit(emit =>
                 {
+                    ConfigureFastCoordination(emit, NewServiceName());
                     ConfigurePersistence(emit, pollingInterval);
                     ConfigureKafka(emit, outboxTopic, directTopic, groupId);
                 });
@@ -219,10 +194,14 @@ public abstract class ProducerRoutingCompliance : IAsyncLifetime
             });
             kafka.AutoProvision();
 
-            kafka.Topic<string, string>(outboxTopic, t =>
+            kafka.Topic<int, string>(outboxTopic, t =>
             {
-                t.SetUtf8KeyDeserializer();
+                t.SetKeySerializer(ConfluentKafka.Serializers.Int32);
+                t.SetUtf8ValueSerializer();
+                t.SetKeyDeserializer(ConfluentKafka.Deserializers.Int32);
                 t.SetUtf8ValueDeserializer();
+
+                t.Producer();
 
                 t.ConsumerGroup($"{groupId}-outbox", group =>
                 {

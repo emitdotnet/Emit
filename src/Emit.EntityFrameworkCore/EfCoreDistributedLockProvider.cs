@@ -36,7 +36,7 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
             WHERE {TableNames.Locks}.expires_at <= clock_timestamp()
             """;
 
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
         await EnsureOpenAsync(connection, cancellationToken).ConfigureAwait(false);
 
@@ -58,7 +58,7 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
     {
         try
         {
-            await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken).ConfigureAwait(false);
             await dbContext.Set<LockEntity>()
                 .Where(e => e.Key == key && e.LockId == lockId)
                 .ExecuteDeleteAsync(cancellationToken)
@@ -84,7 +84,7 @@ internal sealed class EfCoreDistributedLockProvider<TDbContext>(
             WHERE key = @key AND lock_id = @lockId
             """;
 
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var dbContext = await dbContextFactory.CreateOnPrimaryAsync(cancellationToken).ConfigureAwait(false);
         var connection = dbContext.Database.GetDbConnection();
         await EnsureOpenAsync(connection, cancellationToken).ConfigureAwait(false);
 

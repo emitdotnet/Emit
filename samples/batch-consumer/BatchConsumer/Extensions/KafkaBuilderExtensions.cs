@@ -20,7 +20,6 @@ public static class KafkaBuilderExtensions
         {
             producer.Linger = TimeSpan.FromMilliseconds(50);
             producer.CompressionType = Confluent.Kafka.CompressionType.Lz4;
-            producer.Acks = Confluent.Kafka.Acks.Leader;
         });
 
         kafka.DeadLetter("sorting.scans.dlt");

@@ -7,6 +7,7 @@ using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -238,12 +239,14 @@ public abstract class ProducerOutboxRoutingCompliance : IAsyncLifetime
                     // identically, since an application is free to call these in either order.
                     if (order == EmitRegistrationOrder.PersistenceFirst)
                     {
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit, pollingInterval);
                         ConfigureTransport(emit, topic, groupId, directSink is not null);
                     }
                     else
                     {
                         ConfigureTransport(emit, topic, groupId, directSink is not null);
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit, pollingInterval);
                     }
                 });

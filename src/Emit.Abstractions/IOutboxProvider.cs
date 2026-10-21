@@ -1,9 +1,7 @@
 namespace Emit.Abstractions;
 
-using Emit.Models;
-
 /// <summary>
-/// Interface for outbox providers that process outbox entries.
+/// Interface for outbox providers that deliver outbox entries to an external system.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -12,7 +10,7 @@ using Emit.Models;
 /// </para>
 /// <para>
 /// The worker dispatches entries to the appropriate provider based on
-/// the <see cref="OutboxEntry.SystemId"/> field.
+/// the <see cref="Models.OutboxEntry.SystemId"/> field.
 /// </para>
 /// </remarks>
 public interface IOutboxProvider
@@ -21,27 +19,20 @@ public interface IOutboxProvider
     /// Gets the unique identifier for this provider.
     /// </summary>
     /// <remarks>
-    /// This ID must match the <see cref="OutboxEntry.SystemId"/> field
+    /// This ID must match the <see cref="Models.OutboxEntry.SystemId"/> field
     /// for entries that this provider should process.
     /// </remarks>
     string SystemId { get; }
 
     /// <summary>
-    /// Processes an outbox entry by delivering it to the external system.
+    /// Begins delivering a batch of entries for a run of the outbox daemon.
     /// </summary>
-    /// <param name="entry">The outbox entry to process.</param>
+    /// <param name="context">The run of the outbox daemon the batch belongs to.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
+    /// <returns>The delivery the batch's entries are sent through.</returns>
     /// <remarks>
-    /// <para>
-    /// The provider should read the <see cref="OutboxEntry.Body"/>, <see cref="OutboxEntry.Headers"/>,
-    /// and <see cref="OutboxEntry.Properties"/> to reconstruct the message and deliver it
-    /// to the external system.
-    /// </para>
-    /// <para>
-    /// On success, the method should return normally.
-    /// On failure, the method should throw an exception.
-    /// </para>
+    /// A provider whose system can fence earlier writers does it for the first delivery of a run, so a run of the
+    /// outbox daemon still going on another node, for example after a long pause, can no longer deliver.
     /// </remarks>
-    Task ProcessAsync(OutboxEntry entry, CancellationToken cancellationToken = default);
+    Task<IOutboxDelivery> BeginDeliveryAsync(OutboxDeliveryContext context, CancellationToken cancellationToken = default);
 }

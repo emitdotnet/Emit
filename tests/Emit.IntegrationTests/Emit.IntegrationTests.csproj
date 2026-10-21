@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The in-memory coordination store used by the unit test simulations runs the same compliance suites as the providers. -->
+    <Compile Include="..\Emit.UnitTests\Emit\Coordination\InMemoryCoordinationStore.cs" Link="Emit.InMemory\InMemoryCoordinationStore.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Emit.Abstractions\Emit.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Emit\Emit.csproj" />
     <ProjectReference Include="..\..\src\Emit.Kafka\Emit.Kafka.csproj" />

@@ -7,6 +7,12 @@ import Mermaid from '../../../components/Mermaid.astro';
 
 When you run multiple instances of your application, background work like outbox processing must not run on every node simultaneously. Emit handles this through two cooperating systems: leader election decides which node is in charge, and daemon coordination distributes the actual work across the cluster.
 
+## Services sharing a database
+
+Coordination is scoped to a service: all replicas of the same application. Each service elects its own leader, runs its own daemons on its own nodes, and processes only the outbox entries it enqueued. An API and a worker sharing one database each get a leader.
+
+The service name defaults to the application name. Set `ServiceName` when two applications sharing a database have the same application name, for example several roles started from the same entry assembly, and keep it stable: outbox entries are only processed by the service that enqueued them.
+
 ## Leader election
 
 Emit uses a heartbeat-based lease model. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap. The database provides the consistency guarantee; no external consensus service is needed.
@@ -15,22 +21,25 @@ Each node is identified by a stable `Guid` generated once at startup, exposed th
 
 The lease model works like this:
 
-- Every live node writes a heartbeat on a configurable interval (default: 15 seconds).
-- The leader holds a time-limited lease (default: 60 seconds). It must renew the lease before it expires or another node can claim it.
-- If a node stops heartbeating (crash, network partition, clean shutdown), its lease expires and the next node to attempt renewal acquires leadership.
+- Every live node writes a heartbeat every `HeartbeatInterval` (default: 15 seconds).
+- Each service's leader holds a lease (default: 60 seconds) and renews it with its heartbeats.
+- If the leader stops renewing, another node takes over once the lease has gone a full `LeaseDuration` without renewal. A clean shutdown hands leadership over at once.
+- A node whose registration goes `NodeRegistrationTtl` without a heartbeat is considered dead, and its daemons move to other nodes.
+
+These waits are measured on each node's own clock, never on the database's, so clock differences between servers do not matter.
 
 There is no separate failure detector or quorum calculation. If the database can be reached, leadership can be acquired. If it cannot, nothing runs, which is the safe outcome.
 
 ### Observing leadership changes
 
-Register an `ILeaderElectionObserver` to react when leadership changes on the current node:
+Register an `ILeaderElectionObserver` with `emit.AddLeaderElectionObserver<T>()` to react when leadership changes on the current node:
 
 - `OnLeaderElectedAsync`: this node just became the leader.
 - `OnLeaderLostAsync`: this node just lost leadership.
 - `OnNodeRegisteredAsync`: a node has joined the cluster (visible to all nodes).
 - `OnNodeRemovedAsync`: a node has left the cluster (visible to all nodes).
 
-The first two are useful for triggering leader-only work outside the daemon system. The latter two give you visibility into cluster membership if you want to log or monitor it.
+The first two are useful for triggering leader-only work outside the daemon system. The latter two give you visibility into cluster membership if you want to log or monitor it. Observers are notified in order, away from the heartbeat, so a slow observer delays later notifications but never leader election.
 
 ### Querying leadership status
 
@@ -59,7 +68,9 @@ public class MyService(ILeaderElectionService leaderElection)
 
 The leader does not run all background work itself. Instead, it acts as a coordinator that assigns work units called daemons to nodes in the cluster. This distributes load and handles the reality that nodes come and go.
 
-A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon; additional daemons may be registered for other recurring work.
+A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon; additional daemons may be registered for other recurring work. Each node declares the daemons it runs, and the leader assigns a daemon only to a node that declared it.
+
+Each run receives a `DaemonRunContext`: a token cancelled when the daemon must stop, and `HoldsAssignment`, to check before each side effect. A run that stalls long enough can still be going when another node already runs the daemon. If your daemon's effects must never overlap, pass the context's fencing key and generation to the system it writes to, so that system refuses writes from the older run. The outbox worker does this with Kafka transactions.
 
 ### How assignment works
 
@@ -84,9 +95,9 @@ A daemon is any background task that implements `IDaemonAgent`. The outbox worke
     W->>DB: Confirm stopped
     L->>DB: Reassign to another node`} />
 
-On each heartbeat cycle, the leader reviews all daemon assignments: assigning unassigned daemons to the least-loaded live node and reclaiming assignments from nodes that have stopped heartbeating.
+On each heartbeat, the leader assigns unassigned daemons to the least-loaded live node that declares them, moves daemons off dead nodes, and moves one daemon at a time off a node running two more than another.
 
-Every node (leader included) polls for assignments directed at it. When a node receives an assignment, it acknowledges and starts the daemon. When an assignment is revoked, the node drains in-flight work and confirms it has stopped before the leader reassigns elsewhere.
+Every node, leader included, polls for its own assignments: it acknowledges and starts a new daemon, and drains a revoked one before confirming it stopped. A node that loses the database stops its daemons once its lease would have expired, so they can move without running twice.
 
 ### Assignment lifecycle
 
@@ -95,23 +106,28 @@ Every node (leader included) polls for assignments directed at it. When a node r
 | **Assigning** | Leader assigned the daemon; waiting for the node to acknowledge |
 | **Active** | Node acknowledged; daemon is running |
 | **Revoking** | Leader requested shutdown; waiting for the node to drain and confirm |
-| **Deleted** | Node confirmed shutdown; assignment is cleaned up |
+| **Released** | Node confirmed shutdown; the daemon can be assigned again |
 
-If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds) or fails to drain within `DrainTimeout` (default: 30 seconds), the leader treats it as unresponsive and force-reassigns the daemon to another node.
+If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds), the daemon goes to another node. A revoked daemon moves once its node confirms it stopped, or once the node is considered dead.
+
+A daemon that stops or throws on its own is restarted. After `MaxConsecutiveFailures` failures in a row, its node gives it up for `FailureCooldown` so another node takes it over; if no other node can, it keeps being retried.
 
 ## Configuration
 
-The key options and their defaults:
+The key options and their defaults. Give every node of a service the same values.
 
 | Option | Default | Notes |
 |---|---|---|
-| `HeartbeatInterval` | 15 seconds | How often each node writes a heartbeat |
-| `LeaseDuration` | 60 seconds | How long a leadership lease is valid before expiry |
-| `QueryTimeout` | 5 seconds | Timeout for individual database operations in the election system |
+| `ServiceName` | Application name | Name shared by all replicas of a service |
+| `HeartbeatInterval` | 15 seconds | How often each node writes a heartbeat. At least one second |
+| `LeaseDuration` | 60 seconds | How long a leadership lease lasts without renewal before another node can take it over. Greater than `HeartbeatInterval` plus four times `QueryTimeout` |
+| `QueryTimeout` | 2 seconds | Timeout for each database operation of leader election and daemon coordination. `HeartbeatInterval` must be more than six times this long. At least 100 milliseconds |
 | `NodeRegistrationTtl` | 90 seconds | How long a node's registration persists after its last heartbeat |
-| `InstanceId` | `null` (uses `MachineName`) | Override to assign a stable, human-readable identity to this node |
-| `AcknowledgeTimeout` | 30 seconds | Time allowed for a node to acknowledge a daemon assignment |
-| `DrainTimeout` | 30 seconds | Time allowed for a node to drain in-flight work when a daemon is revoked |
+| `InstanceId` | `null` (uses `MachineName`) | Override to assign a stable, human-readable identity to this node. At most 200 characters |
+| `AcknowledgeTimeout` | 30 seconds | Time allowed for a node to acknowledge a daemon assignment. Greater than `HeartbeatInterval` plus five times `QueryTimeout` |
+| `DrainTimeout` | 8 seconds | How long a daemon may take to stop. Keep the host's shutdown timeout and any orchestrator grace period above 28 seconds with the defaults. Less than `NodeRegistrationTtl` minus `LeaseDuration` minus `HeartbeatInterval` |
+| `MaxConsecutiveFailures` | 3 | Failures in a row before a node gives a daemon up so another node takes it over |
+| `FailureCooldown` | 5 minutes | How long a node gives up a daemon that keeps failing. Greater than four times the sum of `HeartbeatInterval` and three times `QueryTimeout` |
 
 `LeaseDuration` should be meaningfully larger than `HeartbeatInterval`. The default ratio of 4:1 gives the leader four missed heartbeats before another node takes over, which is enough tolerance for transient database latency without leaving work uncoordinated for long after a real failure.
 

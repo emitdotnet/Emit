@@ -1,5 +1,6 @@
-namespace Emit.EntityFrameworkCore.Tests.Daemon;
+namespace Emit.EntityFrameworkCore.Tests.Outbox;
 
+using Emit.Configuration;
 using Emit.DependencyInjection;
 using Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
@@ -10,15 +11,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 /// <summary>
-/// EF Core (PostgreSQL) + Kafka implementation of <see cref="DaemonObserverCompliance"/>.
-/// Verifies that daemon observer callbacks fire when using EF Core leader election and
-/// daemon assignment persistence.
+/// EF Core (PostgreSQL) + Kafka implementation of <see cref="OutboxDeliveryCompliance"/>.
+/// Verifies that the EF Core transactional outbox delivers messages via Kafka.
 /// </summary>
 [Trait("Category", "Integration")]
-public class EfCoreDaemonObserverCompliance(
+public class EfCoreOutboxDeliveryCompliance(
     PostgreSqlContainerFixture postgresFixture,
     KafkaContainerFixture kafkaFixture)
-    : DaemonObserverCompliance,
+    : OutboxDeliveryCompliance,
       IClassFixture<PostgreSqlContainerFixture>,
       IClassFixture<KafkaContainerFixture>
 {
@@ -30,9 +30,7 @@ public class EfCoreDaemonObserverCompliance(
     /// <inheritdoc/>
     public override async Task InitializeAsync()
     {
-        await postgresFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
-        testDb = await PostgreSqlTestDatabase.CreateAsync(postgresFixture.ConnectionString, "dmnobs");
+        testDb = await PostgreSqlTestDatabase.CreateAsync(postgresFixture.ConnectionString, "outbox");
     }
 
     /// <inheritdoc/>
@@ -42,15 +40,23 @@ public class EfCoreDaemonObserverCompliance(
     }
 
     /// <inheritdoc/>
-    protected override void ConfigurePersistence(EmitBuilder emit)
+    protected override void ConfigurePersistence(EmitBuilder emit, Action<OutboxOptions> configureOutbox)
     {
+        // IDbContextFactory + TDbContext (scoped) must be registered before AddEntityFrameworkCore.
         emit.Services.AddDbContextFactory<IntegrationTestDbContext>(opts =>
             opts.UseNpgsql(testDb.ConnectionString));
 
         emit.AddEntityFrameworkCore<IntegrationTestDbContext>(ef =>
         {
             ef.UseNpgsql();
-            ef.UseOutbox(opts => opts.PollingInterval = TimeSpan.FromSeconds(1));
+            ef.UseOutbox(configureOutbox);
         });
+    }
+
+    /// <inheritdoc/>
+    protected override async Task FlushBeforeCommitAsync(IServiceProvider scopedServices)
+    {
+        var dbContext = scopedServices.GetRequiredService<IntegrationTestDbContext>();
+        await dbContext.SaveChangesAsync();
     }
 }

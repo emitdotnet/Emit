@@ -41,11 +41,7 @@ public class MongoDbMediatorTransactionalCompliance
     protected override string BootstrapServers => kafkaFixture.BootstrapServers;
 
     /// <inheritdoc/>
-    public override async Task InitializeAsync()
-    {
-        await mongoFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
-    }
+    public override Task InitializeAsync() => Task.CompletedTask;
 
     /// <inheritdoc/>
     public override async Task DisposeAsync()

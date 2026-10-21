@@ -29,8 +29,6 @@ public class EfCoreOutboxObserverCompliance(
     /// <inheritdoc/>
     public override async Task InitializeAsync()
     {
-        await postgresFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
         testDb = await PostgreSqlTestDatabase.CreateAsync(postgresFixture.ConnectionString, "outboxobs");
     }
 

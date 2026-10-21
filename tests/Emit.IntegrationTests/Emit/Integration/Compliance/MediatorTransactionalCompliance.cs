@@ -9,6 +9,7 @@ using Emit.Mediator.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 
 /// <summary>
 /// Compliance tests for the [Transactional] attribute on mediator request handlers.
@@ -571,6 +572,7 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
                     // the variable under test is where the mediator sits relative to them.
                     if (order == EmitRegistrationOrder.PersistenceFirst)
                     {
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit);
                         ConfigureTransport(emit);
                         emit.AddMediator(configureMediator);
@@ -578,6 +580,7 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
                     else
                     {
                         emit.AddMediator(configureMediator);
+                        ConfigureFastCoordination(emit, NewServiceName());
                         ConfigurePersistence(emit);
                         ConfigureTransport(emit);
                     }

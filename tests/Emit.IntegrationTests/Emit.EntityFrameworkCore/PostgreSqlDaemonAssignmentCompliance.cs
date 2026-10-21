@@ -8,6 +8,7 @@ using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
 using Emit.IntegrationTests.Integration.Compliance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Xunit;
 
 /// <summary>
@@ -19,7 +20,6 @@ public class PostgreSqlDaemonAssignmentCompliance : DaemonAssignmentCompliance, 
     private readonly PostgreSqlContainerFixture containerFixture;
     private PostgreSqlTestDatabase testDb = null!;
     private ServiceProvider serviceProvider = null!;
-    private IDbContextFactory<IntegrationTestDbContext> dbContextFactory = null!;
     private IDaemonAssignmentPersistence persistence = null!;
 
     public PostgreSqlDaemonAssignmentCompliance(PostgreSqlContainerFixture containerFixture)
@@ -50,12 +50,7 @@ public class PostgreSqlDaemonAssignmentCompliance : DaemonAssignmentCompliance, 
         });
 
         serviceProvider = services.BuildServiceProvider();
-        dbContextFactory = serviceProvider.GetRequiredService<IDbContextFactory<IntegrationTestDbContext>>();
         persistence = serviceProvider.GetRequiredService<IDaemonAssignmentPersistence>();
-
-        // Ensure schema is created (includes daemon_assignments table from AddEmitModel)
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
-        await dbContext.Database.EnsureCreatedAsync();
     }
 
     /// <inheritdoc/>

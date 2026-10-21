@@ -42,6 +42,11 @@ builder.Services.AddValidatorsFromAssemblyContaining<PackageScanValidator>();
 // ── Emit ──────────────────────────────────────────────────────────────────────
 builder.Services.AddEmit(emit =>
 {
+    // Every replica of this application shares one service name, which scopes leader election, daemons and the
+    // outbox. It defaults to the application name; setting it keeps it stable if the project is renamed, since
+    // outbox entries are only delivered by the service that enqueued them.
+    emit.ConfigureLeaderElection(options => options.ServiceName = "batch-consumer");
+
     emit.AddMongoDb(mongo =>
     {
         mongo.Configure((sp, ctx) =>

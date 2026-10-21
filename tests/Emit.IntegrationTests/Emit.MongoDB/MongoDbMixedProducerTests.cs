@@ -38,11 +38,7 @@ public class MongoDbMixedProducerTests
         mongoClient = new MongoClient(mongoFixture.ConnectionString);
     }
 
-    public async Task InitializeAsync()
-    {
-        await mongoFixture.InitializeAsync();
-        await kafkaFixture.InitializeAsync();
-    }
+    public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
     {

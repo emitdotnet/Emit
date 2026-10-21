@@ -16,5 +16,6 @@ Consolidated integration tests using compliance base classes and Testcontainers.
 | `Emit/` | Shared base classes, container-agnostic interfaces, and compliance abstractions | Understand the compliance architecture or add a new compliance contract |
 | `Emit.MongoDB/` | MongoDB compliance implementations and MongoDb container fixture | Write MongoDB persistence tests or debug MongoDB-specific behavior |
 | `Emit.EntityFrameworkCore/` | PostgreSQL compliance implementations, container fixture, and test DbContext | Write EF Core / PostgreSQL persistence tests |
+| `Emit.InMemory/` | Compliance implementations for the in-memory coordination store used by the unit test simulations | Keep the simulation store's semantics aligned with the providers |
 | `Emit.Kafka/` | Kafka compliance implementations and Kafka+Schema Registry container fixture | Write Kafka provider tests or debug Kafka-specific behavior |
 | `Emit.Mediator/` | Mediator integration tests: request-response and exception propagation | Write or debug mediator integration tests |

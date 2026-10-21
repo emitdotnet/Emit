@@ -7,6 +7,7 @@ using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using static Emit.IntegrationTests.Integration.TestHelpers;
 using ConfluentKafka = Confluent.Kafka;
 
 /// <summary>
@@ -181,6 +182,7 @@ public abstract class ImplicitOutboxCompliance : IAsyncLifetime
                 services.AddSingleton(sink);
                 services.AddEmit(emit =>
                 {
+                    ConfigureFastCoordination(emit, NewServiceName());
                     ConfigurePersistence(emit, pollingInterval);
                     ConfigureKafka(emit, topic, groupId);
                 });

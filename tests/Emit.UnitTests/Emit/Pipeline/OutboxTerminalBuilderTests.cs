@@ -12,12 +12,13 @@ public sealed class OutboxTerminalBuilderTests
     private readonly Mock<IOutboxRepository> mockRepository = new();
 
     [Fact]
-    public async Task GivenOutboxTerminal_WhenEnqueue_ThenEntryNodeIdMatchesINodeIdentity()
+    public async Task GivenOutboxTerminal_WhenEnqueue_ThenEntryNodeIdAndServiceNameMatchINodeIdentity()
     {
         // Arrange
         var expectedNodeId = Guid.NewGuid();
         var mockNodeIdentity = new Mock<INodeIdentity>();
         mockNodeIdentity.Setup(n => n.NodeId).Returns(expectedNodeId);
+        mockNodeIdentity.Setup(n => n.ServiceName).Returns("product-worker");
 
         OutboxEntry? capturedEntry = null;
         mockRepository
@@ -52,6 +53,7 @@ public sealed class OutboxTerminalBuilderTests
         // Assert
         Assert.NotNull(capturedEntry);
         Assert.Equal(expectedNodeId, capturedEntry.NodeId);
+        Assert.Equal("product-worker", capturedEntry.ServiceName);
     }
 
     [Fact]

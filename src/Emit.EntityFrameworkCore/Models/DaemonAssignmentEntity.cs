@@ -1,12 +1,18 @@
 namespace Emit.EntityFrameworkCore.Models;
 
 /// <summary>
-/// Represents a daemon assignment row in PostgreSQL.
+/// Represents the assignment of a service's daemon in PostgreSQL. The service name and
+/// daemon identifier form the primary key.
 /// </summary>
 internal sealed class DaemonAssignmentEntity
 {
     /// <summary>
-    /// Gets or sets the daemon identifier (primary key).
+    /// Gets or sets the name of the service the daemon belongs to.
+    /// </summary>
+    public string ServiceName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the daemon identifier.
     /// </summary>
     public string DaemonId { get; set; } = string.Empty;
 
@@ -31,7 +37,13 @@ internal sealed class DaemonAssignmentEntity
     public DateTime AssignedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the drain deadline (UTC), set when state is revoking.
+    /// Gets or sets the fencing key, written when the row is created and never changed.
     /// </summary>
-    public DateTime? DrainDeadline { get; set; }
+    public Guid FencingKey { get; set; }
+
+    /// <summary>
+    /// The state of a released assignment: no node runs the daemon, and the row only keeps its generation
+    /// so that generations never repeat.
+    /// </summary>
+    internal const string ReleasedState = "Released";
 }

@@ -104,10 +104,10 @@ Fires when daemon assignments change on the current node.
 
 | Method | When it fires |
 |---|---|
-| `OnDaemonAssignedAsync` | A daemon was assigned to this node (before it starts) |
+| `OnDaemonAssignedAsync` | The leader assigned a daemon to a node (fires on the leader) |
 | `OnDaemonStartedAsync` | The daemon has started running on this node |
 | `OnDaemonStoppedAsync` | The daemon stopped cleanly on this node |
-| `OnDaemonRevokedAsync` | The leader revoked the daemon from this node |
+| `OnDaemonRevokedAsync` | The leader revoked a daemon from a node (fires on the leader) |
 
 All four methods receive `(string daemonId, Guid nodeId, CancellationToken)`.
 
@@ -115,7 +115,10 @@ Register globally:
 
 ```csharp
 emit.AddDaemonObserver<MyDaemonObserver>();
+emit.AddLeaderElectionObserver<MyLeaderElectionObserver>();
 ```
+
+Daemon and leader election observers are notified in order, away from the heartbeat, so a slow observer delays later notifications but never coordination.
 
 The built-in outbox daemon (`emit:outbox`) is the most common daemon you will observe. Use `OnDaemonRevokedAsync` to detect when outbox processing shifts to another node during a rebalance.
 

@@ -7,6 +7,8 @@ import { Steps } from '@astrojs/starlight/components';
 
 The `Emit.Persistence.EntityFrameworkCore` package provides EF Core-backed implementations of the outbox repository and distributed lock provider. PostgreSQL is the supported database.
 
+If your PostgreSQL can fail over to a standby, it must replicate synchronously, as managed high-availability offerings do: a commit lost in a failover can let two nodes lead or run the same daemon.
+
 ## Installation
 
 ```bash

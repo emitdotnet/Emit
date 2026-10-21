@@ -14,6 +14,7 @@ Unit tests for the core Emit library: pipeline, consumer, daemon, routing, error
 | --------- | ---- | ------------ |
 | `Abstractions/` | Tests for distributed lock base class and event producer extensions | Debugging distributed lock or event producer test failures |
 | `Configuration/` | Tests for options validators: daemon, leader election, outbox | Debugging options validation test failures |
+| `Coordination/` | Deterministic multi-node simulations of leader election and daemon assignment over an in-memory store, and the helpers the coordination tests share; they span `Daemon/` and `LeaderElection/`, so the folder has no counterpart in `src/` | Debugging cross-node coordination behavior or adding distributed scenarios |
 | `Consumer/` | Tests for circuit breaker, rate limit, validation, and consume error middleware | Debugging consumer middleware test failures |
 | `Daemon/` | Tests for daemon coordinator and outbox daemon | Debugging daemon test failures |
 | `DependencyInjection/` | Tests for EmitBuilder, observer extensions, error action builder, and service collection extensions | Debugging DI registration test failures |

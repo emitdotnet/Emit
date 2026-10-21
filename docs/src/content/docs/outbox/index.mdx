@@ -11,7 +11,7 @@ The transactional outbox solves the dual-write problem: your business data and y
 
 2. **Background delivery.** A [daemon](../concepts/leader-election/) polls the outbox, picks up pending entries, and delivers them to the message broker. Your endpoint returns immediately after the commit.
 
-3. **Delete on success.** Once delivery is confirmed, the entry is deleted. No status fields, no state machine: entry present means pending, entry absent means delivered.
+3. **Delete on success.** Once a batch's delivery is confirmed, its entries are deleted in one database call. No status fields, no state machine: entry present means pending, entry absent means delivered.
 
 4. **Automatic retry.** If delivery fails, the entry stays in place and is retried on the next poll cycle. The outbox guarantees at-least-once delivery.
 
@@ -122,12 +122,12 @@ With EF Core, entries within a single `SaveChangesAsync` batch are assigned iden
 
 ## Single-worker guarantee
 
-The outbox worker runs as a [daemon](../concepts/leader-election/#daemon-coordination): exactly one instance in your cluster processes the outbox at any time. If the assigned node goes down, the leader reassigns the daemon to another node within one heartbeat cycle (default: 15 seconds).
+The outbox worker runs as a [daemon](../concepts/leader-election/#daemon-coordination): exactly one instance of your service processes the outbox at any time, and only the entries that service enqueued. If the assigned node goes down, the leader reassigns the daemon to another node once its registration expires (`NodeRegistrationTtl`, default: 90 seconds).
 
-This prevents concurrent workers from racing on the same group and producing duplicate deliveries.
+This prevents concurrent workers from racing on the same group and producing duplicate deliveries. Where the message broker supports transactions, as Kafka does, each batch is delivered atomically.
 
 ## Failure behavior
 
-When delivery to the message broker fails, the worker logs the error and leaves the entry in place. It will be retried on the next poll cycle. There is no exponential backoff at the outbox level; retries at the broker layer (such as Kafka producer retries) handle that.
+When delivery to the message broker fails, the worker logs the error and leaves the batch in place. The whole batch is delivered again on the next poll cycle, so an entry that can never be delivered holds back the entries after it until you deal with it. There is no exponential backoff at the outbox level; retries at the broker layer (such as Kafka producer retries) handle that. If the worker's node cannot reach the broker, the worker moves to another node after `MaxConsecutiveFailures` failures. The worker only reads entries of the providers its node has; an entry of another provider waits for a node that has it, without holding back the others.
 
 The outbox is stubborn persistence, not smart retry logic. It keeps trying until it succeeds. If you need dead-lettering or routing after repeated failures, that belongs at the broker layer. The outbox guarantees at-least-once delivery; everything else is upstream.

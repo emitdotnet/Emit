@@ -11,9 +11,10 @@ namespace Emit.Abstractions.Daemon;
 /// </param>
 /// <param name="State">The current state of the assignment.</param>
 /// <param name="AssignedAt">When the current assignment was created (UTC).</param>
-/// <param name="DrainDeadline">
-/// When set, the deadline by which the node must complete draining. Only set
-/// when <paramref name="State"/> is <see cref="DaemonAssignmentState.Revoking"/>.
+/// <param name="FencingKey">
+/// Identifies this daemon of this service in this database, the same for every assignment of it. A system the
+/// daemon writes to can key the fencing of earlier runs on it, together with <paramref name="Generation"/>, and no
+/// other database's daemon shares it, even one of a service with the same name.
 /// </param>
 public sealed record DaemonAssignment(
     string DaemonId,
@@ -21,4 +22,4 @@ public sealed record DaemonAssignment(
     long Generation,
     DaemonAssignmentState State,
     DateTime AssignedAt,
-    DateTime? DrainDeadline);
+    Guid FencingKey = default);

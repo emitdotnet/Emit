@@ -1,15 +1,15 @@
 namespace Emit.MongoDB.Models;
 
 /// <summary>
-/// Represents the leader election document in MongoDB. A single document with a
-/// fixed key tracks the current leader.
+/// Represents the leader lease of a service in MongoDB. Each service has one document,
+/// identified by its service name.
 /// </summary>
 internal sealed class LeaderDocument
 {
     /// <summary>
-    /// Gets or sets the document key (mapped as <c>_id</c>). Always <c>"leader"</c>.
+    /// Gets or sets the name of the service this lease belongs to.
     /// </summary>
-    public string Key { get; set; } = "leader";
+    public string ServiceName { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the unique identifier of the current leader node.
@@ -17,7 +17,12 @@ internal sealed class LeaderDocument
     public Guid NodeId { get; set; }
 
     /// <summary>
-    /// Gets or sets when the leader lease expires (UTC).
+    /// Gets or sets the identifier of the heartbeat that last acquired or renewed the lease.
     /// </summary>
-    public DateTime ExpiresAt { get; set; }
+    public Guid HeartbeatId { get; set; }
+
+    /// <summary>
+    /// Gets or sets how long the lease lasts without renewal, as its holder requested.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; }
 }

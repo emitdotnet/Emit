@@ -157,16 +157,18 @@ Controls how Emit elects a leader across instances. Tuning is rarely needed exce
 
 | Option | Default | Description |
 |---|---|---|
-| `HeartbeatInterval` | `15s` | How often each node attempts to renew leadership |
-| `LeaseDuration` | `60s` | How long a lease lasts; another node takes over if not renewed in time |
-| `QueryTimeout` | `5s` | Max time for a heartbeat database query; the node drops leadership on timeout |
+| `ServiceName` | Application name | Name shared by all replicas of a service; leader election, daemons and outbox processing are scoped to it |
+| `HeartbeatInterval` | `15s` | How often each node attempts to renew leadership. At least `1s` |
+| `LeaseDuration` | `60s` | How long a lease lasts; another node takes over if not renewed in time. Must be greater than `HeartbeatInterval` + 4 x `QueryTimeout` |
+| `QueryTimeout` | `2s` | Max time for one database operation of leader election or daemon coordination. `HeartbeatInterval` must be more than six times this long. At least `100ms` |
 | `NodeRegistrationTtl` | `90s` | How long before a silent node is considered dead and removed |
-| `InstanceId` | `MachineName` | Human-readable node identifier visible in leader records |
+| `InstanceId` | `MachineName` | Human-readable node identifier visible in leader records. At most 200 characters |
 
 ```csharp
 emit.ConfigureLeaderElection(le =>
 {
     le.HeartbeatInterval = TimeSpan.FromSeconds(10);
+    le.QueryTimeout = TimeSpan.FromMilliseconds(1500);
     le.LeaseDuration = TimeSpan.FromSeconds(45);
     le.InstanceId = Environment.GetEnvironmentVariable("POD_NAME");
 });
@@ -174,18 +176,20 @@ emit.ConfigureLeaderElection(le =>
 
 ## Daemon coordination options
 
-Controls how the outbox daemon is assigned to leader nodes.
+Controls how daemons are assigned to nodes and recovered after failures.
 
 | Option | Default | Description |
 |---|---|---|
-| `AcknowledgeTimeout` | `30s` | How long a node has to acknowledge a daemon assignment before the leader reassigns it |
-| `DrainTimeout` | `30s` | How long a node has to stop a revoked daemon before the leader force-reassigns it |
+| `AcknowledgeTimeout` | `30s` | How long a node has to acknowledge a daemon assignment before the leader reassigns it. Must be greater than `HeartbeatInterval` + 5 x `QueryTimeout` |
+| `DrainTimeout` | `8s` | How long a daemon may take to stop. Keep the host's shutdown timeout and any orchestrator grace period above `28s` with the defaults. Must be less than `NodeRegistrationTtl` - `LeaseDuration` - `HeartbeatInterval` |
+| `MaxConsecutiveFailures` | `3` | Failures in a row (a run that ends or throws on its own) before a node gives the daemon up so another node takes it over |
+| `FailureCooldown` | `5min` | How long a node gives a daemon up after `MaxConsecutiveFailures` failures. Must be greater than 4 x (`HeartbeatInterval` + 3 x `QueryTimeout`) |
 
 ```csharp
 emit.ConfigureDaemons(d =>
 {
-    d.AcknowledgeTimeout = TimeSpan.FromSeconds(15);
-    d.DrainTimeout = TimeSpan.FromSeconds(20);
+    d.AcknowledgeTimeout = TimeSpan.FromSeconds(45);
+    d.DrainTimeout = TimeSpan.FromSeconds(10);
 });
 ```
 

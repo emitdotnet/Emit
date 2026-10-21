@@ -1,21 +1,32 @@
 namespace Emit.Abstractions.Daemon;
 
 /// <summary>
-/// Defines a daemon that can be assigned to a cluster node by the leader.
-/// Implement this interface to create work items that the leader automatically
-/// distributes across available nodes.
+/// Defines a daemon that can be assigned to a node by the leader of its service.
+/// Implement this interface to create work that runs on exactly one node of the service
+/// at a time, and moves to another node when that node goes away.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Each daemon is identified by a unique <see cref="DaemonId"/>. The leader assigns
-/// exactly one node to run each daemon at any time. When a node receives an assignment,
-/// <see cref="StartAsync"/> is called with a cancellation token that fires when the
-/// assignment is revoked or the node loses its heartbeat.
+/// Each daemon is identified by a unique <see cref="DaemonId"/>. When a node receives the
+/// assignment, <see cref="RunAsync"/> is called and runs until its token is cancelled: when the
+/// assignment is revoked, when the node loses contact with the database, or on shutdown.
 /// </para>
 /// <para>
-/// Implementations must support being started and stopped multiple times across the
-/// lifetime of the application — for example, when work is revoked and later reassigned
-/// back to the same node.
+/// A run must end within <c>DrainTimeout</c> of its token being cancelled. One that does not is reported, and its
+/// node stops offering the daemon until the run ends, so another node may run the daemon meanwhile.
+/// </para>
+/// <para>
+/// Read <see cref="DaemonRunContext.HoldsAssignment"/> right before each side effect: it turns false at once when
+/// the run must stop, even when the token is cancelled late. A run that is paused long enough, for example by a
+/// stalled process, can still be going when another node already runs the daemon. Work whose effects must never
+/// overlap should be fenced in the system it writes to, with <see cref="DaemonRunContext.FencingKey"/> and
+/// <see cref="DaemonRunContext.Generation"/>.
+/// </para>
+/// <para>
+/// A run that completes or throws before its token is cancelled is treated as a failure: the
+/// daemon is started again, and after repeated failures it is moved to another node. A daemon
+/// can be run many times over the lifetime of the application, but never twice at the same
+/// time on the same node.
 /// </para>
 /// </remarks>
 public interface IDaemonAgent
@@ -26,22 +37,10 @@ public interface IDaemonAgent
     string DaemonId { get; }
 
     /// <summary>
-    /// Starts the daemon. The implementation should begin its work and return promptly,
-    /// running any long-lived processing on a background task.
+    /// Runs the daemon until <see cref="DaemonRunContext.AssignmentToken"/> is cancelled. The method is called on
+    /// the thread pool.
     /// </summary>
-    /// <param name="assignmentToken">
-    /// Cancelled when the assignment is revoked or the node loses its heartbeat.
-    /// The daemon must stop all work when this token fires.
-    /// </param>
-    /// <returns>A task that completes once the daemon has started.</returns>
-    Task StartAsync(CancellationToken assignmentToken);
-
-    /// <summary>
-    /// Stops the daemon gracefully. Called when the assignment is being revoked
-    /// or during application shutdown. The daemon should complete any in-flight
-    /// work and release resources.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token for the stop operation.</param>
-    /// <returns>A task that completes when the daemon has fully stopped.</returns>
-    Task StopAsync(CancellationToken cancellationToken);
+    /// <param name="context">The assignment this run belongs to.</param>
+    /// <returns>A task that completes when the daemon has stopped.</returns>
+    Task RunAsync(DaemonRunContext context);
 }

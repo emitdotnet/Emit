@@ -12,6 +12,7 @@ using Emit.Metrics;
 using Emit.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -59,6 +60,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IRandomProvider, DefaultRandomProvider>();
         services.TryAddSingleton<INodeIdentity, NodeIdentityService>();
+
+        // Default the service name to the host's application name when it is not configured
+        services.AddSingleton<IPostConfigureOptions<LeaderElectionOptions>>(sp =>
+            new LeaderElectionOptionsDefaults(sp.GetService<IHostEnvironment>()));
 
         // Register metrics infrastructure (enrichment always includes emit.node.id)
         services.TryAddSingleton(sp =>

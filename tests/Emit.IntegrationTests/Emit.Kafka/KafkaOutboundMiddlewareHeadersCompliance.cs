@@ -36,11 +36,7 @@ public class KafkaOutboundMiddlewareHeadersCompliance
         mongoClient = new MongoClient(mongoFixture.ConnectionString);
     }
 
-    public async Task InitializeAsync()
-    {
-        await kafkaFixture.InitializeAsync();
-        await mongoFixture.InitializeAsync();
-    }
+    public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
     {

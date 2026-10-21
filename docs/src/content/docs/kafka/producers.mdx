@@ -71,7 +71,7 @@ Custom headers survive the full round trip untouched regardless of which deliver
 
 Emit supports two delivery modes per producer. For the full explanation of outbox mechanics and transactional guarantees, see [Outbox](../../outbox/).
 
-**Outbox mode** is the default when outbox infrastructure is configured on a persistence provider. `ProduceAsync` writes to the database outbox inside the current unit of work, and the background worker delivers to Kafka after the transaction commits.
+**Outbox mode** is the default when outbox infrastructure is configured on a persistence provider. `ProduceAsync` writes to the database outbox inside the current unit of work, and the background worker delivers to Kafka after the transaction commits. The worker delivers each batch in a Kafka transaction, so a batch becomes visible all at once or not at all. Consumers must read committed messages (`IsolationLevel = ReadCommitted`, the default of Emit consumers and of the Kafka client), and the brokers must allow transactions with a `transaction.max.timeout.ms` at least your producer's `TransactionTimeout` (Kafka's default is one minute). The worker hands messages to an idempotent producer without waiting for each acknowledgement, which keeps each group in order; the outbox producer's `MessageTimeout` is capped at the daemon `DrainTimeout`.
 
 **Direct mode** calls the Kafka producer immediately and waits for the broker acknowledgement before returning. Opt in per producer:
 
