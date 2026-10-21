@@ -24,6 +24,11 @@ public sealed class EmitInstrumentationOptions
     public bool EnableLockMeter { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets whether the <c>Emit.Daemon</c> meter (daemon runs, starts and failures) is enabled. Default: <c>true</c>.
+    /// </summary>
+    public bool EnableDaemonMeter { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets whether the <c>Emit.Mediator</c> meter (mediator request dispatch) is enabled. Default: <c>true</c>.
     /// </summary>
     public bool EnableMediatorMeter { get; set; } = true;

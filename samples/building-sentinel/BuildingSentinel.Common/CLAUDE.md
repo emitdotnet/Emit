@@ -14,9 +14,10 @@ Shared application logic for BuildingSentinel: domain, consumers, handlers, endp
 | --------- | ---- | ------------ |
 | `Commands/` | SubmitBuildingEventCommand: the command dispatched by the API endpoint through IMediator | Understand the command model or modify command fields |
 | `Consumers/` | AccessDeniedConsumer (router target) and DeviceHeartbeatConsumer (simple consumer) | Understand consumer logic or add new consumers |
-| `Domain/` | Domain records: BuildingEvent, AccessDenialAlert, DeviceHeartbeat | Understand the domain model or add new domain types |
+| `Daemons/` | DeviceOfflineDaemon: runs on one instance at a time and raises a fenced, transactional alert when a device goes silent | Understand how an application writes and registers its own daemon |
+| `Domain/` | Domain records: BuildingEvent, AccessDenialAlert, DeviceHeartbeat, DeviceOfflineAlert | Understand the domain model or add new domain types |
 | `Endpoints/` | Minimal API endpoint registrations for building event submission | Add or modify API endpoints |
 | `Extensions/` | KafkaBuilderExtensions and MediatorBuilderExtensions for registering topics and handlers | Understand how Kafka and mediator are configured for the sample |
 | `Handlers/` | SubmitBuildingEventHandler: mediator handler that persists and enqueues events using the [Transactional] attribute for automatic transaction management | Understand the transactional outbox pattern or modify command handling |
-| `Repositories/` | Repository interfaces: IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Implement a new persistence backend or understand the repository contracts |
+| `Repositories/` | Repository interfaces: IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository, IDeviceAlertRepository | Implement a new persistence backend or understand the repository contracts |
 | `Simulation/` | BuildingSimulatorService: background service that fires realistic events automatically after startup | Understand the automatic event generation or tune simulator behavior |

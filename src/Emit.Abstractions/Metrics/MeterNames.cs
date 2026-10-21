@@ -22,6 +22,11 @@ public static class MeterNames
     public const string EmitLock = "Emit.Lock";
 
     /// <summary>
+    /// Daemon metrics: runs on each node, starts and failures.
+    /// </summary>
+    public const string EmitDaemon = "Emit.Daemon";
+
+    /// <summary>
     /// Mediator request dispatch metrics.
     /// </summary>
     public const string EmitMediator = "Emit.Mediator";

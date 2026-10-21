@@ -11,7 +11,8 @@ public static class KafkaBuilderExtensions
 {
     /// <summary>
     /// Registers the <c>building.events</c> topic with its producer, the <c>building.classifier</c> router consumer group,
-    /// and the <c>building.watchdog</c> consumer group.
+    /// and the <c>building.watchdog</c> consumer group; and the <c>building.alerts</c> topic, which the device offline
+    /// daemon produces to.
     /// </summary>
     public static KafkaBuilder AddBuildingSentinelTopics(this KafkaBuilder kafka)
     {
@@ -73,6 +74,15 @@ public static class KafkaBuilderExtensions
                     .SamplingWindow(TimeSpan.FromSeconds(30))
                     .PauseDuration(TimeSpan.FromSeconds(15)));
             });
+        });
+
+        // Device offline alerts, raised by the device offline daemon through the outbox
+        kafka.Topic<string, DeviceOfflineAlert>("building.alerts", topic =>
+        {
+            topic.SetUtf8KeySerializer();
+            topic.SetJsonSchemaValueSerializer<string, DeviceOfflineAlert>();
+
+            topic.Producer();
         });
 
         return kafka;

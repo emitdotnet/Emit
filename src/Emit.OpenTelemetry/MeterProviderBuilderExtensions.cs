@@ -53,6 +53,11 @@ public static class MeterProviderBuilderExtensions
             meters.Add(MeterNames.EmitLock);
         }
 
+        if (options.EnableDaemonMeter)
+        {
+            meters.Add(MeterNames.EmitDaemon);
+        }
+
         if (options.EnableMediatorMeter)
         {
             meters.Add(MeterNames.EmitMediator);
@@ -82,9 +87,10 @@ public static class MeterProviderBuilderExtensions
             services.AddSingleton(sp =>
             {
                 var nodeIdentity = sp.GetRequiredService<INodeIdentity>();
-                var allTags = new KeyValuePair<string, object?>[tags.Length + 1];
+                var allTags = new KeyValuePair<string, object?>[tags.Length + 2];
                 allTags[0] = new("emit.node.id", nodeIdentity.NodeId.ToString());
-                tags.Span.CopyTo(allTags.AsSpan(1));
+                allTags[1] = new("emit.service.name", nodeIdentity.ServiceName);
+                tags.Span.CopyTo(allTags.AsSpan(2));
                 return new EmitMetricsEnrichment(allTags);
             });
         });

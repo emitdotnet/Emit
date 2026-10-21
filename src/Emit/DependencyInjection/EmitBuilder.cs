@@ -1,10 +1,12 @@
 namespace Emit.DependencyInjection;
 
 using Emit.Abstractions;
+using Emit.Abstractions.Daemon;
 using Emit.Abstractions.Pipeline;
 using Emit.Configuration;
 using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
 /// Builder for configuring Emit services.
@@ -91,6 +93,52 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
     }
 
     /// <summary>
+    /// Registers a daemon: work that runs on exactly one node of the service at a time, and moves to another node
+    /// when that node goes away. The daemon is a singleton, also resolvable as <typeparamref name="TDaemon"/>.
+    /// </summary>
+    /// <typeparam name="TDaemon">The daemon type.</typeparam>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Daemons need a persistence provider, through which the leader of the service assigns them to nodes. Every
+    /// replica of the service must register the same daemons. Each daemon needs a unique
+    /// <see cref="IDaemonAgent.DaemonId"/> that stays the same across deployments; identifiers starting with
+    /// <c>emit:</c> are reserved.
+    /// </para>
+    /// <para>
+    /// The daemon lives as long as the application. To use scoped services, such as a database context, inject
+    /// <see cref="IServiceScopeFactory"/> and create a scope for each unit of work.
+    /// </para>
+    /// </remarks>
+    public EmitBuilder AddDaemon<TDaemon>() where TDaemon : class, IDaemonAgent
+    {
+        // Typed on the daemon, so an error about the registration can name it
+        Func<IServiceProvider, TDaemon> resolve = sp => sp.GetRequiredService<TDaemon>();
+        services.TryAddSingleton<TDaemon>();
+        services.AddSingleton<IDaemonAgent>(resolve);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a daemon created by <paramref name="factory"/>: work that runs on exactly one node of the service at
+    /// a time, and moves to another node when that node goes away. The daemon is a singleton. One type can back
+    /// several daemons this way, each with its own <see cref="IDaemonAgent.DaemonId"/>.
+    /// </summary>
+    /// <typeparam name="TDaemon">The daemon type.</typeparam>
+    /// <param name="factory">Creates the daemon.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// The same rules apply as for <see cref="AddDaemon{TDaemon}()"/>.
+    /// </remarks>
+    public EmitBuilder AddDaemon<TDaemon>(Func<IServiceProvider, TDaemon> factory) where TDaemon : class, IDaemonAgent
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+
+        services.AddSingleton<IDaemonAgent>(factory);
+        return this;
+    }
+
+    /// <summary>
     /// Configures distributed tracing options.
     /// </summary>
     /// <param name="configure">The configuration delegate.</param>
@@ -153,6 +201,21 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
             throw new InvalidOperationException(
                 $"The distributed lock is registered by multiple persistence providers: {firstLock}, {secondLock}. " +
                 "Only one persistence provider can register the distributed lock.");
+        }
+
+        // Daemons are coordinated through the persistence provider's database; without one nothing would run them
+        var daemons = services
+            .Where(d => !d.IsKeyedService && d.ServiceType == typeof(IDaemonAgent))
+            .Select(d => (d.ImplementationType ?? d.ImplementationInstance?.GetType() ?? d.ImplementationFactory?.Method.ReturnType)?.Name)
+            .Distinct()
+            .ToList();
+
+        if (daemons.Count > 0 && persistenceProviders is [])
+        {
+            throw new InvalidOperationException(
+                $"Daemons are registered ({string.Join(", ", daemons)}) but no persistence provider is. " +
+                "Daemons are assigned to nodes through the persistence provider's database, so they would never run. " +
+                "Register a persistence provider.");
         }
 
         if (OutboxEnabled && !services.Any(d => d.ImplementationInstance is OutboxProviderMarker))

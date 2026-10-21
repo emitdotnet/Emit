@@ -9,6 +9,7 @@
 | `ConsumerToggle.cs` | Toggle controlling whether `ToggleableConsumer`/`ToggleableBatchConsumer` throws | Simulate runtime failure toggling in circuit breaker tests |
 | `DlqCaptureConsumer.cs` | `IConsumer<byte[]>` that forwards dead-lettered messages to a `MessageSink<byte[]>` | Register on DLQ topics to capture dead-lettered messages in compliance tests |
 | `InvocationCounter.cs` | Thread-safe counter for tracking consumer handler invocations | Count handler invocations in retry, pipeline, or batch tests |
+| `PersistenceOutage.cs` | Makes one host stop heartbeating without shutting down, as a crashed, frozen or disconnected node: wraps its leader election and daemon assignment persistence so every call fails once the outage begins | Test failover that waits for a node's registration to expire |
 | `TransactionProbe.cs` | Records the ambient transaction observed inside a handler, plus `IAmbientSessionInspector` for provider session handles | Assert that a handler ran inside (or outside) a transaction |
 | `ToggleableBatchConsumer.cs` | `IBatchConsumer<string>` that throws or forwards to `BatchSinkConsumer<string>` based on toggle | Test batch circuit breaker open/close behavior |
 | `ToggleableConsumer.cs` | `IConsumer<string>` that throws or writes to `MessageSink<string>` based on toggle | Test circuit breaker open/close behavior |

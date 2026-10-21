@@ -17,6 +17,9 @@ internal sealed class ObserverNotificationQueue(TaskScheduler scheduler, ILogger
     private readonly Queue<Func<Task>> pending = new();
     private bool draining;
 
+    // Completed when the queue next runs empty, for a flush waiting on it
+    private TaskCompletionSource? drained;
+
     /// <summary>
     /// Queues <paramref name="notify"/> after the notifications queued before it.
     /// </summary>
@@ -47,6 +50,40 @@ internal sealed class ObserverNotificationQueue(TaskScheduler scheduler, ILogger
             scheduler).Unwrap();
     }
 
+    /// <summary>
+    /// Returns a task that completes once every queued notification has run, or after <paramref name="bound"/>,
+    /// whichever comes first. A notification posted meanwhile is waited for too, within the same bound.
+    /// </summary>
+    public Task FlushAsync(TimeSpan bound, TimeProvider timeProvider)
+    {
+        Task emptied;
+        lock (pending)
+        {
+            if (!draining)
+            {
+                return Task.CompletedTask;
+            }
+
+            // Completed under the lock, so its continuations must not run there
+            drained ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            emptied = drained.Task;
+        }
+
+        return WaitAsync(emptied, bound, timeProvider);
+
+        static async Task WaitAsync(Task emptied, TimeSpan bound, TimeProvider timeProvider)
+        {
+            try
+            {
+                await emptied.WaitAsync(bound, timeProvider).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // A slow observer is not waited for any longer
+            }
+        }
+    }
+
     private async Task DrainAsync()
     {
         while (true)
@@ -57,6 +94,8 @@ internal sealed class ObserverNotificationQueue(TaskScheduler scheduler, ILogger
                 if (!pending.TryDequeue(out notify!))
                 {
                     draining = false;
+                    drained?.TrySetResult();
+                    drained = null;
                     return;
                 }
             }

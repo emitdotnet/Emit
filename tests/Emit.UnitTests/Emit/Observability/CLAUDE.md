@@ -8,5 +8,6 @@ Unit tests for observer middleware: consume, produce, outbox, and leader electio
 | ---- | ---- | ------------ |
 | `ConsumeObserverMiddlewareTests.cs` | Unit tests for ConsumeObserverMiddleware observer dispatch and error isolation | Debugging consume observer middleware test failures |
 | `LeaderElectionObserverInvokerTests.cs` | Unit tests for observer notifications: in order, never waited for by the caller, isolated from a failing observer, with a bounded backlog | Debugging leader election or daemon observer notification failures |
+| `ObserverNotificationQueueTests.cs` | Unit tests for flushing observer notifications: done once they ran, at once when none is queued, and never past its bound | Debugging observer flush failures on shutdown |
 | `OutboxObserverInvokerTests.cs` | Unit tests for OutboxObserverInvoker event dispatch | Debugging outbox observer invoker test failures |
 | `ProduceObserverMiddlewareTests.cs` | Unit tests for ProduceObserverMiddleware observer dispatch and error isolation | Debugging produce observer middleware test failures |

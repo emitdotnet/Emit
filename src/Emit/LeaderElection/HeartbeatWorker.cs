@@ -121,6 +121,23 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
     public CancellationToken LeadershipToken => leadershipCts?.Token ?? new CancellationToken(canceled: true);
 
     /// <inheritdoc />
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // The host stopped waiting before the node handed its daemons over. It carries on shutting down meanwhile,
+        // but a process that exits now leaves them where they are.
+        if (ExecuteTask is { IsCompleted: false })
+        {
+            logger.LogWarning(
+                "The host stopped waiting before node {NodeId} finished shutting down; the daemons it did not hand over stay " +
+                "assigned to it until its registration expires, up to {NodeRegistrationTtl}. Give the host, and any orchestrator, " +
+                "a longer shutdown timeout.",
+                NodeId, options.NodeRegistrationTtl);
+        }
+    }
+
+    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation(
@@ -480,8 +497,8 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
         observedLease is { } lease && timeProvider.GetElapsedTime(lease.Since) >= lease.Duration ? lease.HeartbeatId : null;
 
     /// <summary>
-    /// Gives up leadership, stops daemons and deregisters the node. Leadership does not depend on the
-    /// daemons, so it is handed over before waiting for them to stop.
+    /// Gives up leadership, stops daemons and deregisters the node, then lets the observers hear of it. Leadership
+    /// does not depend on the daemons, so it is handed over before waiting for them to stop.
     /// </summary>
     internal async Task ShutdownAsync()
     {
@@ -497,7 +514,7 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
             // The leader gives a leaving node no more daemons, and starts asking it to stop the ones it runs
             await WithdrawDaemonsAsync().ConfigureAwait(false);
 
-            await daemonCoordinator.StopAllDaemonsAsync().ConfigureAwait(false);
+            await daemonCoordinator.StopAllDaemonsAsync(NodeId).ConfigureAwait(false);
 
             // The daemons that stopped move at once; one still stopping keeps its assignment
             await ReleaseAssignmentsOnShutdownAsync().ConfigureAwait(false);
@@ -524,13 +541,14 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
             DropLeadership();
             workerCts?.Dispose();
             workerCts = null;
+
+            // The host disposes the observers once this returns
+            await Task.WhenAll(
+                observerInvoker.FlushAsync(options.QueryTimeout, timeProvider),
+                daemonCoordinator.FlushObserversAsync(options.QueryTimeout)).ConfigureAwait(false);
         }
     }
 
-    /// <summary>
-    /// Ends this node's leadership and returns the token of the leadership dropped, or one that cannot be
-    /// cancelled when the node did not lead.
-    /// </summary>
     /// <summary>
     /// Registers this node one last time, declaring no daemon, as a node leaving its service.
     /// </summary>
@@ -571,6 +589,10 @@ internal sealed class HeartbeatWorker : BackgroundService, ILeaderElectionServic
         }
     }
 
+    /// <summary>
+    /// Ends this node's leadership and returns the token of the leadership dropped, or one that cannot be
+    /// cancelled when the node did not lead.
+    /// </summary>
     private CancellationToken DropLeadership()
     {
         workerState = WorkerState.Follower;

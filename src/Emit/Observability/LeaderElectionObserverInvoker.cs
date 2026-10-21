@@ -62,6 +62,11 @@ public sealed class LeaderElectionObserverInvoker
     /// </summary>
     public void OnNodeRemoved(Guid nodeId) => Notify(o => o.OnNodeRemovedAsync(nodeId, CancellationToken.None));
 
+    /// <summary>
+    /// Waits, at most <paramref name="bound"/>, for the notifications raised so far to reach the observers.
+    /// </summary>
+    internal Task FlushAsync(TimeSpan bound, TimeProvider timeProvider) => notifications.FlushAsync(bound, timeProvider);
+
     private void Notify(Func<ILeaderElectionObserver, Task> action)
     {
         if (observers.Length > 0)

@@ -13,9 +13,10 @@ public sealed class DaemonOptions
 
     /// <summary>
     /// Gets or sets how long a daemon may take to stop after it is cancelled. Keep the host's shutdown timeout and
-    /// any orchestrator grace period longer than this plus ten times <see cref="LeaderElectionOptions.QueryTimeout"/>
-    /// (28 seconds with the defaults). Must be less than <see cref="LeaderElectionOptions.NodeRegistrationTtl"/>
-    /// minus <see cref="LeaderElectionOptions.LeaseDuration"/> minus <see cref="LeaderElectionOptions.HeartbeatInterval"/>.
+    /// any orchestrator grace period comfortably longer than this, so a node that shuts down has time to hand its
+    /// daemons over; the host's default of 30 seconds leaves room with the defaults. Must be less than
+    /// <see cref="LeaderElectionOptions.NodeRegistrationTtl"/> minus <see cref="LeaderElectionOptions.LeaseDuration"/>
+    /// minus <see cref="LeaderElectionOptions.HeartbeatInterval"/>.
     /// </summary>
     public TimeSpan DrainTimeout { get; set; } = TimeSpan.FromSeconds(8);
 

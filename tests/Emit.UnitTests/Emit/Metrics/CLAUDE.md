@@ -10,4 +10,5 @@ Unit tests for core metrics: consume metrics, produce metrics, outbox metrics, a
 | `EmitMetricsTests.cs` | Unit tests for top-level Emit metrics instruments | Debugging emit metrics test failures |
 | `MetricsTestCollection.cs` | xUnit collection definition for metrics tests requiring isolated meter state | Understanding why metrics tests use a shared collection |
 | `OutboxMetricsTests.cs` | Unit tests for outbox metrics instruments | Debugging outbox metrics test failures |
+| `DaemonMetricsTests.cs` | Unit tests for the daemon runs gauge (by state, without waiting for a heartbeat) and the start and failure counters, driven through a real coordinator | Debugging daemon metrics test failures |
 | `ProduceMetricsMiddlewareTests.cs` | Unit tests for ProduceMetricsMiddleware instrument recording | Debugging produce metrics middleware test failures |

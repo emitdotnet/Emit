@@ -14,4 +14,4 @@ MongoDB startup project for Building Sentinel. Wires up MongoDB persistence and 
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
-| `Repositories/` | MongoDB implementations of IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository | Understand MongoDB query patterns or modify repository implementations |
+| `Repositories/` | MongoDB implementations of IAlertRepository, IBuildingEventRepository, IDeviceHeartbeatRepository, IDeviceAlertRepository (fenced by generation) | Understand MongoDB query patterns or modify repository implementations |

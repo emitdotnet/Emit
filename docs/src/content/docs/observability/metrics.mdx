@@ -3,11 +3,14 @@ title: Metrics
 description: All OpenTelemetry metric instruments emitted by Emit, organized by meter.
 ---
 
-Emit emits metrics through six OpenTelemetry meters, each covering a distinct concern: the core pipeline, the outbox, distributed locking, the mediator, Kafka client operations, and low-level broker statistics. All meters are registered via a single call to `AddEmitInstrumentation`.
+Emit emits metrics through seven OpenTelemetry meters, each covering a distinct concern: the core pipeline, the outbox, distributed locking, daemons, the mediator, Kafka client operations, and low-level broker statistics. All meters are registered via a single call to `AddEmitInstrumentation`.
 
 ## Enrichment tags
 
-`emit.node.id` is automatically included as a static tag on all metrics. It identifies the node that emitted the metric and is set once at startup from `INodeIdentity`.
+Two static tags are automatically included on all metrics, set once at startup from `INodeIdentity`:
+
+- `emit.node.id` identifies the node that emitted the metric.
+- `emit.service.name` identifies the [service](../../concepts/leader-election/#services-sharing-a-database) the node belongs to.
 
 ## Setup
 
@@ -36,6 +39,7 @@ All options default to `true`:
 | `EnableEmitMeter` | `Emit` |
 | `EnableOutboxMeter` | `Emit.Outbox` |
 | `EnableLockMeter` | `Emit.Lock` |
+| `EnableDaemonMeter` | `Emit.Daemon` |
 | `EnableMediatorMeter` | `Emit.Mediator` |
 | `EnableKafkaMeter` | `Emit.Kafka` |
 | `EnableKafkaBrokerMeter` | `Emit.Kafka.Broker` |
@@ -91,6 +95,18 @@ Distributed lock acquisition and hold duration.
 | `emit.lock.acquire.retries` | Histogram | | Retry count before a lock was acquired |
 | `emit.lock.renewal.completed` | Counter | `result` | Lock renewal attempts |
 | `emit.lock.held.duration` | Histogram (s) | | How long a lock was held before release |
+
+## Meter: `Emit.Daemon`
+
+Where your [daemons](../../concepts/leader-election/#daemons) run, including the built-in outbox daemon.
+
+| Instrument | Type | Tags | Description |
+|---|---|---|---|
+| `emit.daemon.runs` | Gauge | `daemon`, `state` | Runs of each daemon on this node, `running` or `stopping` (`0` when it has none) |
+| `emit.daemon.starts` | Counter | `daemon` | Times a daemon started on this node |
+| `emit.daemon.failures` | Counter | `daemon` | Times a daemon failed on this node |
+
+Summed over a service's nodes, `running` should be `1` for each daemon. `0` for a few minutes means the daemon runs nowhere.
 
 ## Meter: `Emit.Mediator`
 

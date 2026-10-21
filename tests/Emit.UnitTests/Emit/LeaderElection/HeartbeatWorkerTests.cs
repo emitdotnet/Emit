@@ -9,6 +9,7 @@ using global::Emit.Daemon;
 using global::Emit.LeaderElection;
 using global::Emit.Observability;
 using global::Emit.UnitTests.Coordination;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -792,6 +793,75 @@ public class HeartbeatWorkerTests
     }
 
     [Fact]
+    public async Task GivenObserverStillBeingNotifiedThatADaemonStopped_WhenShuttingDown_ThenShutdownWaitsForItAtMostAQueryTimeout()
+    {
+        // Arrange: the host disposes the observers once shutdown returns, so a notification still being delivered
+        // is waited for, but a slow observer must not hold up shutdown beyond one query timeout
+        var heard = new TaskCompletionSource();
+        var observer = new Mock<IDaemonObserver>();
+        observer
+            .Setup(o => o.OnDaemonStoppedAsync(DaemonId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Callback(() => heard.TrySetResult())
+            .Returns(new TaskCompletionSource().Task);
+        var agent = new ControllableDaemonAgent(DaemonId);
+        SetupHeartbeat(isLeader: false);
+        var worker = CreateWorker(agents: [agent], daemonObservers: [observer.Object]);
+        SetupActiveAssignment(worker.NodeId);
+        await worker.PerformHeartbeatAsync(CancellationToken.None);
+        SetupReleaseRemovesAssignments(worker.NodeId);
+        Assert.True(agent.IsRunning);
+
+        // Act
+        var shutdown = worker.ShutdownAsync();
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        time.Advance(options.QueryTimeout - TimeSpan.FromTicks(1));
+
+        // Assert
+        Assert.False(shutdown.IsCompleted);
+
+        // Act
+        time.Advance(TimeSpan.FromTicks(1));
+
+        // Assert
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(30));
+        mockPersistence.Verify(p => p.DeregisterNodeAsync(worker.NodeId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GivenNodeWithADaemonStillStopping_WhenTheHostStopsIt_ThenItWarnsOnlyIfTheHostStopsWaitingFirst(bool hostStopsWaiting)
+    {
+        // Arrange: a host that stops waiting before the node handed its daemons over leaves them assigned to it until
+        // its registration expires. The daemon keeps the node's shutdown going until the test ends its run.
+        var logger = new CapturingLogger<HeartbeatWorker>();
+        var agent = new ControllableDaemonAgent(DaemonId) { IgnoresCancellation = true };
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observer = new Mock<IDaemonObserver>();
+        observer
+            .Setup(o => o.OnDaemonStartedAsync(DaemonId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Callback(() => started.TrySetResult())
+            .Returns(Task.CompletedTask);
+        SetupHeartbeat(isLeader: false);
+        var worker = CreateWorker(agents: [agent], daemonObservers: [observer.Object], logger: logger);
+        SetupActiveAssignment(worker.NodeId);
+        await worker.StartAsync(CancellationToken.None);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var runCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        agent.LastToken.Register(() => runCancelled.TrySetResult());
+
+        // Act
+        var stopping = worker.StopAsync(new CancellationToken(canceled: hostStopsWaiting));
+        await runCancelled.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        agent.FinishStop();
+        await stopping.WaitAsync(TimeSpan.FromSeconds(30));
+        await worker.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal(hostStopsWaiting, logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("stopped waiting", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task GivenLeaderWithADaemonSlowToStop_WhenShuttingDown_ThenItHandsOverLeadershipAtOnceGivesUpTheDaemonsThatStoppedAndStaysRegisteredWhileTheOtherRuns()
     {
         // Arrange: leadership does not depend on the daemons, but deregistering, or giving up the daemon still
@@ -950,22 +1020,34 @@ public class HeartbeatWorkerTests
         IEnumerable<IDaemonAgent>? agents = null,
         DaemonOptions? daemonOptions = null,
         INodeIdentity? nodeIdentity = null,
-        TaskScheduler? callbackScheduler = null)
+        TaskScheduler? callbackScheduler = null,
+        IDaemonObserver[]? daemonObservers = null,
+        ILogger<HeartbeatWorker>? logger = null)
     {
         callbackScheduler ??= InlineTaskScheduler.Instance;
         nodeIdentity ??= Mock.Of<INodeIdentity>(n => n.NodeId == Guid.NewGuid() && n.ServiceName == ServiceName);
+        daemonOptions ??= new DaemonOptions { DrainTimeout = TimeSpan.FromMilliseconds(1500) };
 
         var daemonCoordinator = TestNodes.CreateCoordinator(
             mockAssignmentPersistence.Object,
             mockPersistence.Object,
             agents ?? [],
-            daemonOptions ?? new DaemonOptions { DrainTimeout = TimeSpan.FromMilliseconds(1500) },
+            daemonOptions,
             options,
             nodeIdentity,
             time,
             callbackScheduler,
+            daemonObservers,
             leaderElectionObservers: [mockObserver.Object]);
 
-        return TestNodes.CreateWorker(mockPersistence.Object, daemonCoordinator, options, nodeIdentity, time, callbackScheduler, [mockObserver.Object]);
+        return TestNodes.CreateWorker(
+            mockPersistence.Object,
+            daemonCoordinator,
+            options,
+            nodeIdentity,
+            time,
+            callbackScheduler,
+            [mockObserver.Object],
+            logger);
     }
 }

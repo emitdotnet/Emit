@@ -100,6 +100,7 @@ Types from `Emit.IntegrationTests.Integration` (`using Emit.IntegrationTests.Int
 | `AlwaysFailingConsumer` | `IConsumer<string>` that always throws — for error policy / DLQ tests |
 | `AlwaysFailingBatchConsumer` | `IBatchConsumer<string>` that always throws — for batch error tests |
 | `InvocationCounter` | Thread-safe counter for tracking handler invocations |
+| `PersistenceOutage` | Makes one host stop heartbeating without shutting down, as a crashed, frozen or disconnected node does: every coordination call of that host fails once `Begin()` is called. Hosts in one process cannot be crashed, and stopping one always hands its daemons over gracefully, so this is how a test reaches the failover after a node's registration expires. Install it after the persistence provider |
 | `ConsumerToggle` | Toggle controlling `ToggleableConsumer` / `ToggleableBatchConsumer` failure |
 | `ToggleableConsumer` | `IConsumer<string>` that throws or succeeds based on toggle — for circuit breaker tests |
 | `ToggleableBatchConsumer` | `IBatchConsumer<string>` that throws or succeeds based on toggle — for batch circuit breaker tests |

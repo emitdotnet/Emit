@@ -100,13 +100,13 @@ emit.AddMediator(mediator =>
 
 ## IDaemonObserver
 
-Fires when daemon assignments change on the current node.
+Fires as daemons are assigned, started, stopped and moved.
 
 | Method | When it fires |
 |---|---|
 | `OnDaemonAssignedAsync` | The leader assigned a daemon to a node (fires on the leader) |
 | `OnDaemonStartedAsync` | The daemon has started running on this node |
-| `OnDaemonStoppedAsync` | The daemon stopped cleanly on this node |
+| `OnDaemonStoppedAsync` | The daemon stopped on this node, including when it failed or the node shuts down |
 | `OnDaemonRevokedAsync` | The leader revoked a daemon from a node (fires on the leader) |
 
 All four methods receive `(string daemonId, Guid nodeId, CancellationToken)`.
@@ -120,7 +120,7 @@ emit.AddLeaderElectionObserver<MyLeaderElectionObserver>();
 
 Daemon and leader election observers are notified in order, away from the heartbeat, so a slow observer delays later notifications but never coordination.
 
-The built-in outbox daemon (`emit:outbox`) is the most common daemon you will observe. Use `OnDaemonRevokedAsync` to detect when outbox processing shifts to another node during a rebalance.
+Use `OnDaemonRevokedAsync` to see when a daemon moves to another node.
 
 ## Observer vs. middleware
 

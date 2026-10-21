@@ -164,7 +164,7 @@ public sealed class ClusterSimulationTests
         var random = new Random(seed);
         await using var cluster = new ClusterSimulation();
         string[] services = [Api, Worker];
-        string[] daemonIds = ["d1", "d2", "d3", "emit:outbox"];
+        string[] daemonIds = ["d1", "d2", "d3", "outbox"];
 
         // Daemons slow to stop end their run within the drain timeout, as every daemon must
         List<(ControllableDaemonAgent Agent, int RoundsLeft)> slowToStop = [];

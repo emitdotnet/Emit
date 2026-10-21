@@ -181,7 +181,7 @@ Controls how daemons are assigned to nodes and recovered after failures.
 | Option | Default | Description |
 |---|---|---|
 | `AcknowledgeTimeout` | `30s` | How long a node has to acknowledge a daemon assignment before the leader reassigns it. Must be greater than `HeartbeatInterval` + 5 x `QueryTimeout` |
-| `DrainTimeout` | `8s` | How long a daemon may take to stop. Keep the host's shutdown timeout and any orchestrator grace period above `28s` with the defaults. Must be less than `NodeRegistrationTtl` - `LeaseDuration` - `HeartbeatInterval` |
+| `DrainTimeout` | `8s` | How long a daemon may take to stop. Keep the host's shutdown timeout and any orchestrator grace period comfortably longer; the host's default of `30s` leaves room. Must be less than `NodeRegistrationTtl` - `LeaseDuration` - `HeartbeatInterval` |
 | `MaxConsecutiveFailures` | `3` | Failures in a row (a run that ends or throws on its own) before a node gives the daemon up so another node takes it over |
 | `FailureCooldown` | `5min` | How long a node gives a daemon up after `MaxConsecutiveFailures` failures. Must be greater than 4 x (`HeartbeatInterval` + 3 x `QueryTimeout`) |
 

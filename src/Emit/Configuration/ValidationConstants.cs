@@ -36,6 +36,11 @@ public static class ValidationConstants
     public const int MaxDaemonIdLength = 200;
 
     /// <summary>
+    /// Prefix reserved for the identifiers of Emit's own daemons, such as <c>emit:outbox</c>, in any letter case.
+    /// </summary>
+    public const string ReservedDaemonIdPrefix = "emit:";
+
+    /// <summary>
     /// How many database calls a heartbeat makes at most: the lease compare-and-swap, the read of a lease another
     /// node holds, and the registration. A heartbeat is given that many query timeouts.
     /// </summary>

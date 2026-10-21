@@ -3,47 +3,25 @@ title: Leader Election & Daemons
 description: How Emit coordinates background work across multiple application instances.
 ---
 
-import Mermaid from '../../../components/Mermaid.astro';
+When you run several instances of your application, some background work must run on one instance only. Emit handles this with leader election, which picks one node in charge, and daemons, which run your work on exactly one node at a time.
 
-When you run multiple instances of your application, background work like outbox processing must not run on every node simultaneously. Emit handles this through two cooperating systems: leader election decides which node is in charge, and daemon coordination distributes the actual work across the cluster.
+Both need a persistence provider: coordination goes through its database, so there is no extra infrastructure to run.
 
 ## Services sharing a database
 
-Coordination is scoped to a service: all replicas of the same application. Each service elects its own leader, runs its own daemons on its own nodes, and processes only the outbox entries it enqueued. An API and a worker sharing one database each get a leader.
+Coordination is scoped to a service: all replicas of the same application. An API and a worker sharing one database each get their own leader and run their own daemons.
 
-The service name defaults to the application name. Set `ServiceName` when two applications sharing a database have the same application name, for example several roles started from the same entry assembly, and keep it stable: outbox entries are only processed by the service that enqueued them.
+The service name defaults to the application name. Set `ServiceName` when two applications sharing a database have the same application name, and keep it stable across deployments.
 
 ## Leader election
 
-Emit uses a heartbeat-based lease model. Every node periodically writes a heartbeat to the database and attempts to acquire a leadership lease using an atomic compare-and-swap. The database provides the consistency guarantee; no external consensus service is needed.
+Every node sends a heartbeat to the database (every 15 seconds by default), and one node per service holds the leadership. If the leader stops, another node takes over once its lease runs out; a clean shutdown hands leadership over at once.
 
-Each node is identified by a stable `Guid` generated once at startup, exposed through `INodeIdentity`. The heartbeat worker, distributed traces, and metrics all use this same identity, so you can correlate behavior back to a specific instance. Inject `INodeIdentity` to read the current node's ID. Register a custom implementation before `AddEmit()` if you need to control the value (useful in environments where you want a stable identity tied to a pod name or container ID rather than a random GUID).
-
-The lease model works like this:
-
-- Every live node writes a heartbeat every `HeartbeatInterval` (default: 15 seconds).
-- Each service's leader holds a lease (default: 60 seconds) and renews it with its heartbeats.
-- If the leader stops renewing, another node takes over once the lease has gone a full `LeaseDuration` without renewal. A clean shutdown hands leadership over at once.
-- A node whose registration goes `NodeRegistrationTtl` without a heartbeat is considered dead, and its daemons move to other nodes.
-
-These waits are measured on each node's own clock, never on the database's, so clock differences between servers do not matter.
-
-There is no separate failure detector or quorum calculation. If the database can be reached, leadership can be acquired. If it cannot, nothing runs, which is the safe outcome.
-
-### Observing leadership changes
-
-Register an `ILeaderElectionObserver` with `emit.AddLeaderElectionObserver<T>()` to react when leadership changes on the current node:
-
-- `OnLeaderElectedAsync`: this node just became the leader.
-- `OnLeaderLostAsync`: this node just lost leadership.
-- `OnNodeRegisteredAsync`: a node has joined the cluster (visible to all nodes).
-- `OnNodeRemovedAsync`: a node has left the cluster (visible to all nodes).
-
-The first two are useful for triggering leader-only work outside the daemon system. The latter two give you visibility into cluster membership if you want to log or monitor it. Observers are notified in order, away from the heartbeat, so a slow observer delays later notifications but never leader election.
+Each node has a stable identity, exposed through `INodeIdentity`. Register your own implementation before `AddEmit()` to tie it to something meaningful, such as a pod name.
 
 ### Querying leadership status
 
-Inject `ILeaderElectionService` to check the current node's role at any point:
+Inject `ILeaderElectionService` to check the current node's role:
 
 ```csharp
 public class MyService(ILeaderElectionService leaderElection)
@@ -55,80 +33,99 @@ public class MyService(ILeaderElectionService leaderElection)
             // Only the leader reaches this branch
         }
 
-        // This token cancels when the node loses leadership.
+        // Cancelled when the node loses leadership.
         // Pass it to long-running leader-only operations.
         var token = leaderElection.LeadershipToken;
     }
 }
 ```
 
-`LeadershipToken` is particularly useful for cooperative cancellation: pass it into any long-running operation so it stops naturally when this node is no longer the leader, rather than having to poll `IsLeader` in a loop.
+### Observing leadership changes
 
-## Daemon coordination
+Register an `ILeaderElectionObserver` with `emit.AddLeaderElectionObserver<T>()` to react when this node is elected or loses leadership, or when nodes join or leave the service.
 
-The leader does not run all background work itself. Instead, it acts as a coordinator that assigns work units called daemons to nodes in the cluster. This distributes load and handles the reality that nodes come and go.
+## Daemons
 
-A daemon is any background task that implements `IDaemonAgent`. The outbox worker (`emit:outbox`) is the primary built-in daemon; additional daemons may be registered for other recurring work. Each node declares the daemons it runs, and the leader assigns a daemon only to a node that declared it.
+A daemon is background work that runs continuously on exactly one node of the service, and moves to another node when that node goes away: a scheduler, a poller, a reconciliation job. The outbox runs as a daemon too (`emit:outbox`).
 
-Each run receives a `DaemonRunContext`: a token cancelled when the daemon must stop, and `HoldsAssignment`, to check before each side effect. A run that stalls long enough can still be going when another node already runs the daemon. If your daemon's effects must never overlap, pass the context's fencing key and generation to the system it writes to, so that system refuses writes from the older run. The outbox worker does this with Kafka transactions.
+### Writing a daemon
 
-### How assignment works
+Implement `IDaemonAgent` and register it with `AddDaemon`:
 
-<Mermaid code={`sequenceDiagram
-    participant L as Leader node
-    participant DB as Database
-    participant W as Worker node
+```csharp
+public sealed class InvoiceReminderDaemon(IServiceScopeFactory scopes) : IDaemonAgent
+{
+    public string DaemonId => "invoice-reminders";
 
-    loop Every heartbeat
-        L->>DB: Reconcile assignments
-        DB-->>L: Current state
-        L->>DB: Assign unassigned daemons to least-loaded nodes
-    end
+    public async Task RunAsync(DaemonRunContext context)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        while (await timer.WaitForNextTickAsync(context.AssignmentToken))
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var reminders = scope.ServiceProvider.GetRequiredService<IReminderService>();
 
-    W->>DB: Poll for assignments
-    DB-->>W: Assignment for emit:outbox
-    W->>DB: Acknowledge
-    Note over W: Daemon starts running
+            foreach (var invoice in await reminders.GetDueAsync(context.AssignmentToken))
+            {
+                // Stop as soon as this node no longer holds the daemon
+                if (!context.HoldsAssignment)
+                {
+                    return;
+                }
 
-    L->>DB: Revoke assignment (node leaving)
-    W->>DB: Drain in-flight work
-    W->>DB: Confirm stopped
-    L->>DB: Reassign to another node`} />
+                await reminders.SendAsync(invoice, context.AssignmentToken);
+            }
+        }
+    }
+}
+```
 
-On each heartbeat, the leader assigns unassigned daemons to the least-loaded live node that declares them, moves daemons off dead nodes, and moves one daemon at a time off a node running two more than another.
+```csharp
+builder.Services.AddEmit(emit =>
+{
+    // ... a persistence provider
+    emit.AddDaemon<InvoiceReminderDaemon>();
+});
+```
 
-Every node, leader included, polls for its own assignments: it acknowledges and starts a new daemon, and drains a revoked one before confirming it stopped. A node that loses the database stops its daemons once its lease would have expired, so they can move without running twice.
+A few rules:
 
-### Assignment lifecycle
+- **Run until `AssignmentToken` is cancelled, then stop promptly** (within `DrainTimeout`). A run that ends or throws on its own counts as a failure and is restarted; one that keeps failing moves to another node.
+- **Check `HoldsAssignment` right before each side effect.** It turns false the moment the node must stop.
+- **Create a scope per unit of work** for scoped services such as a `DbContext`: the daemon itself lives as long as the application.
+- **Keep `DaemonId` stable and register the same daemons on every replica.** Identifiers starting with `emit:` are reserved. One class can back several daemons with `AddDaemon(sp => new ReportDaemon("daily-report"))`.
 
-| State | Meaning |
+If your daemon writes somewhere that must never see two runs overlap, even after a frozen process wakes up, pass `context.FencingKey` and `context.Generation` along with the write and have that system refuse a generation lower than the last one it accepted. Each new assignment of a daemon gets a higher generation.
+
+To unit test a daemon, call `RunAsync` with a context you build yourself: `new DaemonRunContext(token, generation: 1, fencingKey: Guid.NewGuid(), holdsAssignment: () => true)`.
+
+### When nodes come and go
+
+- **A node joins:** daemons spread out, one at a time, so no node runs two more than another.
+- **A node shuts down:** it stops its daemons and hands them over right away.
+- **A node crashes or loses the database:** it stops its own daemons, and they move once its registration expires (90 seconds by default).
+
+Use an [`IDaemonObserver`](../../observability/observers/#idaemonobserver) or the [daemon metrics](../../observability/metrics/#meter-emitdaemon) to see where daemons run.
+
+### Daemon, distributed lock or `IsLeader`?
+
+| You need | Use |
 |---|---|
-| **Assigning** | Leader assigned the daemon; waiting for the node to acknowledge |
-| **Active** | Node acknowledged; daemon is running |
-| **Revoking** | Leader requested shutdown; waiting for the node to drain and confirm |
-| **Released** | Node confirmed shutdown; the daemon can be assigned again |
-
-If a node fails to acknowledge within `AcknowledgeTimeout` (default: 30 seconds), the daemon goes to another node. A revoked daemon moves once its node confirms it stopped, or once the node is considered dead.
-
-A daemon that stops or throws on its own is restarted. After `MaxConsecutiveFailures` failures in a row, its node gives it up for `FailureCooldown` so another node takes it over; if no other node can, it keeps being retried.
+| Work that runs continuously on exactly one node, and moves when that node goes away | A daemon |
+| A short critical section that any node may run, one at a time | A [distributed lock](../../persistence/distributed-locks/) |
+| A leader-only branch in code that already runs on every node | `ILeaderElectionService.IsLeader` and `LeadershipToken` |
 
 ## Configuration
 
-The key options and their defaults. Give every node of a service the same values.
+The defaults suit most deployments. Give every node of a service the same values.
 
 | Option | Default | Notes |
 |---|---|---|
-| `ServiceName` | Application name | Name shared by all replicas of a service |
-| `HeartbeatInterval` | 15 seconds | How often each node writes a heartbeat. At least one second |
-| `LeaseDuration` | 60 seconds | How long a leadership lease lasts without renewal before another node can take it over. Greater than `HeartbeatInterval` plus four times `QueryTimeout` |
-| `QueryTimeout` | 2 seconds | Timeout for each database operation of leader election and daemon coordination. `HeartbeatInterval` must be more than six times this long. At least 100 milliseconds |
-| `NodeRegistrationTtl` | 90 seconds | How long a node's registration persists after its last heartbeat |
-| `InstanceId` | `null` (uses `MachineName`) | Override to assign a stable, human-readable identity to this node. At most 200 characters |
-| `AcknowledgeTimeout` | 30 seconds | Time allowed for a node to acknowledge a daemon assignment. Greater than `HeartbeatInterval` plus five times `QueryTimeout` |
-| `DrainTimeout` | 8 seconds | How long a daemon may take to stop. Keep the host's shutdown timeout and any orchestrator grace period above 28 seconds with the defaults. Less than `NodeRegistrationTtl` minus `LeaseDuration` minus `HeartbeatInterval` |
-| `MaxConsecutiveFailures` | 3 | Failures in a row before a node gives a daemon up so another node takes it over |
-| `FailureCooldown` | 5 minutes | How long a node gives up a daemon that keeps failing. Greater than four times the sum of `HeartbeatInterval` and three times `QueryTimeout` |
+| `ServiceName` | Application name | Shared by all replicas of a service |
+| `HeartbeatInterval` | 15 seconds | How often each node sends a heartbeat |
+| `LeaseDuration` | 60 seconds | How long leadership lasts without a heartbeat before another node takes over |
+| `NodeRegistrationTtl` | 90 seconds | How long a silent node keeps its daemons before they move |
+| `DrainTimeout` | 8 seconds | How long a daemon may take to stop. Keep the host's shutdown timeout comfortably longer (its default of 30 seconds is fine) |
+| `MaxConsecutiveFailures` | 3 | Failures in a row before a daemon moves to another node |
 
-`LeaseDuration` should be meaningfully larger than `HeartbeatInterval`. The default ratio of 4:1 gives the leader four missed heartbeats before another node takes over, which is enough tolerance for transient database latency without leaving work uncoordinated for long after a real failure.
-
-See [Configuration Reference](../../advanced/configuration/#leader-election-options) for the full option set.
+See the [Configuration Reference](../../advanced/configuration/#leader-election-options) for every option and the rules between them.

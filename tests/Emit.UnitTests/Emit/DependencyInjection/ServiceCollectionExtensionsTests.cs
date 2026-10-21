@@ -2,7 +2,10 @@ namespace Emit.UnitTests.DependencyInjection;
 
 using System.Reflection;
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.Daemon;
+using global::Emit.Abstractions.LeaderElection;
 using global::Emit.Abstractions.Metrics;
+using global::Emit.Daemon;
 using global::Emit.DependencyInjection;
 using global::Emit.Kafka.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -159,12 +162,14 @@ public class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void GivenAddEmit_WhenResolvingEmitMetricsEnrichment_ThenContainsNodeIdTag()
+    public void GivenAddEmit_WhenResolvingEmitMetricsEnrichment_ThenContainsTheNodeIdAndServiceNameTags()
     {
-        // Arrange
+        // Arrange: services sharing a database can run daemons with the same identifier, so their metrics are told
+        // apart by service
         var services = new ServiceCollection();
         services.AddEmit(builder =>
         {
+            builder.ConfigureLeaderElection(options => options.ServiceName = "product-sync");
             builder.AddKafka(kafka =>
             {
                 kafka.ConfigureClient(_ => { });
@@ -177,8 +182,93 @@ public class ServiceCollectionExtensionsTests
         var enrichment = provider.GetRequiredService<EmitMetricsEnrichment>();
 
         // Assert
-        var tagKeys = enrichment.Tags.ToArray().Select(t => t.Key).ToList();
-        Assert.Contains("emit.node.id", tagKeys);
+        var tags = enrichment.Tags.ToArray().ToDictionary(t => t.Key, t => t.Value);
+        Assert.Equal(provider.GetRequiredService<INodeIdentity>().NodeId.ToString(), tags["emit.node.id"]);
+        Assert.Equal("product-sync", tags["emit.service.name"]);
     }
 
+    [Fact]
+    public void GivenDaemonsAddedByTypeAndByFactory_WhenTheCoordinatorIsCreated_ThenEachIsOneSingletonDaemon()
+    {
+        // Arrange: one class can back several daemons through factories, and an instance typed as the interface is
+        // registered once, not once as itself and once as a daemon
+        var services = new ServiceCollection();
+        IDaemonAgent typedAsInterface = new NamedDaemon("typed-as-interface");
+        services.AddEmit(builder =>
+        {
+            builder.Services.AddSingleton(new PersistenceProviderMarker("test"));
+            builder.Services.AddSingleton(Mock.Of<IDaemonAssignmentPersistence>());
+            builder.Services.AddSingleton(Mock.Of<ILeaderElectionPersistence>());
+            builder.AddDaemon<NightlyReportDaemon>();
+            builder.AddDaemon(_ => new NamedDaemon("first"));
+            builder.AddDaemon(_ => new NamedDaemon("second"));
+            builder.AddDaemon(_ => typedAsInterface);
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var coordinator = Record.Exception(() => provider.GetRequiredService<DaemonCoordinator>());
+        var daemons = provider.GetServices<IDaemonAgent>().ToList();
+
+        // Assert
+        Assert.Null(coordinator);
+        Assert.Equal(
+            ["first", NightlyReportDaemon.Id, "second", "typed-as-interface"],
+            daemons.Select(d => d.DaemonId).Order(StringComparer.Ordinal));
+        Assert.Same(provider.GetRequiredService<NightlyReportDaemon>(), daemons.OfType<NightlyReportDaemon>().Single());
+        Assert.Equal(daemons, provider.GetServices<IDaemonAgent>());
+    }
+
+    [Theory]
+    [InlineData(DaemonRegistration.ByType)]
+    [InlineData(DaemonRegistration.ByFactory)]
+    [InlineData(DaemonRegistration.DirectlyOnTheServices)]
+    public void GivenDaemonWithoutPersistenceProvider_WhenAddingEmit_ThenItFailsNamingTheDaemon(DaemonRegistration registration)
+    {
+        // Arrange: without a persistence provider there is no coordination, so the daemon would never run
+        var services = new ServiceCollection();
+
+        // Act
+        var failure = Record.Exception(() => services.AddEmit(builder =>
+        {
+            switch (registration)
+            {
+                case DaemonRegistration.ByType:
+                    builder.AddDaemon<NightlyReportDaemon>();
+                    break;
+                case DaemonRegistration.ByFactory:
+                    builder.AddDaemon(_ => new NightlyReportDaemon());
+                    break;
+                default:
+                    builder.Services.AddSingleton<IDaemonAgent, NightlyReportDaemon>();
+                    break;
+            }
+        }));
+
+        // Assert
+        Assert.Contains(nameof(NightlyReportDaemon), Assert.IsType<InvalidOperationException>(failure).Message);
+    }
+
+    public enum DaemonRegistration
+    {
+        ByType,
+        ByFactory,
+        DirectlyOnTheServices,
+    }
+
+    private sealed class NightlyReportDaemon : IDaemonAgent
+    {
+        public const string Id = "nightly-report";
+
+        public string DaemonId => Id;
+
+        public Task RunAsync(DaemonRunContext context) => Task.Delay(Timeout.InfiniteTimeSpan, context.AssignmentToken);
+    }
+
+    private sealed class NamedDaemon(string daemonId) : IDaemonAgent
+    {
+        public string DaemonId { get; } = daemonId;
+
+        public Task RunAsync(DaemonRunContext context) => Task.Delay(Timeout.InfiniteTimeSpan, context.AssignmentToken);
+    }
 }
