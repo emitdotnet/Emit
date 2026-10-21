@@ -52,6 +52,13 @@ public abstract class MessageContext
     public Uri? SourceAddress { get; set; }
 
     /// <summary>
+    /// Decides whether a failure of the current attempt will be followed by another attempt.
+    /// Set by the retry middleware; <see langword="null"/> when nothing retries this operation,
+    /// in which case every failure is final.
+    /// </summary>
+    internal Func<Exception, bool>? WillRetry { get; set; }
+
+    /// <summary>
     /// Retrieves an optional payload of type <typeparamref name="T"/> from the context.
     /// </summary>
     /// <typeparam name="T">The payload type.</typeparam>

@@ -304,6 +304,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         var batchTimestamp = DateTimeOffset.UtcNow;
 
         var firstItemTransport = (KafkaTransportContext<TKey>)items[0].TransportContext;
+        var cancelledByShutdown = false;
 
         try
         {
@@ -345,9 +346,19 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 await entry.Pipeline.InvokeAsync(context).ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            cancelledByShutdown = true;
+            throw;
+        }
         finally
         {
-            MarkBatchOffsets(offsetsByPartition);
+            // A batch cut short by shutdown rolled back, so its offsets stay unmarked and it is
+            // delivered again after restart, the same as a single message.
+            if (!cancelledByShutdown)
+            {
+                MarkBatchOffsets(offsetsByPartition);
+            }
         }
     }
 

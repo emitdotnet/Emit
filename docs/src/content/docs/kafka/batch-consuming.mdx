@@ -42,7 +42,7 @@ kafka.Topic<string, PackageScan>("sorting.scans", topic =>
 });
 ```
 
-The batch flows through the consume pipeline as `ConsumeContext<MessageBatch<TValue>>`. Your handler has full access to `context.RetryAttempt`, `context.Transaction`, `context.Services`, and `context.Headers`, the same as a single-message consumer.
+The batch flows through the consume pipeline as `ConsumeContext<MessageBatch<TValue>>`. Your handler has full access to `context.RetryAttempt`, `context.Services`, and `context.Headers`, the same as a single-message consumer.
 
 ### MessageBatch and BatchItem
 
@@ -184,7 +184,7 @@ When the circuit opens, all workers in the group pause. See [Resilience](../../e
 
 ### Transactional outbox
 
-Decorate your batch consumer with `[Transactional]` to wrap each batch invocation in a transaction. All outbox entries produced within the handler commit atomically.
+Decorate your batch consumer with `[Transactional]` to wrap each batch invocation in a transaction. All outbox entries produced within the handler commit atomically. Callbacks registered with `OnSucceeded` and `OnFailed` run once per batch; see [Unit of Work](../../concepts/unit-of-work/).
 
 ```csharp
 [Transactional]

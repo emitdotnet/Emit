@@ -17,10 +17,10 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Composes a fully-layered consume middleware pipeline for a single consumer or router entry.
 /// Pipeline order (innermost → outermost):
-/// handler → per-entry → retry → validation → group/provider/global → metrics → tracing → observers → error.
+/// handler → per-entry → unit of work → retry → validation → filter → group/provider/global → metrics → tracing → observers → error.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
-public sealed class ConsumerPipelineComposer<TValue>
+internal sealed class ConsumerPipelineComposer<TValue>
 {
     /// <summary>
     /// Gets the service provider used to resolve middleware instances and dependencies.
@@ -69,10 +69,11 @@ public sealed class ConsumerPipelineComposer<TValue>
     public IMiddleware<ConsumeContext<TValue>>? FilterMiddleware { get; init; }
 
     /// <summary>
-    /// Gets the optional retry configuration. When set, a retry middleware wraps the handler
-    /// and per-entry middleware. On exhaustion, rethrows for error handling.
+    /// Gets the optional retry policy: the group error policy evaluator, before retry actions are
+    /// stripped. When set, a retry middleware wraps the unit of work and retries each failure
+    /// whose matching action is a retry, until that action's attempts are used up.
     /// </summary>
-    public RetryConfig? RetryConfig { get; init; }
+    public Func<Exception, ErrorAction>? RetryPolicy { get; init; }
 
     /// <summary>
     /// Gets the optional error policy evaluator. When <see langword="null"/>, failed
@@ -88,18 +89,12 @@ public sealed class ConsumerPipelineComposer<TValue>
     public ICircuitBreakerNotifier? CircuitBreakerNotifier { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether the transactional outbox is enabled. When <see langword="true"/>
-    /// and the consumer type is decorated with <see cref="TransactionalAttribute"/>, a
-    /// <see cref="TransactionalOutboxMiddleware{TContext}"/> is inserted inside the retry loop.
-    /// </summary>
-    public bool OutboxEnabled { get; init; }
-
-    /// <summary>
     /// Composes a complete consume pipeline for a single consumer or router entry.
     /// </summary>
     /// <param name="terminal">The innermost delegate that invokes the consumer handler.</param>
     /// <param name="perEntryPipeline">
-    /// Optional middleware pipeline specific to this entry. Applied between handler and retry.
+    /// Optional middleware pipeline specific to this entry. Applied inside the unit of work,
+    /// between the handler and the unit-of-work middleware.
     /// </param>
     /// <param name="identifier">
     /// The entry identifier used in error messages, metrics, and tracing. For direct consumers
@@ -123,22 +118,26 @@ public sealed class ConsumerPipelineComposer<TValue>
 
         // 1. terminal = handler/router (already provided)
 
-        // 1.5. Transactional middleware (wraps handler, inside retry loop)
-        if (OutboxEnabled && consumerType is not null)
-        {
-            var transactionalMw = new TransactionalOutboxMiddleware<ConsumeContext<TValue>>(consumerType);
-            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(transactionalMw, terminal);
-        }
-
         // 2. Per-entry middleware
         if (perEntryPipeline is not null)
             terminal = perEntryPipeline.Build<ConsumeContext<TValue>, TValue>(Services, terminal);
 
+        // 2.5. Unit of work (wraps the handler and its own middleware, directly inside retry, so
+        // nothing within an attempt can fail after the commit). Routers have none here: each route
+        // gets its own inside the router invoker.
+        if (consumerType is not null)
+        {
+            var unitOfWorkMw = new UnitOfWorkMiddleware<ConsumeContext<TValue>>(
+                consumerType,
+                LoggerFactory.CreateLogger<UnitOfWorkMiddleware<ConsumeContext<TValue>>>());
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(unitOfWorkMw, terminal);
+        }
+
         // 3. RetryMiddleware (if configured)
-        if (RetryConfig is not null)
+        if (RetryPolicy is not null)
         {
             var retryMw = new RetryMiddleware<TValue>(
-                RetryConfig,
+                RetryPolicy,
                 Services.GetRequiredService<EmitMetrics>(),
                 Services.GetRequiredService<INodeIdentity>(),
                 LoggerFactory.CreateLogger<RetryMiddleware<TValue>>());

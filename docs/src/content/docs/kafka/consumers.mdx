@@ -43,7 +43,6 @@ Consumers are resolved from the DI container per message, so constructor injecti
 | `Headers` | `IReadOnlyList<...>` | Message headers |
 | `RetryAttempt` | `int` | Current retry count (0 on first attempt) |
 | `TransportContext` | `TransportContext` | Kafka-specific metadata |
-| `Transaction` | `ITransactionContext?` | Active transaction, if any |
 | `Services` | `IServiceProvider` | Scoped provider for this message |
 
 For the full list of properties and the payload bag API, see [Feature Collection](../../advanced/feature-collection/).
@@ -210,7 +209,7 @@ Commits happen in the background on this interval. You do not call commit manual
 
 ## Transactional consumers
 
-Decorate your consumer class with `[Transactional]` to have the pipeline wrap each invocation in a unit-of-work transaction. All outbox entries produced within the handler commit atomically with any business data writes. Each retry attempt gets a fresh transaction.
+Decorate your consumer class with `[Transactional]` to have the pipeline wrap each invocation in a unit-of-work transaction. All outbox entries produced within the handler commit atomically with any business data writes. Middleware registered on the consumer runs inside the same transaction, and each retry attempt gets a fresh transaction.
 
 ```csharp
 [Transactional]
@@ -225,7 +224,7 @@ public sealed class PizzaOrderedConsumer(
 }
 ```
 
-For the full transactional outbox story, see [Outbox](../../outbox/).
+To act once the transaction has committed, or once the message has definitely failed, register `OnSucceeded` and `OnFailed` callbacks on `IEmitContext`. See [Unit of Work](../../concepts/unit-of-work/). For the full transactional outbox story, see [Outbox](../../outbox/).
 
 ## Per-consumer middleware
 

@@ -540,10 +540,6 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
 
-            // Resolved here rather than during registration: a persistence provider may enable
-            // the outbox after AddKafka, and this factory runs once everything is registered.
-            var outboxEnabled = sp.IsOutboxEnabled();
-
             // The declaration's flow control, shared by the application, the circuit breaker and the worker
             var flowControl = sp.GetRequiredKeyedService<KafkaConsumerFlowControl>(name);
 
@@ -585,14 +581,13 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                         LoggerFactory = loggerFactory,
                         ValidationMiddleware = BuildValidationMiddleware(config.ValidationMiddleware),
                         FilterMiddleware = BuildFilterMiddleware(config.FilterMiddleware),
-                        RetryConfig = config.RetryConfig,
+                        RetryPolicy = config.RetryPolicy,
                         ErrorPolicy = errorEvaluator,
                         ConsumeObservers = consumeObservers,
                         GroupPipeline = config.GroupPipeline,
                         GlobalInboundPipeline = globalInboundPipeline,
                         ProviderInboundPipeline = config.KafkaInboundPipeline,
                         CircuitBreakerNotifier = cbObserver,
-                        OutboxEnabled = outboxEnabled,
                     };
 
                     var entries = new List<ConsumerPipelineEntry<TValue>>();
@@ -617,8 +612,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                                 type => new HandlerInvoker<TValue>(type),
                                 sp,
                                 loggerFactory,
-                                unmatchedAction,
-                                outboxEnabled);
+                                unmatchedAction);
 
                             entries.Add(composer.Compose(
                                 routerInvoker, null,
@@ -671,14 +665,13 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                             LoggerFactory = loggerFactory,
                             ValidationMiddleware = batchValidation,
                             FilterMiddleware = batchFilter,
-                            RetryConfig = config.RetryConfig,
+                            RetryPolicy = config.RetryPolicy,
                             ErrorPolicy = batchErrorEvaluator,
                             ConsumeObservers = consumeObservers,
                             GroupPipeline = config.GroupPipeline,
                             GlobalInboundPipeline = globalInboundPipeline,
                             ProviderInboundPipeline = config.KafkaInboundPipeline,
                             CircuitBreakerNotifier = cbObserver,
-                            OutboxEnabled = outboxEnabled,
                         };
 
                         var batchEntry = batchComposer.Compose(
@@ -804,7 +797,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         var filterModule = groupBuilder.Filters;
         filterModule?.RegisterServices(services);
 
-        var retryConfig = ExtractRetryConfig(groupErrorPolicy);
+        var retryPolicy = BuildRetryPolicy(groupErrorPolicy);
 
         System.Threading.RateLimiting.RateLimiter? rateLimiter = null;
         if (groupBuilder.RateLimitAction is not null)
@@ -865,7 +858,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             DeserializationErrorAction = deserializationErrorAction,
             ValidationMiddleware = validationModule,
             FilterMiddleware = filterModule,
-            RetryConfig = retryConfig,
+            RetryPolicy = retryPolicy,
             RateLimitEnabled = groupBuilder.RateLimitAction is not null,
             CircuitBreakerConfig = circuitBreakerConfig,
             KafkaInboundPipeline = kafkaInbound,
@@ -893,7 +886,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         public required ErrorAction? DeserializationErrorAction { get; init; }
         public required ValidationMiddleware<TValue>? ValidationMiddleware { get; init; }
         public required FilterMiddleware<TValue>? FilterMiddleware { get; init; }
-        public required RetryConfig? RetryConfig { get; init; }
+        public required Func<Exception, ErrorAction>? RetryPolicy { get; init; }
         public required bool RateLimitEnabled { get; init; }
         public required CircuitBreakerConfig? CircuitBreakerConfig { get; init; }
         public required IMessagePipelineBuilder KafkaInboundPipeline { get; init; }
@@ -1058,17 +1051,20 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
     internal IReadOnlyDictionary<string, TopicCreationOptions> GetProvisioningConfigs() => provisioningConfigs;
 
     /// <summary>
-    /// Extracts retry configuration from the default action of an error policy.
-    /// Returns <c>null</c> if the default action is not a <see cref="ErrorAction.RetryAction"/>.
+    /// Returns the policy evaluator <c>RetryMiddleware</c> decides retries with, or <c>null</c>
+    /// when neither the default action nor any clause retries, so no retry layer is composed.
     /// </summary>
-    private static RetryConfig? ExtractRetryConfig(ErrorPolicy? policy)
+    private static Func<Exception, ErrorAction>? BuildRetryPolicy(ErrorPolicy? policy)
     {
-        if (policy?.DefaultAction is ErrorAction.RetryAction retry)
+        if (policy is null)
         {
-            return new RetryConfig(retry.MaxAttempts, retry.Backoff);
+            return null;
         }
 
-        return null;
+        var retries = policy.DefaultAction is ErrorAction.RetryAction
+            || policy.Clauses.Any(c => c.Action is ErrorAction.RetryAction);
+
+        return retries ? policy.Evaluate : null;
     }
 
     /// <summary>

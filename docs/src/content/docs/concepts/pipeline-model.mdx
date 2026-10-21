@@ -30,11 +30,12 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
     B --> C["Tracing"]
     C --> D["Metrics"]
     D --> E["User middleware (Global → Provider → Group)"]
-    E --> F["Validation"]
-    F --> G["Retry"]
-    G --> H["Transactional"]
-    H --> I["Per-consumer middleware"]
-    I --> J["Handler"]`} />
+    E --> F["Filters"]
+    F --> G["Validation"]
+    G --> H["Retry"]
+    H --> I["Unit of work"]
+    I --> J["Per-consumer middleware"]
+    J --> K["Handler"]`} />
 
 | Layer | What it does | Always present? |
 |---|---|---|
@@ -43,13 +44,14 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 | **Tracing** | Creates an `emit.consume` activity with consumer identity tags | Yes |
 | **Metrics** | Records duration and success/failure counters | Yes |
 | **User middleware** | Your custom middleware, composed Global to Provider to Group | Only if registered |
+| **Filters** | Runs consumer filters; a message a filter rejects stops here | Only if configured |
 | **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
-| **Retry** | Re-executes the handler on failure with configurable backoff | Only if configured |
-| **Transactional** | Wraps the handler in a unit-of-work transaction when the handler class carries `[Transactional]` | Only if `[Transactional]` is used |
+| **Retry** | Re-executes the unit of work on failure, as the matching error policy clause decides | Only if the error policy retries |
+| **Unit of work** | Opens a transaction when the handler class carries `[Transactional]`, and runs the callbacks registered with `OnSucceeded` and `OnFailed` once the outcome is final. See [Unit of Work](../unit-of-work/) | Yes |
 | **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
 | **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |
 
-The ordering is deliberate. Error handling sits outermost so it catches exceptions from every other layer. Validation runs outside retry so a malformed message fails fast without burning retry attempts. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
+The ordering is deliberate. Error handling sits outermost so it catches exceptions from every other layer. Validation runs outside retry so a malformed message fails fast without burning retry attempts. The unit of work wraps the per-consumer middleware, so a failure there rolls the transaction back instead of failing after the commit, and each retry attempt is a fresh unit of work. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
 
 ### Fan-out and independent failure
 
@@ -57,7 +59,7 @@ When a consumer group has multiple consumers or routers, each gets independent p
 
 ### Content-based routing
 
-Routers add a second level of dispatch. A route selector evaluates the message content and dispatches to the matched route's sub-pipeline. Each route can carry its own per-route middleware and handler.
+Routers add a second level of dispatch. A route selector evaluates the message content and dispatches to the matched route's sub-pipeline. Each route can carry its own per-route middleware and handler, and each route has its own unit of work around them.
 
 Unmatched messages are either discarded silently (if configured via `WhenRouteUnmatched`) or throw an `UnmatchedRouteException` for the error policy to handle.
 
@@ -82,7 +84,7 @@ The terminal is selected at registration time. When outbox infrastructure is con
 
 Middleware receives a typed context that carries everything relevant to one message's journey. The context type determines which pipeline direction the middleware belongs to.
 
-`ConsumeContext<T>` is the inbound context. It extends `MessageContext<T>`, which extends `MessageContext`. Beyond the common properties, it adds a `TransportContext` reference, the raw headers from the broker, a `RetryAttempt` counter, and an optional `Transaction` when a unit-of-work is active.
+`ConsumeContext<T>` is the inbound context. It extends `MessageContext<T>`, which extends `MessageContext`. Beyond the common properties, it adds a `TransportContext` reference, the raw headers from the broker, and a `RetryAttempt` counter. The active transaction, if any, is available from the scoped `IEmitContext`.
 
 `SendContext<T>` is the outbound context. It also extends `MessageContext<T>` and adds a mutable headers list you can write to before the message leaves.
 

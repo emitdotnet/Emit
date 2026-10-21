@@ -87,7 +87,7 @@ public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
 }
 ```
 
-`IUnitOfWork` and `IMongoSessionAccessor` are registered as scoped services automatically when `UseOutbox()` is called.
+`IUnitOfWork` and `IMongoSessionAccessor` are registered automatically as scoped services by `AddMongoDb`, whether or not `UseOutbox()` is called.
 
 `IMongoSessionAccessor.Session` is `null` until a transaction is started. Within a `[Transactional]` handler or after `IUnitOfWork.BeginAsync()` is called, `Session` holds the active `IClientSessionHandle`.
 

@@ -35,15 +35,15 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
     protected abstract string BootstrapServers { get; }
 
     /// <summary>
-    /// Configures the persistence provider (MongoDB or EF Core) with the outbox enabled,
-    /// which is what registers <see cref="IUnitOfWork"/>.
+    /// Configures the persistence provider (MongoDB or EF Core) with the outbox enabled.
     /// </summary>
     /// <param name="emit">The Emit builder to configure.</param>
     protected abstract void ConfigurePersistence(EmitBuilder emit);
 
     /// <summary>
-    /// Configures the same persistence provider with the outbox left off, so no
-    /// <see cref="IUnitOfWork"/> is registered.
+    /// Configures the same persistence provider with the outbox left off. Its
+    /// <see cref="IUnitOfWork"/> is registered all the same, since transactions do not
+    /// depend on the outbox.
     /// </summary>
     /// <param name="emit">The Emit builder to configure.</param>
     protected abstract void ConfigurePersistenceWithoutOutbox(EmitBuilder emit);
@@ -323,32 +323,30 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
         }
     }
 
-    // ── A transaction that cannot be honoured must not be ignored ──
+    // ── Transactions belong to the persistence provider, not to the outbox ──
 
     [Fact]
-    public void GivenTransactionalHandlerAndNoOutbox_WhenHostBuilt_ThenConfigurationIsRejected()
+    public async Task GivenTransactionalHandlerAndNoOutbox_WhenSent_ThenTransactionCommitted()
     {
-        // Arrange & Act — persistence is present but the outbox is off, so no IUnitOfWork
-        // exists and the attribute cannot possibly be honoured.
-        static void Build(Action<EmitBuilder> configurePersistence) =>
-            Host.CreateDefaultBuilder()
-                .ConfigureServices(services =>
-                {
-                    services.AddSingleton(new TransactionProbe());
-                    services.AddScoped<IAmbientSessionInspector, NullAmbientSessionInspector>();
-                    services.AddEmit(emit =>
-                    {
-                        configurePersistence(emit);
-                        emit.AddMediator(m => m.AddHandler<TransactionalResponseHandler>());
-                    });
-                })
-                .Build()
-                .Dispose();
+        // Arrange: persistence is present with the outbox off
+        var (host, probe) = BuildHost(
+            m => m.AddHandler<TransactionalResponseHandler>(),
+            configurePersistence: ConfigurePersistenceWithoutOutbox);
 
-        // Assert — silently dropping the transaction would let a handler believe its writes
-        // are atomic when they are not, so this must fail loudly rather than be ignored.
-        var exception = Assert.Throws<InvalidOperationException>(() => Build(ConfigurePersistenceWithoutOutbox));
-        Assert.Contains(nameof(TransactionalResponseHandler), exception.Message, StringComparison.Ordinal);
+        try
+        {
+            // Act
+            await SendAsync(host, new TransactionalResponseRequest("hello"));
+
+            // Assert
+            var transaction = Assert.Single(probe.Observations).Transaction;
+            Assert.NotNull(transaction);
+            Assert.True(transaction.IsCommitted);
+        }
+        finally
+        {
+            await StopAsync(host);
+        }
     }
 
     // ── The transactional wrapper must not disturb the response ──
@@ -550,12 +548,17 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
     /// </summary>
     /// <param name="configureMediator">Handler registrations for this test.</param>
     /// <param name="order">The order in which persistence and the mediator are registered.</param>
+    /// <param name="configurePersistence">
+    /// The persistence configuration; <see cref="ConfigurePersistence"/> when omitted.
+    /// </param>
     /// <returns>The started host and the probe the handlers record into.</returns>
     protected (IHost Host, TransactionProbe Probe) BuildHost(
         Action<MediatorBuilder> configureMediator,
-        EmitRegistrationOrder order = EmitRegistrationOrder.PersistenceFirst)
+        EmitRegistrationOrder order = EmitRegistrationOrder.PersistenceFirst,
+        Action<EmitBuilder>? configurePersistence = null)
     {
         var probe = new TransactionProbe();
+        configurePersistence ??= ConfigurePersistence;
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -573,7 +576,7 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
                     if (order == EmitRegistrationOrder.PersistenceFirst)
                     {
                         ConfigureFastCoordination(emit, NewServiceName());
-                        ConfigurePersistence(emit);
+                        configurePersistence(emit);
                         ConfigureTransport(emit);
                         emit.AddMediator(configureMediator);
                     }
@@ -581,7 +584,7 @@ public abstract class MediatorTransactionalCompliance : IAsyncLifetime
                     {
                         emit.AddMediator(configureMediator);
                         ConfigureFastCoordination(emit, NewServiceName());
-                        ConfigurePersistence(emit);
+                        configurePersistence(emit);
                         ConfigureTransport(emit);
                     }
                 });
