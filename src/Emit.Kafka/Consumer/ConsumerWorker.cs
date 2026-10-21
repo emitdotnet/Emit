@@ -37,6 +37,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private readonly EmitMetrics emitMetrics;
     private readonly IDeadLetterSink? deadLetterSink;
     private readonly ILogger logger;
+    private readonly KafkaConsumerFlowControl? flowControl;
     private readonly string deserializationAction;
 
     /// <summary>
@@ -68,7 +69,8 @@ internal sealed class ConsumerWorker<TKey, TValue>
         KafkaMetrics kafkaMetrics,
         EmitMetrics emitMetrics,
         IDeadLetterSink? deadLetterSink,
-        ILogger logger)
+        ILogger logger,
+        KafkaConsumerFlowControl? flowControl = null)
     {
         this.id = id;
         this.registration = registration;
@@ -84,6 +86,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         this.emitMetrics = emitMetrics;
         this.deadLetterSink = deadLetterSink;
         this.logger = logger;
+        this.flowControl = flowControl;
         this.deserializationAction = registration.DeserializationErrorAction is ErrorAction.DeadLetterAction ? "dead_letter" : "discard";
 
         channel = Channel.CreateBounded<ConfluentKafka.ConsumeResult<byte[], byte[]>>(
@@ -101,6 +104,9 @@ internal sealed class ConsumerWorker<TKey, TValue>
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        // A pause requested from a handler must not wait for the messages being handled, among which its own
+        flowControl?.EnterHandler();
+
         if (batchConfig is not null)
         {
             await RunBatchAsync(cancellationToken).ConfigureAwait(false);
@@ -146,6 +152,10 @@ internal sealed class ConsumerWorker<TKey, TValue>
                         logger.LogError(ex, "{WorkerId} error processing message from {Topic}[{Partition}]@{Offset}",
                             id, raw.Topic, raw.Partition.Value, raw.Offset.Value);
                     }
+                    finally
+                    {
+                        flowControl?.EndHandling(1);
+                    }
                 }
             }
         }
@@ -153,6 +163,21 @@ internal sealed class ConsumerWorker<TKey, TValue>
         {
             // Normal shutdown
         }
+    }
+
+    /// <summary>
+    /// Removes the messages left in the channel once the worker has stopped reading it, and returns how many:
+    /// they will never be handled.
+    /// </summary>
+    internal int DiscardUnread()
+    {
+        var count = 0;
+        while (channel.Reader.TryRead(out _))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     /// <summary>
@@ -190,6 +215,10 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 {
                     logger.LogError(ex, "{WorkerId} error processing batch of {Count} messages",
                         id, rawBatch.Count);
+                }
+                finally
+                {
+                    flowControl?.EndHandling(rawBatch.Count);
                 }
             }
         }

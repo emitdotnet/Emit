@@ -108,24 +108,6 @@ public sealed class OffsetManagerTests
     }
 
     [Fact]
-    public async Task GivenClear_WhenCalled_ThenRemovesAllPartitionState()
-    {
-        // Arrange
-        var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
-        await using var committer = CreateCommitter(mockConsumer.Object);
-        var manager = new OffsetManager(committer);
-        manager.Enqueue("topic", 0, 5);
-
-        // Act
-        manager.Clear();
-        manager.MarkAsProcessed("topic", 0, 5);
-        committer.Flush();
-
-        // Assert
-        mockConsumer.Verify(c => c.Commit(It.IsAny<IEnumerable<ConfluentKafka.TopicPartitionOffset>>()), Times.Never);
-    }
-
-    [Fact]
     public async Task GivenMultipleTopics_WhenEnqueue_ThenTrackedSeparately()
     {
         // Arrange
@@ -139,6 +121,35 @@ public sealed class OffsetManagerTests
         manager.MarkAsProcessed("topic-b", 0, 10);
 
         // Assert - no exception
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GivenRetiredManager_WhenAWorkerOfItsPoolStillMarksAnOffset_ThenNothingIsCommitted(bool asBatch)
+    {
+        // Arrange: a worker can outlive its pool's stop timeout; once the pool is replaced, what it finishes must
+        // not move the commits of the partitions the new pool now tracks
+        var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
+        await using var committer = CreateCommitter(mockConsumer.Object);
+        var manager = new OffsetManager(committer);
+        manager.Enqueue("topic", 0, 5);
+        manager.Retire();
+
+        // Act
+        if (asBatch)
+        {
+            manager.MarkBatchAsProcessed("topic", 0, [5]);
+        }
+        else
+        {
+            manager.MarkAsProcessed("topic", 0, 5);
+        }
+
+        committer.Flush();
+
+        // Assert
+        mockConsumer.Verify(c => c.Commit(It.IsAny<IEnumerable<ConfluentKafka.TopicPartitionOffset>>()), Times.Never);
     }
 
     // ── MarkBatchAsProcessed tests ──

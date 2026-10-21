@@ -1,23 +1,36 @@
 namespace Emit.Abstractions;
 
 /// <summary>
-/// Controls the flow of messages from a consumer by pausing and resuming consumption.
-/// Used by circuit breakers and other protective mechanisms to temporarily halt
-/// message delivery while keeping the consumer connected.
+/// Pauses and resumes a consumer group declaration on this node while its consumer stays in the group.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Resolve it as a keyed service under the name of the consumer group declaration. The pause applies to this
+/// node only, holds through rebalances, and resumes from where consumption stopped. It is kept in memory: a
+/// restarted process starts with the group running.
+/// </para>
+/// <para>
+/// A circuit breaker pauses the group on its own. A group paused by both stays paused until both resumed it:
+/// resuming never cuts an open circuit short, and a circuit closing never resumes a group the application paused.
+/// </para>
+/// </remarks>
 public interface IConsumerFlowControl
 {
     /// <summary>
-    /// Temporarily halts message consumption while keeping the consumer connected to the broker.
+    /// Pauses the group. Calling it while the group is already paused does nothing.
     /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task that completes when consumption has been paused.</returns>
+    /// <param name="cancellationToken">Stops waiting for the messages being handled. The group stays paused.</param>
+    /// <returns>
+    /// A task that completes once no message of the group is fetched or being handled on this node: messages
+    /// already handed to its handlers finish first. Called from a handler of the same group, it completes without
+    /// waiting for them, since one of them is the caller.
+    /// </returns>
     Task PauseAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Resumes message consumption after a previous pause.
+    /// Resumes the group from where it stopped. Calling it while the group is not paused does nothing.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task that completes when consumption has been resumed.</returns>
+    /// <returns>A task that completes once the group is resumed, or still held by an open circuit.</returns>
     Task ResumeAsync(CancellationToken cancellationToken);
 }

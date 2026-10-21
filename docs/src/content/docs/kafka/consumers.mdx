@@ -265,33 +265,43 @@ group.WorkerStopTimeout = TimeSpan.FromSeconds(30);  // default
 
 ## Flow control
 
-`IConsumerFlowControl` lets you pause and resume message delivery without dropping the Kafka connection. The consumer stays in the group and holds its partition assignments; it simply stops receiving new messages until you resume.
+`IConsumerFlowControl` pauses and resumes a consumer group declaration without leaving the group. Give the declaration a name, unique across all declarations and fixed in code even when the group id comes from configuration:
 
 ```csharp
-public class ExternalHealthMonitor(IConsumerFlowControl flowControl) : BackgroundService
+topic.ConsumerGroup(settings.KitchenGroupId, group =>
 {
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    group.Name = "pizza-kitchen";
+    group.AddConsumer<PizzaOrderedConsumer>();
+});
+```
+
+Resolve its flow control as a keyed service under that name:
+
+```csharp
+public class MenuRebuilder([FromKeyedServices("pizza-kitchen")] IConsumerFlowControl kitchen)
+{
+    public async Task RebuildAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        await kitchen.PauseAsync(ct);
+        try
         {
-            var healthy = await CheckExternalDependency(ct);
-
-            if (!healthy)
-                await flowControl.PauseAsync(ct);
-            else
-                await flowControl.ResumeAsync(ct);
-
-            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            // nothing of the group runs here
+        }
+        finally
+        {
+            await kitchen.ResumeAsync(ct);
         }
     }
 }
 ```
 
-The primary use case is back-pressure from external dependencies. When a downstream service becomes unhealthy, pausing consumption prevents a flood of failed messages from piling up in your retry queue. No rebalance occurs, so partition assignments are preserved for when you resume.
+- `PauseAsync` returns once no message of the group is fetched or being handled: messages already handed to handlers finish first. Called from a handler of the same group, it returns without waiting for them.
+- `ResumeAsync` continues from where the group stopped.
+- Both are idempotent, and the pause holds through rebalances.
+- The pause applies to this node only, and is kept in memory: a restarted process starts with the group running.
+- A group the circuit breaker paused stays paused until the circuit allows it, even if you resume, and a closing circuit never resumes a group you paused.
 
-Both `PauseAsync` and `ResumeAsync` are idempotent: calling `PauseAsync` when already paused, or `ResumeAsync` when already running, is a no-op.
-
-Inject `IConsumerFlowControl` into any service or middleware that needs to influence consumption rate.
+Without `Name`, a declaration gets a generated one. A name used twice is rejected at startup.
 
 ## Message filtering
 

@@ -25,6 +25,17 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     private readonly Dictionary<Type, IMessagePipelineBuilder> consumerPipelines = new();
     private readonly KafkaConsumerOptions consumerConfig = new();
 
+    /// <summary>
+    /// Gets or sets the name that identifies this consumer group declaration in the application, unique across
+    /// all declarations. Its <see cref="IConsumerFlowControl"/> is resolved as a keyed service under this name.
+    /// Defaults to a new <see cref="Guid"/>.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the group id, which may come from configuration and change per environment, the name is meant to
+    /// stay fixed in code.
+    /// </remarks>
+    public string? Name { get; set; }
+
     // ── Consumer config (delegates to KafkaConsumerOptions) ──
 
     /// <inheritdoc cref="KafkaConsumerOptions.AutoOffsetReset"/>

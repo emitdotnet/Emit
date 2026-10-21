@@ -73,7 +73,8 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             CreateWorkerPool,
             kafkaMetrics,
             observerInvoker,
-            logger);
+            logger,
+            flowControl.EndHandling);
 
         var consumer = BuildConfluentConsumer();
         flowControl.SetConsumer(consumer);
@@ -112,6 +113,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             // before closing the consumer. This prevents ObjectDisposedException from
             // the observer trying to resume a disposed consumer.
             circuitBreakerObserver?.Dispose();
+
+            // Pauses and resumes can come from any thread: they must not reach the closed consumer
+            flowControl.Detach();
 
             await observerInvoker.OnConsumerStoppedAsync(new ConsumerStoppedEvent(registration.GroupId, registration.TopicName)).ConfigureAwait(false);
 
@@ -162,8 +166,6 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                     continue;
                 }
 
-                kafkaMetrics.RecordConsumeMessage(registration.GroupId, result.Topic, result.Partition.Value);
-
                 var workers = supervisor?.Workers;
                 var strategy = supervisor?.DistributionStrategy;
 
@@ -172,11 +174,30 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                     continue;
                 }
 
-                offsetManager.Enqueue(result.Topic, result.Partition.Value, result.Offset.Value);
+                // A message fetched before the group was paused, or from a partition assigned during the pause,
+                // is not handed over: its partition is paused, and the next fetch on resume starts from it
+                if (!flowControl.TryBeginHandling(result.TopicPartition))
+                {
+                    consumer.Seek(result.TopicPartitionOffset);
+                    continue;
+                }
 
-                var workerIndex = strategy.SelectWorker(
-                    result.Message.Key, result.Partition.Value);
-                await workers[workerIndex].Writer.WriteAsync(result, cancellationToken).ConfigureAwait(false);
+                kafkaMetrics.RecordConsumeMessage(registration.GroupId, result.Topic, result.Partition.Value);
+
+                try
+                {
+                    offsetManager.Enqueue(result.Topic, result.Partition.Value, result.Offset.Value);
+
+                    var workerIndex = strategy.SelectWorker(
+                        result.Message.Key, result.Partition.Value);
+                    await workers[workerIndex].Writer.WriteAsync(result, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Never written to a worker, so never handled
+                    flowControl.EndHandling(1);
+                    throw;
+                }
             }
             catch (ChannelClosedException) when (supervisor is not null && supervisor.IsFaulted)
             {
@@ -206,8 +227,8 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
 
         await supervisor.StopAsync().ConfigureAwait(false);
 
+        ReplaceOffsetManager();
         committer?.Flush();
-        offsetManager?.Clear();
 
         if (offsetManager is not null && !cancellationToken.IsCancellationRequested)
         {
@@ -231,7 +252,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             var worker = new ConsumerWorker<TKey, TValue>(
                 workerId, registration, offsetManager, scopeFactory,
                 registration.GroupId, registration.DestinationAddress,
-                observerInvoker, kafkaMetrics, emitMetrics, deadLetterSink, workerLogger);
+                observerInvoker, kafkaMetrics, emitMetrics, deadLetterSink, workerLogger, flowControl);
             poolWorkers[i] = worker;
             poolTasks[i] = worker.RunAsync(cancellationToken);
         }
@@ -250,8 +271,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         observerInvoker.OnPartitionsRevokedAsync(new PartitionsRevokedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         supervisor?.StopAsync().GetAwaiter().GetResult();
+        ReplaceOffsetManager();
         committer?.Flush();
-        offsetManager?.Clear();
+        flowControl.OnPartitionsRevoked(partitions.Select(p => p.TopicPartition));
     }
 
     private void OnPartitionsLost(
@@ -265,7 +287,8 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         observerInvoker.OnPartitionsLostAsync(new PartitionsLostEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         supervisor?.StopAsync().GetAwaiter().GetResult();
-        offsetManager?.Clear();
+        ReplaceOffsetManager();
+        flowControl.OnPartitionsRevoked(partitions.Select(p => p.TopicPartition));
     }
 
     private void OnPartitionsAssigned(
@@ -289,12 +312,28 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, "assigned", partitions.Count);
         observerInvoker.OnPartitionsAssignedAsync(new PartitionsAssignedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
+        flowControl.OnPartitionsAssigned(partitions);
+
         if (offsetManager is null || supervisor is null)
         {
             return;
         }
 
         supervisor.Start(offsetManager, executionToken);
-        flowControl.PauseIfNeeded(partitions);
+    }
+
+    /// <summary>
+    /// Gives the next worker pool an offset manager of its own. A worker of the stopped pool that outlived its
+    /// stop timeout keeps its retired manager, so what it finishes later cannot move the new pool's commits.
+    /// </summary>
+    private void ReplaceOffsetManager()
+    {
+        if (offsetManager is null || committer is null)
+        {
+            return;
+        }
+
+        offsetManager.Retire();
+        offsetManager = new OffsetManager(committer);
     }
 }

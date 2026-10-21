@@ -10,6 +10,7 @@ internal class OffsetManager
 {
     private readonly ConcurrentDictionary<TopicPartitionKey, PartitionOffsets> partitions = new();
     private readonly OffsetCommitter committer;
+    private volatile bool retired;
 
     /// <summary>
     /// Creates a new offset manager.
@@ -34,6 +35,11 @@ internal class OffsetManager
     /// </summary>
     public virtual void MarkAsProcessed(string topic, int partition, long offset)
     {
+        if (retired)
+        {
+            return;
+        }
+
         var key = new TopicPartitionKey(topic, partition);
         if (!partitions.TryGetValue(key, out var tracker))
         {
@@ -53,6 +59,11 @@ internal class OffsetManager
     /// </summary>
     public virtual void MarkBatchAsProcessed(string topic, int partition, ReadOnlySpan<long> offsets)
     {
+        if (retired)
+        {
+            return;
+        }
+
         var key = new TopicPartitionKey(topic, partition);
         if (!partitions.TryGetValue(key, out var tracker))
             return;
@@ -65,10 +76,10 @@ internal class OffsetManager
     }
 
     /// <summary>
-    /// Removes all partition tracking state.
+    /// Stops this manager from recording completions, once the worker pool it served is replaced.
     /// </summary>
-    public void Clear()
+    public void Retire()
     {
-        partitions.Clear();
+        retired = true;
     }
 }

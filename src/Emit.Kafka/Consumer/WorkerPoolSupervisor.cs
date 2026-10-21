@@ -28,6 +28,7 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
     private readonly KafkaMetrics kafkaMetrics;
     private readonly KafkaConsumerObserverInvoker observerInvoker;
     private readonly ILogger logger;
+    private readonly Action<int>? onUnhandled;
 
     private ConsumerWorker<TKey, TValue>[]? workers;
     private Task[]? workerTasks;
@@ -42,13 +43,15 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
         Func<OffsetManager, CancellationToken, WorkerPool<TKey, TValue>> workerFactory,
         KafkaMetrics kafkaMetrics,
         KafkaConsumerObserverInvoker observerInvoker,
-        ILogger logger)
+        ILogger logger,
+        Action<int>? onUnhandled = null)
     {
         this.registration = registration;
         this.workerFactory = workerFactory;
         this.kafkaMetrics = kafkaMetrics;
         this.observerInvoker = observerInvoker;
         this.logger = logger;
+        this.onUnhandled = onUnhandled;
     }
 
     /// <summary>
@@ -134,6 +137,25 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error during worker pool drain for group '{GroupId}'", registration.GroupId);
+            }
+        }
+
+        // A worker that stopped reading, faulted or cancelled, leaves its remaining messages unhandled; one
+        // still running past the timeout handles them itself
+        if (workers is not null && workerTasks is not null)
+        {
+            var unhandled = 0;
+            for (var i = 0; i < workers.Length; i++)
+            {
+                if (workerTasks[i].IsCompleted)
+                {
+                    unhandled += workers[i].DiscardUnread();
+                }
+            }
+
+            if (unhandled > 0)
+            {
+                onUnhandled?.Invoke(unhandled);
             }
         }
 

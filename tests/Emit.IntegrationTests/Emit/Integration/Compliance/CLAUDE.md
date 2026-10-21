@@ -8,6 +8,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | ---- | ---- | ------------ |
 | `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation, retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
 | `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior | Add circuit breaker tests or debug circuit breaker issues |
+| `ConsumerFlowControlCompliance.cs` | Pausing a named consumer group declaration: through rebalances and an open circuit, waiting for messages being handled, resuming in order, before start and after stop, batch groups, from a handler | Add flow control tests or debug pause and resume |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
 | `ConsumerObserverCompliance.cs` | IConsumerObserver lifecycle event delivery | Add consumer observer tests or debug observer invocation |
 | `DaemonAssignmentCompliance.cs` | Daemon assignment persistence per service: compare-and-swap writes, release, and generations that never repeat | Add daemon tests or debug distributed daemon behavior |

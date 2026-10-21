@@ -8,7 +8,7 @@
 | `KafkaEmitBuilderExtensions.cs` | AddKafka extension methods with keyed service registration and provider setup | Register Kafka clusters or understand keyed service strategy |
 | `KafkaClientOptions.cs` | Shared Kafka client settings (connection, security, timeouts, connection pooling) with ApplyTo method | Configure shared Kafka client connection settings |
 | `KafkaConsumerOptions.cs` | Consumer-specific configuration overrides (offset reset, timeouts, fetch settings) with ApplyTo method | Configure Kafka consumer behavior |
-| `KafkaConsumerGroupBuilder.cs` | Fluent builder for consumer group configuration (topics, concurrency, distribution) | Configure Kafka consumer group registration |
+| `KafkaConsumerGroupBuilder.cs` | Fluent builder for consumer group configuration (name, concurrency, distribution, consumers) | Configure Kafka consumer group registration |
 | `KafkaConsumerHandlerBuilder.cs` | Per-consumer handler middleware configuration with compile-time type safety | Configure middleware for individual consumer handlers |
 | `KafkaProducerBuilder.cs` | Fluent builder for producer configuration (acks, linger, batch) with per-producer outbound middleware | Configure individual Kafka producers |
 | `KafkaProducerOptions.cs` | Producer configuration model holding serializer and topic settings | Understand producer configuration structure |

@@ -9,6 +9,7 @@ Kafka integration tests: compliance implementations proving Kafka provider corre
 | `KafkaProduceConsumeCompliance.cs` | Inherits ProduceConsumeCompliance | Debug or extend basic produce/consume tests |
 | `KafkaBatchConsumerCompliance.cs` | Inherits BatchConsumerCompliance | Debug or extend batch consumer tests |
 | `KafkaCircuitBreakerCompliance.cs` | Inherits CircuitBreakerCompliance | Debug or extend circuit breaker tests |
+| `KafkaConsumerFlowControlCompliance.cs` | Inherits ConsumerFlowControlCompliance; declares the groups and reports assignments and commits | Debug or extend flow control tests |
 | `KafkaCircuitBreakerRebalanceTests.cs` | Kafka-specific: circuit breaker behavior during partition rebalance | Debug or extend circuit breaker rebalance interaction |
 | `KafkaConsumeObserverCompliance.cs` | Inherits ConsumeObserverCompliance | Debug or extend consume observer tests |
 | `KafkaConsumerObserverCompliance.cs` | Inherits ConsumerObserverCompliance | Debug or extend consumer observer tests |

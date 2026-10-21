@@ -33,6 +33,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
     private readonly IMessagePipelineBuilder globalOutboundPipeline;
     private readonly HashSet<string> registeredTopicNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TopicCreationOptions> provisioningConfigs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Topic, string GroupId)> consumerGroupNames = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets the Kafka-level inbound middleware pipeline builder. Middleware registered here
@@ -496,6 +497,28 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
         }
     }
 
+    /// <summary>
+    /// Returns the name of a consumer group declaration, a new <see cref="Guid"/> unless set, and rejects a name
+    /// another declaration already has: a name resolves exactly one declaration's flow control.
+    /// </summary>
+    private string ReserveConsumerGroupName(string topicName, string groupId, string? name)
+    {
+        if (name is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(name, nameof(KafkaConsumerGroupBuilder<object, object>.Name));
+        }
+
+        name ??= Guid.NewGuid().ToString();
+        if (consumerGroupNames.TryGetValue(name, out var existing))
+        {
+            throw new InvalidOperationException(
+                $"Consumer group '{groupId}' on topic '{topicName}' and consumer group '{existing.GroupId}' on topic '{existing.Topic}' are both named '{name}'. Each consumer group declaration needs a unique name.");
+        }
+
+        consumerGroupNames.Add(name, (topicName, groupId));
+        return name;
+    }
+
     private void RegisterConsumerGroup<TKey, TValue>(
         string topicName,
         KafkaTopicBuilder<TKey, TValue> topicBuilder,
@@ -507,6 +530,12 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
 
         var config = BuildConsumerGroupConfig(topicName, topicBuilder, groupBuilder);
 
+        var name = ReserveConsumerGroupName(topicName, groupId, groupBuilder.Name);
+        services.AddKeyedSingleton(name, (sp, _) => new KafkaConsumerFlowControl(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<KafkaConsumerFlowControl>()));
+        services.AddKeyedSingleton<IConsumerFlowControl>(name, (sp, key) =>
+            sp.GetRequiredKeyedService<KafkaConsumerFlowControl>(key).Application);
+
         services.AddSingleton<IHostedService>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -515,9 +544,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             // the outbox after AddKafka, and this factory runs once everything is registered.
             var outboxEnabled = sp.IsOutboxEnabled();
 
-            // Create flow control first — shared between the circuit breaker and the worker
-            var flowControl = new KafkaConsumerFlowControl(
-                loggerFactory.CreateLogger<KafkaConsumerFlowControl>());
+            // The declaration's flow control, shared by the application, the circuit breaker and the worker
+            var flowControl = sp.GetRequiredKeyedService<KafkaConsumerFlowControl>(name);
 
             // Create circuit breaker observer if configured (shared across all workers)
             CircuitBreakerObserver<TValue>? cbObserver = null;
@@ -525,7 +553,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             {
                 cbObserver = new CircuitBreakerObserver<TValue>(
                     config.CircuitBreakerConfig,
-                    flowControl,
+                    flowControl.CircuitBreaker,
                     sp.GetRequiredService<EmitMetrics>(),
                     loggerFactory.CreateLogger<CircuitBreakerObserver<TValue>>());
             }
