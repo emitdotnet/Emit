@@ -11,7 +11,7 @@ Unit tests for Kafka consumer internals: worker pool, offset management, DLQ pro
 | `ConsumerGroupWorkerTests.cs` | Unit tests for ConsumerGroupWorker lifecycle and message dispatch | Debugging consumer group worker test failures |
 | `ConsumerWorkerTests.cs` | Unit tests for ConsumerWorker message processing loop | Debugging consumer worker test failures |
 | `DlqProducerTests.cs` | Unit tests for DLQ producer message forwarding and header decoration | Debugging DLQ producer test failures |
-| `KafkaConsumerFlowControlTests.cs` | Unit tests for consumer flow control (pause/resume) | Debugging flow control test failures |
+| `KafkaConsumerFlowControlTests.cs` | Unit tests for consumer flow control: separate holds, partitions not yet assigned, refused messages, waiting for messages being handled, detach | Debugging flow control test failures |
 | `OffsetCommitterTests.cs` | Unit tests for offset committer watermark tracking and commit | Debugging offset committer test failures |
 | `OffsetManagerTests.cs` | Unit tests for offset manager coordination across partitions | Debugging offset manager test failures |
 | `PartitionOffsetsTests.cs` | Unit tests for per-partition offset tracking | Debugging partition offset test failures |

@@ -44,6 +44,8 @@ Only the listed exception types increment the failure counter. Other exceptions 
 
 The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open** and the consumer group is paused at the broker level; no new messages are fetched. After `PauseDuration` elapses, the circuit enters **Half-open** and allows one probe message through. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
 
+The circuit and your application pause the group independently, through [flow control](../../kafka/consumers/#flow-control): the group stays paused while either holds it. A half-open circuit lets its probe through only once your application has resumed the group.
+
 Circuit breaker state transitions are tracked by the `emit.consumer.circuit_breaker.state_transitions` metric and the `emit.consumer.circuit_breaker.state` gauge.
 
 ## Rate limiter

@@ -33,6 +33,7 @@ OutboxDeliveryCompliance (abstract, real hosts and Kafka)
     └── EfCoreOutboxDeliveryCompliance
 
 CircuitBreakerCompliance (abstract)        → KafkaCircuitBreakerCompliance
+ConsumerFlowControlCompliance (abstract)   → KafkaConsumerFlowControlCompliance
 ExternalMessageCompliance (abstract)       → KafkaExternalMessageCompliance
 ProduceConsumeCompliance (abstract)        → KafkaProduceConsumeCompliance
 ```

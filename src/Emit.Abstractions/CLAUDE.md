@@ -33,7 +33,7 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `TransportContext.cs` | Pre-deserialization transport context carrying raw bytes, headers, and provider metadata | Understand transport-level pipeline or implement transport middleware |
 | `IFeatureCollection.cs` | Type-safe feature bag interface used by pipeline contexts for optional, extensible metadata | Add new pipeline features or access existing ones in middleware |
 | `FeatureCollection.cs` | Dictionary-backed IFeatureCollection implementation used by message contexts | Understand how features are stored and retrieved on pipeline contexts |
-| `IConsumerFlowControl.cs` | Interface for pausing and resuming message consumption while maintaining group membership | Implement circuit breakers or backpressure mechanisms |
+| `IConsumerFlowControl.cs` | Pause and resume of a consumer group declaration on this node, resolved as a keyed service under the declaration's name | Pause a consumer group from application code |
 | `IDeadLetterSink.cs` | Interface for producing messages to a dead letter destination by raw bytes and headers | Implement a DLQ producer or understand how failed messages are forwarded |
 | `IInboundConfigurable.cs` | Leaf builder interface for registering typed inbound middleware (Use) and consumer filters (Filter) | Implement a new builder that supports per-consumer pipeline configuration |
 | `IMessageValidator.cs` | Interface for validating incoming messages; return Fail for deterministic failures, throw for transient errors | Implement message validation or understand the validation contract |

@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using global::Emit.Abstractions;
 using global::Emit.Kafka.DependencyInjection;
 using global::Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,123 @@ using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
 public sealed class KafkaBuilderTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void GivenTwoConsumerGroupDeclarationsWithTheSameName_WhenRegistered_ThenItIsRejected(bool sameTopic)
+    {
+        // Arrange: a name resolves exactly one declaration's flow control
+        var builder = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+
+        // Act
+        var exception = Record.Exception(() =>
+        {
+            builder.Topic<string, string>("orders", t =>
+            {
+                t.UseUtf8Serialization();
+                t.ConsumerGroup("billing", g =>
+                {
+                    g.Name = "billing";
+                    g.AddConsumer<NamedGroupConsumer>();
+                });
+                if (sameTopic)
+                {
+                    t.ConsumerGroup("shipping", g =>
+                    {
+                        g.Name = "billing";
+                        g.AddConsumer<NamedGroupConsumer>();
+                    });
+                }
+            });
+            if (!sameTopic)
+            {
+                builder.Topic<string, string>("refunds", t =>
+                {
+                    t.UseUtf8Serialization();
+                    t.ConsumerGroup("refunding", g =>
+                    {
+                        g.Name = "billing";
+                        g.AddConsumer<NamedGroupConsumer>();
+                    });
+                });
+            }
+        });
+
+        // Assert
+        Assert.Contains("'billing'", Assert.IsType<InvalidOperationException>(exception).Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GivenConsumerGroupDeclarationWithAnEmptyName_WhenRegistered_ThenItIsRejected(string name)
+    {
+        // Arrange
+        var builder = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+
+        // Act
+        var exception = Record.Exception(() => builder.Topic<string, string>("orders", t =>
+        {
+            t.UseUtf8Serialization();
+            t.ConsumerGroup("billing", g =>
+            {
+                g.Name = name;
+                g.AddConsumer<NamedGroupConsumer>();
+            });
+        }));
+
+        // Assert
+        Assert.IsAssignableFrom<ArgumentException>(exception);
+    }
+
+    [Fact]
+    public void GivenConsumerGroupDeclarations_WhenTheirFlowControlsAreResolved_ThenEachNameResolvesItsOwnAndAnUnnamedOneGetsAGeneratedName()
+    {
+        // Arrange: the same group id on two topics is two declarations, each with its own flow control
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var builder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        builder.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+        builder.Topic<string, string>("orders", t =>
+        {
+            t.UseUtf8Serialization();
+            t.ConsumerGroup("billing", g =>
+            {
+                g.Name = "billing-orders";
+                g.AddConsumer<NamedGroupConsumer>();
+            });
+        });
+        builder.Topic<string, string>("refunds", t =>
+        {
+            t.UseUtf8Serialization();
+            t.ConsumerGroup("billing", g =>
+            {
+                g.Name = "billing-refunds";
+                g.AddConsumer<NamedGroupConsumer>();
+            });
+            t.ConsumerGroup("audit", g => g.AddConsumer<NamedGroupConsumer>());
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // Act
+        var orders = provider.GetRequiredKeyedService<IConsumerFlowControl>("billing-orders");
+        var refunds = provider.GetRequiredKeyedService<IConsumerFlowControl>("billing-refunds");
+        var names = services.Where(d => d.IsKeyedService && d.ServiceType == typeof(IConsumerFlowControl)).Select(d => (string)d.ServiceKey!).ToList();
+
+        // Assert
+        Assert.NotSame(orders, refunds);
+        Assert.Equal(3, names.Count);
+        Assert.True(Guid.TryParse(Assert.Single(names, n => n is not ("billing-orders" or "billing-refunds")), out _));
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredKeyedService<IConsumerFlowControl>("billing"));
+    }
+
+    private sealed class NamedGroupConsumer : IConsumer<string>
+    {
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     [Fact]
     public void GivenConfigureClient_WhenCalled_ThenStoresClientConfigAction()
     {
