@@ -91,6 +91,28 @@ public sealed class KafkaPipelineProducerTests
     }
 
     [Fact]
+    public async Task GivenTombstone_WhenProduceAsync_ThenThePipelineReceivesItsKeyAndHeadersWithNoValue()
+    {
+        // Arrange: a tombstone goes through the same pipeline as any message
+        SendContext<string>? capturedContext = null;
+        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
+        {
+            capturedContext = ctx;
+            return Task.CompletedTask;
+        });
+        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
+
+        // Act
+        await producer.ProduceAsync(EventMessage<string, string>.Tombstone("order-key", [new("reason", "deleted")]));
+
+        // Assert
+        Assert.NotNull(capturedContext);
+        Assert.Null(capturedContext.Message);
+        Assert.Equal("order-key", capturedContext.TryGetPayload<KafkaTransportContext<string>>()!.Key);
+        Assert.Equal([new KeyValuePair<string, string>("reason", "deleted")], capturedContext.Headers);
+    }
+
+    [Fact]
     public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKey()
     {
         // Arrange

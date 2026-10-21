@@ -10,6 +10,21 @@ using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
 public sealed class KafkaBuilderTests
 {
+    [Fact]
+    public void GivenTombstoneOfAKey_WhenItsOutboxEntryIsCreated_ThenItHasNoBodyAndTheGroupOfTheKeysOtherMessages()
+    {
+        // Arrange: the outbox delivers a group in order, so a tombstone must share its key's group
+        byte[] key = [1, 2, 3];
+
+        // Act
+        var value = KafkaBuilder.CreateOutboxEntry("kafka://localhost:9092/orders", "orders", typeof(string), typeof(string), key, [4, 5, 6], headers: null);
+        var tombstone = KafkaBuilder.CreateOutboxEntry("kafka://localhost:9092/orders", "orders", typeof(string), typeof(string), key, valueBytes: null, headers: null);
+
+        // Assert
+        Assert.Null(tombstone.Body);
+        Assert.Equal(value.GroupKey, tombstone.GroupKey);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

@@ -32,6 +32,10 @@ OutboxDeliveryCompliance (abstract, real hosts and Kafka)
     ├── MongoDbOutboxDeliveryCompliance
     └── EfCoreOutboxDeliveryCompliance
 
+TombstoneCompliance (abstract, real hosts and Kafka)
+    ├── MongoDbTombstoneCompliance
+    └── EfCoreTombstoneCompliance
+
 CircuitBreakerCompliance (abstract)        → KafkaCircuitBreakerCompliance
 ConsumerFlowControlCompliance (abstract)   → KafkaConsumerFlowControlCompliance
 ExternalMessageCompliance (abstract)       → KafkaExternalMessageCompliance

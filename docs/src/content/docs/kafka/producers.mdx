@@ -36,6 +36,8 @@ var msg = new EventMessage<string, PizzaOrdered>(
 
 Headers are forwarded to Kafka as-is. When OpenTelemetry is enabled, Emit appends W3C trace context headers automatically.
 
+A message without a value is a tombstone; see [Tombstones](#tombstones).
+
 ## Convenience overloads
 
 `IEventProducer<TKey, TValue>` has extension methods from `EventProducerExtensions` that skip the `EventMessage` wrapper:
@@ -66,6 +68,32 @@ Headers are string key-value pairs that travel with the message through the full
 **Consuming:** On the consume side, headers are decoded back to strings and available on `ConsumeContext<T>.Headers` as `IReadOnlyList<KeyValuePair<string, string>>`.
 
 Custom headers survive the full round trip untouched regardless of which delivery mode you use.
+
+## Tombstones
+
+A tombstone is a message with a key and no value. On a log-compacted topic, it deletes the key: compaction eventually removes every earlier message with that key, then the tombstone itself after the topic's `DeleteRetention`.
+
+Produce one with `EventMessage<TKey, TValue>.Tombstone`:
+
+```csharp
+await producer.ProduceAsync(EventMessage<string, PizzaOrdered>.Tombstone(pizzaId));
+
+// With headers
+await producer.ProduceAsync(EventMessage<string, PizzaOrdered>.Tombstone(
+    pizzaId,
+    [new KeyValuePair<string, string>("x-reason", "cancelled")]));
+```
+
+A message produced with a null value is the same tombstone; `Tombstone` only saves writing the null.
+
+A tombstone is produced like any other message:
+- It goes through the same middleware and observers, and Emit adds its headers (trace context, source address).
+- It works in outbox mode and direct mode, and with any value serializer, including schema registry ones: a null value is never passed to the serializer.
+- Through the outbox, it is committed atomically with your database changes and delivered in order with the earlier messages of the same key, so a key's last update is never delivered after its deletion.
+
+Give a tombstone a key: compaction deletes by key, so a tombstone without one deletes nothing.
+
+On the consume side, a tombstone arrives as a message whose value is null. If you validate messages, null values are rejected unless you allow them; see [Null payloads](../../error-handling/validation/#null-payloads).
 
 ## Outbox mode and direct mode
 
