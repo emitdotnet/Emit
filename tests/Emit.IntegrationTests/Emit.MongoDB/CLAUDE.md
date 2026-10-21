@@ -11,6 +11,7 @@ MongoDB integration tests: compliance implementations proving MongoDB persistenc
 | `MongoDbCollectionConfigurationTests.cs` | Emit's collections read from the primary whatever the client's read preference | Change how Emit configures its MongoDB collections |
 | `MongoDbDaemonAssignmentCompliance.cs` | Inherits DaemonAssignmentCompliance; proves MongoDB daemon assignment correctness | Debug or extend MongoDB daemon assignment tests |
 | `MongoDbOutboxDeliveryCompliance.cs` | Inherits OutboxDeliveryCompliance; proves MongoDB outbox delivery correctness | Debug or extend MongoDB outbox delivery tests |
+| `MongoDbTombstoneCompliance.cs` | Inherits TombstoneCompliance; proves tombstones through the MongoDB outbox | Debug or extend MongoDB tombstone tests |
 | `MongoDbServiceCoordinationCompliance.cs` | Inherits ServiceCoordinationCompliance; proves per-service leaders, daemons and handover on real hosts with MongoDB | Debug or extend MongoDB coordination tests |
 | `MongoDbOutboxRepositoryTests.cs` | MongoDB-specific: a batch of delivered entries is deleted atomically | Change how the MongoDB outbox repository deletes entries |
 | `MongoDbMixedProducerTests.cs` | MongoDB-specific: outbox delivery when mixing direct and outbox producers | Debug or extend mixed producer integration tests |

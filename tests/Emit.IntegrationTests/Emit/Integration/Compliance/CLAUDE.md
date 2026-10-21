@@ -25,6 +25,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `OffsetCommitCompliance.cs` | Watermark-based offset commit correctness | Add offset commit tests or debug at-least-once delivery |
 | `OutboundMiddlewareHeadersCompliance.cs` | Header propagation through outbound middleware pipeline | Verify or change outbound header forwarding behavior |
 | `OutboxDeliveryCompliance.cs` | Transactional outbox delivery to Kafka: per-group order, also when the outbox daemon moves to another node of the service, and services sharing a database each delivering only their own entries | Add outbox delivery tests or debug outbox-to-Kafka flow or per-service outbox processing |
+| `TombstoneCompliance.cs` | Tombstones (a key and no value) through the outbox and directly: null value delivered, per-key order with tombstones, rollback, headers added by Emit, schema registry value serializer | Add tombstone tests or debug producing tombstones |
 | `OutboxHeadersCompliance.cs` | Message header propagation through the outbox | Verify or change outbox header forwarding behavior |
 | `OutboxObserverCompliance.cs` | IOutboxObserver lifecycle event delivery | Add outbox observer tests or debug outbox observer invocation |
 | `PerConsumerMiddlewareCompliance.cs` | Per-consumer middleware scoping and execution | Add per-consumer middleware tests |
