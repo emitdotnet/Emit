@@ -235,6 +235,48 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
         });
     }
 
+    protected override void ConfigureEmitBatchWithValidatorAndRetry(
+        EmitBuilder emit,
+        string sourceTopic,
+        string groupId,
+        string dlqTopic,
+        string dlqGroupId,
+        Func<string, MessageValidationResult> validator,
+        Action<BatchOptions> batchConfig)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config =>
+            {
+                config.BootstrapServers = fixture.BootstrapServers;
+            });
+            kafka.AutoProvision();
+
+            kafka.DeadLetter(dlqTopic, t =>
+            {
+                t.ConsumerGroup(dlqGroupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.AddConsumer<DlqCaptureConsumer>();
+                });
+            });
+
+            kafka.Topic<string, string>(sourceTopic, t =>
+            {
+                t.UseUtf8Serialization();
+
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.Validate(validator, a => a.DeadLetter());
+                    group.OnError(e => e.Default(d => d.Retry(3, Backoff.None).DeadLetter()));
+                    group.AddBatchConsumer<BatchSinkConsumer<string>>(batchConfig);
+                });
+            });
+        });
+    }
+
     protected override void ConfigureEmitBatchWithDistributionStrategy(
         EmitBuilder emit,
         string topic,

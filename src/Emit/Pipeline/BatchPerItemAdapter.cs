@@ -11,7 +11,9 @@ using Emit.Abstractions.Pipeline;
 /// <para>
 /// Item passes when the inner middleware calls <c>next</c>. Item drops out when the inner middleware
 /// short-circuits without calling <c>next</c>. Exceptions thrown by the inner middleware propagate
-/// to the outer pipeline (the standard transient-error path) and unwind the batch.
+/// to the outer pipeline (the standard transient-error path) and unwind the batch. Before an exception
+/// propagates, the items already dropped leave the batch, so a retry evaluates only the items not yet
+/// dropped, and an error action applies only to them.
 /// </para>
 /// <para>
 /// After all items are evaluated, the surviving items replace the batch via
@@ -34,12 +36,22 @@ internal sealed class BatchPerItemAdapter<TItem>(
         var survivors = new List<BatchItem<TItem>>(originalBatch.Count);
         var droppedCount = 0;
 
-        foreach (var item in originalBatch)
+        for (var index = 0; index < originalBatch.Count; index++)
         {
+            var item = originalBatch[index];
             var itemContext = ConsumeContext<TItem>.FromBatchItem(context, item);
             var sentinel = new SentinelTerminal<TItem>();
 
-            await inner.InvokeAsync(itemContext, sentinel).ConfigureAwait(false);
+            try
+            {
+                await inner.InvokeAsync(itemContext, sentinel).ConfigureAwait(false);
+            }
+            catch when (droppedCount > 0)
+            {
+                // A dropped item was already dead-lettered or discarded: it must not be evaluated again
+                context.WithMessage(new MessageBatch<TItem>([.. survivors, .. originalBatch.Skip(index)]));
+                throw;
+            }
 
             if (sentinel.Reached)
                 survivors.Add(item);

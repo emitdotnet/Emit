@@ -6,7 +6,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
-| `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation, retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
+| `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation (a rejected item validated once when the validator throws on a later one), retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
 | `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior, exact failure counts with and without retries | Add circuit breaker tests or debug circuit breaker issues |
 | `ConsumerFlowControlCompliance.cs` | Pausing a named consumer group declaration: through rebalances and an open circuit, waiting for messages being handled, resuming in order, before start and after stop, batch groups, from a handler, polling with a full queue | Add flow control tests or debug pause and resume |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
@@ -17,7 +17,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ErrorPolicyCompliance.cs` | Error policy evaluation: retry, discard, and dead-letter branching | Add error policy tests or debug error handling |
 | `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (raw Kafka messages) | Debug external message ingestion or verify raw message support |
 | `FanOutCompliance.cs` | Multiple consumer groups independently consuming the same topic | Add fan-out tests or debug independent consumer group behavior |
-| `FilterCompliance.cs` | Consumer filter predicate evaluation | Add filter tests or debug filter skipping behavior |
+| `FilterCompliance.cs` | Consumer filter predicate evaluation, a filter that throws retried by the error policy | Add filter tests or debug filter skipping behavior |
 | `GlobalPipelineCompliance.cs` | Global middleware execution order and context propagation | Add global pipeline tests or debug cross-cutting middleware |
 | `LeaderElectionCompliance.cs` | Leader election persistence contract: lease acquisition, renewal and takeover by recorded heartbeat, heartbeats that do not claim the lease, resign, services sharing a database, conditional registration removal, and deregistration | Add leader election tests or debug leadership transitions |
 | `DatabaseLeaderElectionCompliance.cs` | Leader election contract that needs a real database: a heartbeat stalled on a lock leaves no registration when it times out | Add leader election tests that depend on database locking |
@@ -35,7 +35,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `RateLimiterCompliance.cs` | Consumer rate limiting enforcement | Add rate limiter tests or debug rate limiting behavior |
 | `RetryCompliance.cs` | Retry policy: attempt count, backoff, success after failure, and retries outlasting the poll interval on a full queue without a rebalance | Add retry tests or debug retry sequencing |
 | `RoutingCompliance.cs` | Content-based router: route key matching and handler dispatch | Add routing tests or debug router dispatch |
-| `ValidationCompliance.cs` | Message validation: pass, fail (discard), and transient error (retry) | Add validation tests or debug validation outcomes |
+| `ValidationCompliance.cs` | Message validation: pass, fail (discard, dead-letter), a failed validation never retried, a validator that throws retried by the error policy | Add validation tests or debug validation outcomes |
 | `WorkerDistributionCompliance.cs` | ByKeyHash and RoundRobin distribution strategy correctness | Add distribution tests or debug worker assignment |
 | `WorkerPoolRebalanceRecoveryCompliance.cs` | Worker pool recovery after Kafka partition rebalance | Add rebalance recovery tests or debug partition reassignment |
 | `TransactionalMiddlewareCompliance.cs` | [Transactional] attribute middleware: commit delivery, throw rollback, non-transactional pass-through, retry isolation | Add transactional middleware tests or debug [Transactional] behavior |

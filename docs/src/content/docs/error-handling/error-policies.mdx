@@ -157,7 +157,7 @@ Without `OnDeserializationError` configured, deserialization failures are logged
 
 ## Validation
 
-Validation runs before the error policy and has its own separate error action. See the [Validation](../validation/) page for all available approaches and configuration.
+A failed validation has its own separate error action and never reaches the error policy. A validator that throws is handled by the error policy like a handler exception, retries included. See the [Validation](../validation/) page for all available approaches and configuration.
 
 ## Default behavior
 

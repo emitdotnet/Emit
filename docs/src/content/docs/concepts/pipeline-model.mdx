@@ -30,9 +30,9 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
     B --> C["Tracing"]
     C --> D["Metrics"]
     D --> E["User middleware (Global → Provider → Group)"]
-    E --> F["Filters"]
-    F --> G["Validation"]
-    G --> H["Retry"]
+    E --> F["Retry"]
+    F --> G["Filters"]
+    G --> H["Validation"]
     H --> I["Unit of work"]
     I --> J["Per-consumer middleware"]
     J --> K["Handler"]`} />
@@ -44,14 +44,14 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 | **Tracing** | Creates an `emit.consume` activity with consumer identity tags | Yes |
 | **Metrics** | Records duration and success/failure counters | Yes |
 | **User middleware** | Your custom middleware, composed Global to Provider to Group | Only if registered |
+| **Retry** | Runs each attempt (filters, validation and the unit of work): re-executes it on failure, as the matching error policy clause decides, and holds it while the circuit breaker is open, reporting its outcome | Only if the error policy retries or a circuit breaker is configured |
 | **Filters** | Runs consumer filters; a message a filter rejects stops here | Only if configured |
 | **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
-| **Retry** | Runs each attempt of the unit of work: re-executes it on failure, as the matching error policy clause decides, and holds it while the circuit breaker is open, reporting its outcome | Only if the error policy retries or a circuit breaker is configured |
 | **Unit of work** | Opens a transaction when the handler class carries `[Transactional]`, and runs the callbacks registered with `OnSucceeded` and `OnFailed` once the outcome is final. See [Unit of Work](../unit-of-work/) | Yes |
 | **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
 | **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |
 
-The ordering is deliberate. Error handling sits outermost so it catches exceptions from every other layer. Validation runs outside retry so a malformed message fails fast without burning retry attempts. The unit of work wraps the per-consumer middleware, so a failure there rolls the transaction back instead of failing after the commit, and each retry attempt is a fresh unit of work. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
+The ordering is deliberate. Error handling sits outermost so it catches exceptions from every other layer. Filters and validation run inside each attempt: a failed validation result is final and never retried, while a filter or validator that throws fails the attempt like a handler, so a dependency it calls that is briefly down gets retried. The unit of work wraps the per-consumer middleware, so a failure there rolls the transaction back instead of failing after the commit, and each retry attempt is a fresh unit of work. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
 
 ### Fan-out and independent failure
 

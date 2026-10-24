@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 /// Each failure is evaluated against the error policy: the clause matching the exception decides
 /// whether another attempt runs and with which backoff. Creates an Activity per retry attempt.
 /// When no further attempt runs, rethrows the last exception for <c>ConsumeErrorMiddleware</c>.
+/// An attempt includes filtering and validation, so a filter or validator that throws is retried like a handler.
 /// With a circuit breaker, each attempt waits until the circuit lets it run, and its outcome is reported to the
 /// circuit breaker as soon as it ends. Without a retry policy, the message gets a single attempt.
 /// </summary>

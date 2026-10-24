@@ -109,29 +109,46 @@ public sealed class ConsumerPipelineCircuitBreakerTests
     }
 
     [Fact]
-    public async Task GivenRetryPolicy_WhenAValidatorThrowsBeforeAnyAttempt_ThenNothingIsReported()
+    public async Task GivenThreeRetries_WhenTheValidatorThrowsEveryTime_ThenEachOfTheFourAttemptsReportsOneFailure()
     {
-        // Arrange: validation runs outside the attempts, and only attempts count
+        // Arrange: a validator that throws is a failed attempt, like a handler that throws
         var pipeline = Compose(retryPolicy: RetryAll(3), handler: Fail, validation: new ThrowingMiddleware());
 
         // Act
         await RunAsync(pipeline);
 
         // Assert
-        Assert.Equal(["dead-letter"], events);
+        Assert.Equal(
+            [.. Enumerable.Repeat<string[]>(["begin", "failure", "end"], 4).SelectMany(e => e), "dead-letter"],
+            events);
     }
 
     [Fact]
-    public async Task GivenNoRetryPolicy_WhenTheMessageIsFilteredOut_ThenNothingIsReported()
+    public async Task GivenThreeRetries_WhenTheFilterThrowsEveryTime_ThenEachOfTheFourAttemptsReportsOneFailure()
     {
-        // Arrange: a filtered message is no attempt, so it can never close a half-open circuit
+        // Arrange
+        var pipeline = Compose(retryPolicy: RetryAll(3), handler: Fail, filter: new ThrowingMiddleware());
+
+        // Act
+        await RunAsync(pipeline);
+
+        // Assert
+        Assert.Equal(
+            [.. Enumerable.Repeat<string[]>(["begin", "failure", "end"], 4).SelectMany(e => e), "dead-letter"],
+            events);
+    }
+
+    [Fact]
+    public async Task GivenNoRetryPolicy_WhenTheMessageIsFilteredOut_ThenOneSuccessIsReported()
+    {
+        // Arrange: an attempt that does not fail is a success, wherever it ends
         var pipeline = Compose(retryPolicy: null, handler: Fail, filter: new SkippingMiddleware());
 
         // Act
         await RunAsync(pipeline);
 
         // Assert
-        Assert.Empty(events);
+        Assert.Equal(["begin", "success", "end"], events);
     }
 
     [Fact]
@@ -230,7 +247,7 @@ public sealed class ConsumerPipelineCircuitBreakerTests
     private sealed class ThrowingMiddleware : IMiddleware<ConsumeContext<string>>
     {
         public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) =>
-            throw new InvalidOperationException("validator unavailable");
+            throw new InvalidOperationException("dependency unavailable");
     }
 
     private sealed class SkippingMiddleware : IMiddleware<ConsumeContext<string>>
