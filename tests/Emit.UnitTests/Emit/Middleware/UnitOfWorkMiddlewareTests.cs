@@ -7,6 +7,7 @@ using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
 using global::Emit.Middleware;
+using global::Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -546,6 +547,7 @@ public sealed class UnitOfWorkMiddlewareTests
         var retry = new RetryMiddleware<string>(
             _ => ErrorAction.Retry(maxAttempts, Backoff.None, ErrorAction.DeadLetter()),
             new EmitMetrics(null, new EmitMetricsEnrichment()),
+            new EmitTracingOptions(),
             new Mock<INodeIdentity>().Object,
             NullLogger<RetryMiddleware<string>>.Instance);
 

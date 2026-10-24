@@ -206,7 +206,7 @@ Applies to the EF Core persistence provider only. Controls how often expired dis
 | Option | Default | Description |
 |---|---|---|
 | `Enabled` | `true` | Master switch for all Emit trace activity |
-| `CreateRootActivities` | `true` | Creates a root span when no parent trace context is present |
+| `CreateRootActivities` | `true` | When `false`, Emit never starts a new trace on its own: only spans that join an existing trace are created |
 | `PropagateBaggage` | `true` | Forwards W3C baggage across message boundaries |
 | `MaxBaggageSizeBytes` | `8192` | Maximum baggage payload size in bytes (range: `1024`-`65536`) |
 

@@ -30,3 +30,4 @@ In-process mediator for request/response dispatching with middleware pipeline su
 | `DependencyInjection/` | AddMediator extension, MediatorBuilder, and per-handler builder configuration | Register mediator services or extend mediator DI API |
 | `Metrics/` | Mediator-specific metrics and metrics middleware | Monitor mediator performance or customize mediator instrumentation |
 | `Observability/` | Mediator observer interface and observer middleware | Implement mediator monitoring or custom instrumentation |
+| `Tracing/` | Middleware starting a span per mediator request on the `Emit.Mediator` source | Understand mediator tracing |

@@ -9,6 +9,7 @@ using Emit.DependencyInjection;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
+using Emit.Kafka.Tracing;
 using Emit.Metrics;
 using Emit.Observability;
 using Emit.Pipeline;
@@ -19,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ConfluentKafka = Confluent.Kafka;
 using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
@@ -371,7 +373,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
 
         return OutboxTerminalBuilder.Build<TValue>(async (context, ct) =>
         {
-            var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
+            var messageKey = (TKey)context.TryGetPayload<KafkaProducePayload>()!.Key!;
 
             var (keyBytes, valueBytes) = await SerializeMessageAsync<TKey, TValue>(
                 messageKey, context.Message, topicName, context.Headers, keySerializer, valueSerializer, keyAsyncSerializer, valueAsyncSerializer).ConfigureAwait(false);
@@ -450,7 +452,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
     {
         public async Task InvokeAsync(SendContext<TValue> context)
         {
-            var messageKey = context.TryGetPayload<KafkaTransportContext<TKey>>()!.Key;
+            var messageKey = (TKey)context.TryGetPayload<KafkaProducePayload>()!.Key!;
             var confluentProducer = context.Services.GetRequiredService<ConfluentKafka.IProducer<byte[], byte[]>>();
             var kafkaMetrics = context.Services.GetRequiredService<Metrics.KafkaMetrics>();
 
@@ -474,10 +476,21 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                     kafkaMessage.Headers.Add(key, System.Text.Encoding.UTF8.GetBytes(value));
             }
 
+            // A child of the message's create span
+            using var activity = KafkaSendActivity.Start(
+                EmitActivitySources.Producer,
+                context.Services.GetRequiredService<IOptions<EmitTracingOptions>>().Value,
+                System.Diagnostics.ActivityKind.Client,
+                context.DestinationAddress!,
+                context.MessageId,
+                context.Message is null,
+                tags: [new(ActivityTagNames.NodeId, context.Services.GetRequiredService<INodeIdentity>().NodeId.ToString())]);
+
             var start = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
-                await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+                var result = await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
+                KafkaSendActivity.Complete(activity, result.Partition, result.Offset);
 
                 var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
                 kafkaMetrics.RecordProduceDuration(elapsed, topicName, KafkaMetrics.ResultSuccess);
@@ -487,8 +500,9 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             {
                 throw;
             }
-            catch
+            catch (Exception exception)
             {
+                KafkaSendActivity.Fail(activity, exception);
                 var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
                 kafkaMetrics.RecordProduceDuration(elapsed, topicName, KafkaMetrics.ResultError);
                 kafkaMetrics.RecordProduceMessage(topicName, KafkaMetrics.ResultError);

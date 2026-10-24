@@ -12,7 +12,8 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Consume-pipeline middleware that retries message processing on failure.
 /// Each failure is evaluated against the error policy: the clause matching the exception decides
-/// whether another attempt runs and with which backoff. Creates an Activity per retry attempt.
+/// whether another attempt runs and with which backoff. Each retry attempt gets its own span, inside the process
+/// span of the message, recording whether that attempt failed.
 /// When no further attempt runs, rethrows the last exception for <c>ConsumeErrorMiddleware</c>.
 /// An attempt includes filtering and validation, so a filter or validator that throws is retried like a handler.
 /// With a circuit breaker, each attempt waits until the circuit lets it run, and its outcome is reported to the
@@ -22,11 +23,11 @@ using Microsoft.Extensions.Logging;
 internal sealed class RetryMiddleware<TMessage>(
     Func<Exception, ErrorAction>? evaluatePolicy,
     EmitMetrics emitMetrics,
+    EmitTracingOptions tracingOptions,
     INodeIdentity nodeIdentity,
     ILogger<RetryMiddleware<TMessage>> logger,
     ICircuitBreakerNotifier? circuitBreakerNotifier = null) : IMiddleware<ConsumeContext<TMessage>>
 {
-    private static readonly ActivitySource ConsumerActivitySource = EmitActivitySources.Consumer;
 
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
@@ -110,7 +111,7 @@ internal sealed class RetryMiddleware<TMessage>(
         var retryStart = Stopwatch.GetTimestamp();
         var originalServices = context.Services;
 
-        // Capture parent Activity context for retry attempts
+        // The attempts are spans of the process span
         var parentContext = Activity.Current?.Context ?? default;
 
         while (GetRetryAction(lastException, context) is { } retry)
@@ -131,15 +132,18 @@ internal sealed class RetryMiddleware<TMessage>(
             await using var retryScope = originalServices.CreateAsyncScope();
             context.WithServices(retryScope.ServiceProvider);
 
-            // Create Activity for this retry attempt
-            using var retryActivity = ConsumerActivitySource.StartActivity(
-                ActivityNames.ConsumeRetry,
-                ActivityKind.Consumer,
-                parentContext);
-
-            retryActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
-            retryActivity?.SetTag(ActivityTagNames.MessagingRetryAttempt, context.RetryAttempt);
-            retryActivity?.SetTag(ActivityTagNames.MessagingRetryMaxAttempts, retry.MaxAttempts);
+            using var retryActivity = MessagingActivity.StartActivity(
+                EmitActivitySources.Consumer,
+                tracingOptions,
+                ActivityNames.Retry,
+                ActivityKind.Internal,
+                parentContext,
+                tags:
+                [
+                    new(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString()),
+                    new(ActivityTagNames.RetryAttempt, context.RetryAttempt),
+                    new(ActivityTagNames.RetryMaxAttempts, retry.MaxAttempts),
+                ]);
 
             try
             {
@@ -159,12 +163,11 @@ internal sealed class RetryMiddleware<TMessage>(
             catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
             {
                 context.WithServices(originalServices);
-                retryActivity?.SetStatus(ActivityStatusCode.Error, "Operation cancelled");
                 throw;
             }
             catch (Exception ex)
             {
-                retryActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                MessagingActivity.RecordFailure(retryActivity, ex);
 
                 lastException = ex;
                 logger.LogWarning(ex,

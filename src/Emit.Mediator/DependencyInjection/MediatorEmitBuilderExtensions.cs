@@ -8,6 +8,7 @@ using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Mediator.Metrics;
 using Emit.Mediator.Observability;
+using Emit.Mediator.Tracing;
 using Emit.Middleware;
 using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,8 @@ public static class MediatorEmitBuilderExtensions
 
         var mediatorBuilder = new MediatorBuilder();
 
-        // Auto-insert metrics middleware as outermost, then observer middleware
+        // Auto-insert tracing middleware as outermost, then metrics and observer middleware
+        mediatorBuilder.InboundPipeline.Use(typeof(MediatorTracingMiddleware<>));
         mediatorBuilder.InboundPipeline.Use(typeof(MediatorMetricsMiddleware<>));
         mediatorBuilder.InboundPipeline.Use(typeof(MediatorObserverMiddleware<>));
 

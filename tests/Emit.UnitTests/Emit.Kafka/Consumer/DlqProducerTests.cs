@@ -1,10 +1,13 @@
 namespace Emit.Kafka.Tests.Consumer;
 
 using System.Text;
+using global::Emit.Abstractions;
 using global::Emit.Kafka.Consumer;
 using global::Emit.Kafka.DependencyInjection;
+using global::Emit.Tracing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
@@ -21,7 +24,7 @@ public sealed class DlqProducerTests
 
     public DlqProducerTests()
     {
-        sut = new DlqProducer(mockProducer.Object, options, NullLogger<DlqProducer>.Instance);
+        sut = new DlqProducer(mockProducer.Object, options, Options.Create(new EmitTracingOptions()), Mock.Of<INodeIdentity>(), NullLogger<DlqProducer>.Instance);
     }
 
     [Fact]

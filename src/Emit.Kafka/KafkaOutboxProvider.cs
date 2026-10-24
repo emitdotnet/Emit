@@ -1,8 +1,10 @@
 namespace Emit.Kafka;
 
 using System.Diagnostics;
+using System.Text;
 using Emit.Abstractions;
 using Emit.Kafka.Metrics;
+using Emit.Kafka.Tracing;
 using Emit.Models;
 using Emit.Tracing;
 using Microsoft.Extensions.Logging;
@@ -40,12 +42,12 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         ConfluentKafka.ErrorCode.Local_AllBrokersDown,
     ];
 
-    private static readonly ActivitySource OutboxActivitySource = new("Emit.Outbox", "1.0.0");
 
     private readonly Func<string, ConfluentKafka.IProducer<byte[], byte[]>> createProducer;
     private readonly TimeSpan transactionTimeout;
     private readonly KafkaMetrics kafkaMetrics;
     private readonly INodeIdentity nodeIdentity;
+    private readonly EmitTracingOptions tracingOptions;
     private readonly ILogger<KafkaOutboxProvider> logger;
     private readonly SemaphoreSlim oneDeliveryAtATime = new(1, 1);
     private TransactionalProducer? current;
@@ -55,6 +57,7 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         TimeSpan transactionTimeout,
         KafkaMetrics kafkaMetrics,
         INodeIdentity nodeIdentity,
+        EmitTracingOptions tracingOptions,
         ILogger<KafkaOutboxProvider> logger)
     {
         ArgumentNullException.ThrowIfNull(createProducer);
@@ -66,6 +69,7 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         this.transactionTimeout = transactionTimeout;
         this.kafkaMetrics = kafkaMetrics;
         this.nodeIdentity = nodeIdentity;
+        this.tracingOptions = tracingOptions;
         this.logger = logger;
     }
 
@@ -209,13 +213,11 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         // A stopped daemon starts no new send
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var processActivity = OutboxActivityFactory.StartProcessActivity(OutboxActivitySource, entry, nodeIdentity.NodeId);
-
-        var topic = EmitEndpointAddress.GetEntityName(new Uri(entry.Destination));
+        var destination = new Uri(entry.Destination);
+        var topic = EmitEndpointAddress.GetEntityName(destination);
         if (string.IsNullOrEmpty(topic))
         {
             var errorMessage = $"Cannot extract topic from destination '{entry.Destination}' for entry {entry.Id}.";
-            processActivity?.SetStatus(ActivityStatusCode.Error, errorMessage);
             logger.LogError("Cannot extract topic from destination '{Destination}' for entry {EntryId}", entry.Destination, entry.Id);
             throw new InvalidOperationException(errorMessage);
         }
@@ -224,17 +226,52 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         var messageSize = (message.Key?.Length ?? 0) + (message.Value?.Length ?? 0);
         kafkaMetrics.RecordProduceMessageSize(messageSize, topic);
 
+        // A child of the message's create span, in the trace the producer stored with the entry
+        var current = Activity.Current;
+        var activity = KafkaSendActivity.Start(
+            EmitActivitySources.Producer,
+            tracingOptions,
+            ActivityKind.Client,
+            destination,
+            entry.Headers.GetFirstValue(WellKnownHeaders.MessageId) is { } messageId ? Encoding.UTF8.GetString(messageId) : null,
+            entry.Body is null,
+            MessagingActivity.CreationContext(entry.Headers),
+            [
+                new(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString()),
+                new(ActivityTagNames.Sequence, entry.Sequence),
+                new(ActivityTagNames.GroupKey, entry.GroupKey),
+            ]);
+
+        // The send ends in its delivery report: the daemon goes on outside its span
+        Activity.Current = current;
+
         var start = Stopwatch.GetTimestamp();
-        producer.Producer.Produce(topic, message, report =>
+        try
         {
-            var outcome = report.Error.IsError ? KafkaMetrics.ResultError : KafkaMetrics.ResultSuccess;
-            kafkaMetrics.RecordProduceDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, topic, outcome);
-            kafkaMetrics.RecordProduceMessage(topic, outcome);
-            if (report.Error.IsError)
+            producer.Producer.Produce(topic, message, report =>
             {
-                delivery.RecordFailure(report.Error);
-            }
-        });
+                var outcome = report.Error.IsError ? KafkaMetrics.ResultError : KafkaMetrics.ResultSuccess;
+                kafkaMetrics.RecordProduceDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, topic, outcome);
+                kafkaMetrics.RecordProduceMessage(topic, outcome);
+                if (report.Error.IsError)
+                {
+                    KafkaSendActivity.Fail(activity, report.Error);
+                    delivery.RecordFailure(report.Error);
+                }
+                else
+                {
+                    KafkaSendActivity.Complete(activity, report.Partition, report.Offset);
+                }
+
+                activity?.Dispose();
+            });
+        }
+        catch (Exception exception)
+        {
+            KafkaSendActivity.Fail(activity, exception);
+            activity?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

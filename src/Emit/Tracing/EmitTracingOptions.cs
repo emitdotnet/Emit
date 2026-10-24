@@ -15,12 +15,12 @@ public sealed class EmitTracingOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets whether to create root Activities when <see cref="System.Diagnostics.Activity.Current"/> is <c>null</c>.
+    /// Gets or sets whether Emit may start a span that would begin a new trace.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// When <c>true</c>, Emit creates root Activities for console apps and background services.
-    /// When <c>false</c>, tracing only occurs when already within an Activity context (e.g., ASP.NET Core request).
+    /// When <c>false</c>, Emit never starts a new trace on its own: a message produced outside any span, or received
+    /// without trace context, is not traced.
     /// </para>
     /// <para>Default: <c>true</c>.</para>
     /// </remarks>

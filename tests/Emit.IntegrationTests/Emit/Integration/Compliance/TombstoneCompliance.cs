@@ -181,7 +181,7 @@ public abstract class TombstoneCompliance : IAsyncLifetime
         // Arrange: Emit adds trace context and the source address while producing within a trace
         using var listener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == EmitActivitySourceNames.Outbox,
+            ShouldListenTo = source => source.Name == EmitActivitySourceNames.Producer,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
         };
         ActivitySource.AddActivityListener(listener);

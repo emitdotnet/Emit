@@ -2,7 +2,6 @@ namespace Emit.Kafka.Tests;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
-using global::Emit.Kafka.Consumer;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -83,9 +82,10 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var messageKey = capturedContext.TryGetPayload<KafkaTransportContext<string>>();
-        Assert.NotNull(messageKey);
-        Assert.Equal("order-key", messageKey.Key);
+        var payload = capturedContext.TryGetPayload<KafkaProducePayload>();
+        Assert.NotNull(payload);
+        Assert.Equal("order-key", payload.Key);
+        Assert.False(payload.IsTombstone);
         Assert.Equal(destination, capturedContext.DestinationAddress);
         Assert.Equal("orders", EmitEndpointAddress.GetEntityName(capturedContext.DestinationAddress));
     }
@@ -108,31 +108,11 @@ public sealed class KafkaPipelineProducerTests
         // Assert
         Assert.NotNull(capturedContext);
         Assert.Null(capturedContext.Message);
-        Assert.Equal("order-key", capturedContext.TryGetPayload<KafkaTransportContext<string>>()!.Key);
+        var payload = capturedContext.TryGetPayload<KafkaProducePayload>();
+        Assert.NotNull(payload);
+        Assert.Equal("order-key", payload.Key);
+        Assert.True(payload.IsTombstone);
         Assert.Equal(new KeyValuePair<string, string>("reason", "deleted"), capturedContext.Headers[0]);
-    }
-
-    [Fact]
-    public async Task GivenValidMessage_WhenProduceAsync_ThenContextHasKey()
-    {
-        // Arrange
-        SendContext<string>? capturedContext = null;
-        IMiddlewarePipeline<SendContext<string>> pipeline = new TestPipeline<SendContext<string>>(ctx =>
-        {
-            capturedContext = ctx;
-            return Task.CompletedTask;
-        });
-        var producer = new KafkaPipelineProducer<string, string>(pipeline, TestDestination, TestHost, null!, timeProvider);
-        var message = new EventMessage<string, string>("my-key", "value");
-
-        // Act
-        await producer.ProduceAsync(message);
-
-        // Assert
-        Assert.NotNull(capturedContext);
-        var messageKey = capturedContext.TryGetPayload<KafkaTransportContext<string>>();
-        Assert.NotNull(messageKey);
-        Assert.Equal("my-key", messageKey.Key);
     }
 
     [Fact]

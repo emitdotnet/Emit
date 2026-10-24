@@ -571,6 +571,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             Partition = deserialized.Partition,
             Offset = deserialized.Offset,
             GroupId = groupId,
+            IsTombstone = raw.Message.Value is null,
             Key = deserialized.Key,
             DestinationAddress = destinationAddress,
             SourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null,

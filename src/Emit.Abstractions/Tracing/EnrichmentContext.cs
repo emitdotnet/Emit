@@ -5,7 +5,7 @@ namespace Emit.Abstractions.Tracing;
 public sealed class EnrichmentContext
 {
     /// <summary>
-    /// Gets the pipeline context (consume or send).
+    /// Gets the pipeline context: the context of the message being produced or consumed, or of the mediator request.
     /// </summary>
     public required MessageContext MessageContext { get; init; }
 
@@ -13,7 +13,7 @@ public sealed class EnrichmentContext
     /// Gets the tracing phase.
     /// </summary>
     /// <remarks>
-    /// Possible values: "produce", "process", "consume", "dlq_publish", "dlq_replay".
+    /// One of the values of <see cref="EnrichmentPhases"/>.
     /// </remarks>
     public required string Phase { get; init; }
 }

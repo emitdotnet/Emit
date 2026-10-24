@@ -16,9 +16,9 @@ public static class EmitOpenTelemetryExtensions
     /// <remarks>
     /// This extension adds the following ActivitySources:
     /// <list type="bullet">
-    /// <item><description><see cref="EmitActivitySourceNames.Outbox"/> - Outbox enqueue and processing operations</description></item>
-    /// <item><description><see cref="EmitActivitySourceNames.Consumer"/> - Consumer operations</description></item>
-    /// <item><description><see cref="EmitActivitySourceNames.ProviderPrefix"/>* - All provider operations (wildcard)</description></item>
+    /// <item><description><see cref="EmitActivitySourceNames.Producer"/>: creating messages and sending them to the message broker</description></item>
+    /// <item><description><see cref="EmitActivitySourceNames.Consumer"/>: processing messages, their retries and dead letters</description></item>
+    /// <item><description><see cref="EmitActivitySourceNames.Mediator"/>: mediator requests</description></item>
     /// </list>
     /// </remarks>
     public static TracerProviderBuilder AddEmitInstrumentation(this TracerProviderBuilder builder)
@@ -26,8 +26,8 @@ public static class EmitOpenTelemetryExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         return builder
-            .AddSource(EmitActivitySourceNames.Outbox)
+            .AddSource(EmitActivitySourceNames.Producer)
             .AddSource(EmitActivitySourceNames.Consumer)
-            .AddSource($"{EmitActivitySourceNames.ProviderPrefix}*"); // Wildcard for all providers
+            .AddSource(EmitActivitySourceNames.Mediator);
     }
 }

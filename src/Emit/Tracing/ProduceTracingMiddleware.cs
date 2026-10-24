@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Middleware that creates a distributed tracing Activity for outbound messages and injects
-/// W3C trace context (traceparent, tracestate, baggage) into <see cref="SendContext{T}.Headers"/>.
+/// Middleware that starts the <c>create</c> span of an outbound message and makes it the message's creation
+/// context: its W3C trace context (traceparent, tracestate, baggage) goes into
+/// <see cref="SendContext{T}.Headers"/>, so whatever sends and consumes the message joins its trace.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ProduceTracingMiddleware<TMessage>(
@@ -24,95 +25,50 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
         SendContext<TMessage> context,
         IMiddlewarePipeline<SendContext<TMessage>> next)
     {
-        // Check if tracing is enabled
-        if (!this.options.Enabled)
+        if (!MessagingActivity.IsEnabled(EmitActivitySources.Producer, options))
         {
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        // Check if we should create an Activity
-        var shouldCreateActivity = Activity.Current is not null || this.options.CreateRootActivities;
-        if (!shouldCreateActivity)
-        {
-            await next.InvokeAsync(context).ConfigureAwait(false);
-            return;
-        }
-
-        // Create Activity for outbound operation
-        using var activity = EmitActivitySources.Outbox.StartActivity(
-            ActivityNames.Produce,
-            ActivityKind.Producer);
+        using var activity = MessagingActivity.Start(
+            EmitActivitySources.Producer,
+            options,
+            ActivityNames.Create,
+            ActivityKind.Producer,
+            context.DestinationAddress,
+            context.MessageId,
+            tags:
+            [
+                new(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString()),
+                new(ActivityTagNames.MessageType, typeof(TMessage).Name),
+            ]);
 
         if (activity is null)
         {
-            // ActivitySource not enabled (no listeners)
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        activity.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
+        MessagingActivity.Inject(activity, context.Headers, options, logger);
 
-        // Add standard tags — derive messaging.system from URI scheme
-        activity.SetTag(ActivityTagNames.MessagingSystem,
-            EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "emit");
-        activity.SetTag(ActivityTagNames.MessagingOperation, "publish");
-        activity.SetTag(ActivityTagNames.MessageType, typeof(TMessage).Name);
-
-        if (EmitEndpointAddress.GetEntityName(context.DestinationAddress) is { } destination)
-        {
-            activity.SetTag(ActivityTagNames.MessagingDestinationName, destination);
-        }
-
-        // Inject W3C trace context into context.Headers
-        InjectTraceContext(activity, context.Headers);
-
-        // Invoke enrichers
         enricherInvoker.InvokeEnrichers(
             activity,
             new EnrichmentContext
             {
                 MessageContext = context,
-                Phase = "produce"
+                Phase = EnrichmentPhases.Produce
             },
             context.Services);
 
-        // Continue pipeline
-        await next.InvokeAsync(context).ConfigureAwait(false);
-    }
-
-    private void InjectTraceContext(
-        Activity activity,
-        List<KeyValuePair<string, string>> headers)
-    {
-        var traceParent = activity.Id;
-        if (traceParent is not null)
+        try
         {
-            headers.Upsert(WellKnownHeaders.TraceParent, traceParent);
+            await next.InvokeAsync(context).ConfigureAwait(false);
         }
-
-        var traceState = activity.TraceStateString;
-        if (traceState is not null)
+        catch (Exception exception)
         {
-            headers.Upsert(WellKnownHeaders.TraceState, traceState);
-        }
-
-        if (this.options.PropagateBaggage)
-        {
-            // Activity.Baggage has nullable values — filter to non-null
-            var baggage = activity.Baggage
-                .Where(b => b.Value is not null)
-                .Select(b => new KeyValuePair<string, string>(b.Key, b.Value!));
-
-            var baggageHeader = ActivityPropagation.BuildBaggageHeader(
-                baggage,
-                this.options.MaxBaggageSizeBytes,
-                logger);
-
-            if (baggageHeader is not null)
-            {
-                headers.Upsert(WellKnownHeaders.Baggage, baggageHeader);
-            }
+            MessagingActivity.RecordFailure(activity, exception, context.CancellationToken);
+            throw;
         }
     }
 }

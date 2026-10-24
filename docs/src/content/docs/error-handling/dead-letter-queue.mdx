@@ -56,7 +56,7 @@ When forwarding to the DLQ, Emit preserves the original message headers first, t
 | Header | Content |
 |---|---|
 | *(original headers)* | All headers of the message as the consumer saw it, preserved in order, including `emit-message-id`. The `emit-source-topic`, `emit-source-partition`, `emit-source-offset`, `emit-consumer-group` and `emit-route-key` headers below are among them: the consumer adds them as the message goes through its pipeline, so handlers see them in `context.Headers` too |
-| `emit-dlq-original-traceparent` | W3C traceparent from the source message, for linking the DLQ entry back to the original distributed trace |
+| `emit-dlq-original-traceparent` | The source message's `traceparent`. The dead letter carries its own, which continues the trace of the failed processing (see [Distributed Tracing](../../observability/tracing/)) |
 | `emit-dlq-original-topic` | Source topic name |
 | `emit-exception-type` | Fully qualified name of the exception type (e.g. `System.TimeoutException` or `Emit.MessageValidationException`) |
 | `emit-exception-message` | The exception message text. For validation failures, this contains the concatenated validation error strings. |

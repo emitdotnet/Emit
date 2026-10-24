@@ -15,7 +15,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `DeadLetterCompliance.cs` | Dead-letter queue delivery after exhausted retries | Add DLQ tests or debug dead-letter routing |
 | `DistributedLockCompliance.cs` | Mutual exclusion, TTL expiry, and lock renewal | Add distributed lock tests or debug locking behavior |
 | `ErrorPolicyCompliance.cs` | Error policy evaluation: retry, discard, and dead-letter branching | Add error policy tests or debug error handling |
-| `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (raw Kafka messages) | Debug external message ingestion or verify raw message support |
+| `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (raw Kafka messages): delivered, metrics recorded | Debug external message ingestion or verify raw message support |
 | `FanOutCompliance.cs` | Multiple consumer groups independently consuming the same topic | Add fan-out tests or debug independent consumer group behavior |
 | `FilterCompliance.cs` | Consumer filter predicate evaluation, a filter that throws retried by the error policy | Add filter tests or debug filter skipping behavior |
 | `GlobalPipelineCompliance.cs` | Global middleware execution order and context propagation | Add global pipeline tests or debug cross-cutting middleware |
@@ -25,6 +25,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `OffsetCommitCompliance.cs` | Watermark-based offset commit correctness; redelivered messages keep their message id | Add offset commit tests or debug at-least-once delivery |
 | `OutboundMiddlewareHeadersCompliance.cs` | Header propagation through outbound middleware pipeline | Verify or change outbound header forwarding behavior |
 | `OutboxDeliveryCompliance.cs` | Transactional outbox delivery to Kafka: per-group order, also when the outbox daemon moves to another node of the service, and services sharing a database each delivering only their own entries | Add outbox delivery tests or debug outbox-to-Kafka flow or per-service outbox processing |
+| `TracingCompliance.cs` | The spans of every path a message takes, per the OpenTelemetry messaging conventions: create, send and process forming one trace (outbox and direct, consumer and router, tracing on and off), root spans under `CreateRootActivities`, batch links, retry attempts, dead letters continuing the failed processing's trace, deserialization dead letters, mediator requests | Add tracing tests or debug spans |
 | `TombstoneCompliance.cs` | Tombstones (a key and no value) through the outbox and directly: null value delivered, per-key order with tombstones, rollback, headers added by Emit, schema registry value serializer | Add tombstone tests or debug producing tombstones |
 | `OutboxHeadersCompliance.cs` | Message header propagation through the outbox, the producer message id included | Verify or change outbox header forwarding behavior |
 | `OutboxObserverCompliance.cs` | IOutboxObserver lifecycle event delivery | Add outbox observer tests or debug outbox observer invocation |

@@ -20,3 +20,4 @@ Unit tests for the Emit.Provider.Kafka library: producer, consumer, serializatio
 | `DependencyInjection/` | Tests for KafkaBuilder, topic builder, consumer group builder, and config validation | Debugging Kafka DI registration or config validation test failures |
 | `Metrics/` | Tests for Kafka broker and consumer metrics | Debugging Kafka metrics test failures |
 | `Observability/` | Tests for Kafka consumer observer invoker | Debugging Kafka consumer observer test failures |
+| `Tracing/` | Tests for the Kafka send span and the Kafka attributes of the `create` span | Debugging Kafka tracing test failures |

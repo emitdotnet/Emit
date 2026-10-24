@@ -3,11 +3,14 @@ namespace Emit.Kafka.DependencyInjection;
 using System.Diagnostics.Metrics;
 using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
+using Emit.Abstractions.Tracing;
 using Emit.Configuration;
 using Emit.DependencyInjection;
 using Emit.Kafka.Consumer;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
+using Emit.Kafka.Tracing;
+using Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -79,6 +82,9 @@ public static class KafkaEmitBuilderExtensions
         builder.Services.TryAddSingleton(sp => new KafkaBrokerMetrics(
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));
+
+        // Kafka attributes on the create span of each message produced
+        builder.Services.AddSingleton<IActivityEnricher, KafkaActivityEnricher>();
 
         // Validate that ConfigureClient was called
         if (kafkaBuilder.ClientConfigAction is null)
@@ -241,6 +247,7 @@ public static class KafkaEmitBuilderExtensions
                 TimeSpan.FromMilliseconds(Math.Max(config.MessageTimeoutMs!.Value, MinTransactionTimeoutMs)),
                 sp.GetRequiredService<KafkaMetrics>(),
                 sp.GetRequiredService<INodeIdentity>(),
+                sp.GetRequiredService<IOptions<EmitTracingOptions>>().Value,
                 sp.GetRequiredService<ILogger<KafkaOutboxProvider>>());
         });
     }

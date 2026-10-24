@@ -25,7 +25,6 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy,
             deadLetterSink,
             metrics ?? Metrics,
-            new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<string>>.Instance,
             "test-consumer",
             typeof(string));
@@ -225,7 +224,6 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy,
             deadLetterSink,
             metrics ?? Metrics,
-            new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<MessageBatch<string>>>.Instance,
             "batch-consumer",
             typeof(string));

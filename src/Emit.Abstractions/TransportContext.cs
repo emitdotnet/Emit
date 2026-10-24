@@ -27,4 +27,10 @@ public abstract class TransportContext : MessageContext
     /// Identifies the transport provider (e.g., "kafka").
     /// </summary>
     public required string ProviderId { get; init; }
+
+    /// <summary>
+    /// Returns the attributes the transport adds to the span processing the message it received, following the
+    /// OpenTelemetry semantic conventions of its messaging system, such as where the message was consumed from.
+    /// </summary>
+    public virtual IEnumerable<KeyValuePair<string, object?>> GetTracingTags() => [];
 }
