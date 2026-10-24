@@ -95,6 +95,8 @@ Each application instance runs one Kafka consumer per group. That consumer polls
 
 Each worker handles one message at a time. With three workers, the instance processes up to three messages simultaneously. A fourth message waits for a slot to open, or queues in the channel buffer (up to `BufferSize`) while waiting.
 
+When a worker's buffer is full, the partition feeding it is paused until the buffer is half empty, and the consumer keeps polling meanwhile. A slow handler or a long retry policy therefore never exceeds `MaxPollInterval` and never gets the consumer removed from the group.
+
 <Mermaid code={`flowchart LR
     subgraph kafka[Kafka]
         p0[Partition 0]

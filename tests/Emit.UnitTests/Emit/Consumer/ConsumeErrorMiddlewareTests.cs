@@ -19,8 +19,7 @@ public sealed class ConsumeErrorMiddlewareTests
 
     private static ConsumeErrorMiddleware<string> CreateMiddleware(
         Func<Exception, ErrorAction>? evaluatePolicy = null,
-        IDeadLetterSink? deadLetterSink = null,
-        ICircuitBreakerNotifier? circuitBreakerNotifier = null) =>
+        IDeadLetterSink? deadLetterSink = null) =>
         new(
             evaluatePolicy,
             deadLetterSink,
@@ -28,8 +27,7 @@ public sealed class ConsumeErrorMiddlewareTests
             new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<string>>.Instance,
             "test-consumer",
-            typeof(string),
-            circuitBreakerNotifier);
+            typeof(string));
 
     private static ConsumeContext<string> CreateContext(CancellationToken ct = default)
     {
@@ -202,50 +200,6 @@ public sealed class ConsumeErrorMiddlewareTests
     }
 
     [Fact]
-    public async Task GivenCircuitBreakerConfigured_WhenHandlerThrows_ThenReportsFailure()
-    {
-        // Arrange
-        var mockNotifier = new Mock<ICircuitBreakerNotifier>();
-        mockNotifier
-            .Setup(n => n.ReportFailureAsync(It.IsAny<Exception>()))
-            .Returns(ValueTask.CompletedTask);
-
-        var middleware = CreateMiddleware(
-            evaluatePolicy: _ => ErrorAction.Discard(),
-            circuitBreakerNotifier: mockNotifier.Object);
-
-        var thrownException = new InvalidOperationException("handler error");
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw thrownException);
-
-        // Act
-        await middleware.InvokeAsync(CreateContext(), next);
-
-        // Assert
-        mockNotifier.Verify(
-            n => n.ReportFailureAsync(thrownException),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task GivenCircuitBreakerConfigured_WhenHandlerSucceeds_ThenReportsSuccess()
-    {
-        // Arrange
-        var mockNotifier = new Mock<ICircuitBreakerNotifier>();
-        mockNotifier
-            .Setup(n => n.ReportSuccessAsync())
-            .Returns(ValueTask.CompletedTask);
-
-        var middleware = CreateMiddleware(circuitBreakerNotifier: mockNotifier.Object);
-        var next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
-
-        // Act
-        await middleware.InvokeAsync(CreateContext(), next);
-
-        // Assert
-        mockNotifier.Verify(n => n.ReportSuccessAsync(), Times.Once);
-    }
-
-    [Fact]
     public async Task GivenHandlerSucceeds_WhenInvoked_ThenDoesNotThrow()
     {
         // Arrange
@@ -278,8 +232,7 @@ public sealed class ConsumeErrorMiddlewareTests
             new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<MessageBatch<string>>>.Instance,
             "batch-consumer",
-            typeof(string),
-            null);
+            typeof(string));
 
     private static ConsumeContext<MessageBatch<string>> CreateBatchContext(
         int itemCount,

@@ -6,29 +6,35 @@ using Emit.Metrics;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Notifies the circuit breaker of message processing outcomes. Called by
-/// <see cref="ConsumeErrorMiddleware{TMessage}"/> after each message is fully handled.
+/// Notifies the circuit breaker of each handler attempt, and holds attempts while the circuit does not allow them.
 /// </summary>
 public interface ICircuitBreakerNotifier
 {
     /// <summary>
-    /// Reports that a message was processed successfully (first attempt or retry).
-    /// In half-open state this closes the circuit.
+    /// Waits until the circuit lets an attempt run: at once while closed, after the pause while open, and one
+    /// attempt at a time while half-open.
+    /// </summary>
+    /// <param name="cancellationToken">Stops waiting, on shutdown.</param>
+    /// <returns>The attempt, disposed once its outcome has been reported.</returns>
+    ValueTask<IAsyncDisposable> BeginAttemptAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reports that an attempt succeeded. In half-open state this closes the circuit.
     /// </summary>
     ValueTask ReportSuccessAsync();
 
     /// <summary>
-    /// Reports that a message processing failed terminally (discarded or dead-lettered).
-    /// Filtered by <c>TripOn</c> exception types before counting toward the threshold.
+    /// Reports that an attempt failed. Filtered by <c>TripOn</c> exception types before counting toward the
+    /// threshold.
     /// </summary>
     ValueTask ReportFailureAsync(Exception exception);
 }
 
 /// <summary>
-/// Observes message processing outcomes and trips a circuit breaker when the failure
-/// rate exceeds the configured threshold within a sliding window. When open, pauses
-/// the consumer group via <see cref="IConsumerFlowControl"/>. After the pause duration,
-/// transitions to half-open and resumes for a probe message.
+/// Observes handler attempts and trips a circuit breaker when the failed attempts exceed the configured threshold
+/// within a sliding window. When open, pauses the consumer group via <see cref="IConsumerFlowControl"/> and holds
+/// every attempt. After the pause duration, transitions to half-open and lets one attempt at a time through as the
+/// probe.
 /// </summary>
 /// <typeparam name="TMessage">The message type (used only for generic wiring).</typeparam>
 public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, IDisposable
@@ -48,6 +54,8 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
     private readonly Queue<long> failureTimestamps = new();
 
     private int state; // 0=closed, 1=open, 2=half_open
+    private bool probeRunning;
+    private TaskCompletionSource stateChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long circuitOpenedTicks;
     private CancellationTokenSource? halfOpenCts;
     private bool disposed;
@@ -70,9 +78,47 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
     }
 
     /// <inheritdoc />
+    public async ValueTask<IAsyncDisposable> BeginAttemptAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            // The observer is disposed once the consumer stopped: a worker still running then is shutting down
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Task changed;
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (state == StateClosed)
+                {
+                    return NoAttempt.Instance;
+                }
+
+                if (state == StateHalfOpen && !probeRunning)
+                {
+                    probeRunning = true;
+                    return new ProbeAttempt(this);
+                }
+
+                changed = stateChanged.Task;
+            }
+            finally
+            {
+                gate.Release();
+            }
+
+            await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
     public async ValueTask ReportSuccessAsync()
     {
-        await gate.WaitAsync().ConfigureAwait(false);
+        if (!await TryEnterGateAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
             if (state == StateHalfOpen)
@@ -81,11 +127,12 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
                 failureTimestamps.Clear();
                 emitMetrics.RecordStateTransition("closed");
                 logger.LogInformation("Circuit breaker closed — consumer group fully resumed");
+                SignalStateChanged();
             }
         }
         finally
         {
-            gate.Release();
+            ExitGate();
         }
     }
 
@@ -97,7 +144,11 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
             return;
         }
 
-        await gate.WaitAsync().ConfigureAwait(false);
+        if (!await TryEnterGateAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
             switch (state)
@@ -126,7 +177,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         }
         finally
         {
-            gate.Release();
+            ExitGate();
         }
     }
 
@@ -135,6 +186,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         state = StateOpen;
         circuitOpenedTicks = Stopwatch.GetTimestamp();
         failureTimestamps.Clear();
+        SignalStateChanged();
 
         // Cancel any pending half-open transition before scheduling a new one.
         CancelHalfOpenTransition();
@@ -175,6 +227,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
                 }
 
                 state = StateHalfOpen;
+                SignalStateChanged();
 
                 var openedTicks = circuitOpenedTicks;
                 if (openedTicks > 0)
@@ -230,9 +283,76 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         // All retries failed — force circuit to closed to prevent permanent pause.
         state = StateClosed;
         failureTimestamps.Clear();
+        SignalStateChanged();
         emitMetrics.RecordStateTransition("closed");
         logger.LogCritical(
             "All resume attempts failed — forcing circuit breaker to closed state to prevent permanent pause");
+    }
+
+    /// <summary>
+    /// Wakes the attempts waiting for the circuit, so each checks again whether it may run. Must be called under
+    /// <see cref="gate"/>.
+    /// </summary>
+    private void SignalStateChanged()
+    {
+        var changed = stateChanged;
+        stateChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        changed.TrySetResult();
+    }
+
+    /// <summary>
+    /// Ends the half-open probe, so another attempt can be the probe while the circuit stays half-open.
+    /// </summary>
+    private async ValueTask EndProbeAsync()
+    {
+        if (!await TryEnterGateAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            probeRunning = false;
+            SignalStateChanged();
+        }
+        finally
+        {
+            ExitGate();
+        }
+    }
+
+    /// <summary>
+    /// Enters <see cref="gate"/> to report what a worker did, unless the observer was disposed: the consumer
+    /// stopped, and a worker that outlived the stop has nothing left to change.
+    /// </summary>
+    private async ValueTask<bool> TryEnterGateAsync()
+    {
+        if (disposed)
+        {
+            return false;
+        }
+
+        try
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private void ExitGate()
+    {
+        try
+        {
+            gate.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed while reporting: the consumer stopped meanwhile
+        }
     }
 
     private void TrimWindow()
@@ -281,5 +401,26 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         disposed = true;
         CancelHalfOpenTransition();
         gate.Dispose();
+    }
+
+    /// <summary>
+    /// An attempt that holds nothing once it ends.
+    /// </summary>
+    private sealed class NoAttempt : IAsyncDisposable
+    {
+        public static readonly NoAttempt Instance = new();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// The one attempt let through while the circuit is half-open.
+    /// </summary>
+    private sealed class ProbeAttempt(CircuitBreakerObserver<TMessage> owner) : IAsyncDisposable
+    {
+        private int ended;
+
+        public ValueTask DisposeAsync() =>
+            Interlocked.Exchange(ref ended, 1) == 0 ? owner.EndProbeAsync() : ValueTask.CompletedTask;
     }
 }

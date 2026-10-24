@@ -38,6 +38,18 @@ public sealed class KafkaConsumerFlowControlCompliance(KafkaContainerFixture fix
                         {
                             group.Name = declaration.Name;
                             group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                            if (declaration.BufferSize is { } bufferSize)
+                            {
+                                group.BufferSize = bufferSize;
+                            }
+
+                            if (declaration.MaxPollInterval is { } maxPollInterval)
+                            {
+                                // The broker's smallest session timeout is six seconds, and it must not exceed the poll interval
+                                group.MaxPollInterval = maxPollInterval;
+                                group.SessionTimeout = TimeSpan.FromSeconds(6);
+                                group.HeartbeatInterval = TimeSpan.FromSeconds(2);
+                            }
                             if (declaration.CircuitBreaker is { } circuitBreaker)
                             {
                                 group.CircuitBreaker(circuitBreaker);

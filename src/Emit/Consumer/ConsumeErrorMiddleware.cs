@@ -21,8 +21,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
     INodeIdentity nodeIdentity,
     ILogger<ConsumeErrorMiddleware<TMessage>> logger,
     string identifier,
-    Type? consumerType,
-    ICircuitBreakerNotifier? circuitBreakerNotifier) : IMiddleware<ConsumeContext<TMessage>>
+    Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
@@ -30,11 +29,6 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         try
         {
             await next.InvokeAsync(context).ConfigureAwait(false);
-
-            if (circuitBreakerNotifier is not null)
-            {
-                await circuitBreakerNotifier.ReportSuccessAsync().ConfigureAwait(false);
-            }
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {
@@ -73,11 +67,6 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                     emitMetrics.RecordErrorAction("discard");
                     break;
             }
-        }
-
-        if (circuitBreakerNotifier is not null)
-        {
-            await circuitBreakerNotifier.ReportFailureAsync(exception).ConfigureAwait(false);
         }
     }
 

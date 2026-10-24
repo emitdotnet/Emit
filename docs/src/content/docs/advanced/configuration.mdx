@@ -59,7 +59,7 @@ Emit-specific options:
 |---|---|---|
 | `WorkerCount` | `1` | Number of parallel workers |
 | `WorkerDistribution` | `ByKeyHash` | `ByKeyHash` or `RoundRobin` |
-| `BufferSize` | `32` | Per-worker channel capacity |
+| `BufferSize` | `32` | Per-worker channel capacity; a partition feeding a full channel is paused until it is half empty |
 | `CommitInterval` | `5s` | Offset commit frequency |
 | `WorkerStopTimeout` | `30s` | Graceful shutdown wait for in-flight messages |
 

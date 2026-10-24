@@ -7,12 +7,14 @@ using ConfluentKafka = Confluent.Kafka;
 /// Two-phase batch accumulator. Phase 1 blocks indefinitely until at least one message
 /// arrives. Phase 2 accumulates up to <c>maxSize</c> or until <c>timeout</c> elapses,
 /// whichever comes first. The timeout starts counting from when the first message arrives,
-/// not from when the worker starts waiting.
+/// not from when the worker starts waiting. <c>taken</c>, if any, is called each time messages were taken from
+/// the channel.
 /// </summary>
 internal sealed class BatchAccumulator(
     int maxSize,
     TimeSpan timeout,
-    ChannelReader<ConfluentKafka.ConsumeResult<byte[], byte[]>> reader)
+    ChannelReader<ConfluentKafka.ConsumeResult<byte[], byte[]>> reader,
+    Action? taken = null)
 {
     /// <summary>
     /// Accumulates up to <c>maxSize</c> messages or until <c>timeout</c>
@@ -34,6 +36,8 @@ internal sealed class BatchAccumulator(
             batch.Add(item);
         }
 
+        taken?.Invoke();
+
         if (batch.Count >= maxSize)
             return batch;
 
@@ -52,6 +56,8 @@ internal sealed class BatchAccumulator(
                 {
                     batch.Add(item);
                 }
+
+                taken?.Invoke();
             }
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested

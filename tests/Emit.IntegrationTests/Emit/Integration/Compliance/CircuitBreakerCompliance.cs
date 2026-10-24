@@ -30,6 +30,162 @@ public abstract class CircuitBreakerCompliance
         string topic,
         Action<CircuitBreakerBuilder> configureCircuitBreaker);
 
+    /// <summary>
+    /// Configures the messaging provider with <paramref name="group"/>: a <c>string, string</c> topic with a
+    /// producer, and a consumer group containing <see cref="CountingFailingConsumer"/>, starting from the earliest
+    /// message and applying the group's circuit breaker and retries.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="group">The consumer group declaration.</param>
+    protected abstract void ConfigureEmit(EmitBuilder emit, CircuitBreakerGroup group);
+
+    /// <summary>
+    /// A consumer group declaration of a test.
+    /// </summary>
+    /// <param name="Topic">The topic the group consumes.</param>
+    /// <param name="CircuitBreaker">The group's circuit breaker.</param>
+    public sealed record CircuitBreakerGroup(string Topic, Action<CircuitBreakerBuilder> CircuitBreaker)
+    {
+        /// <summary>Gets the number of retries after a failed attempt, or <c>null</c> for no retry policy.</summary>
+        public int? Retries { get; init; }
+    }
+
+    private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long a test waits to show that the handler is no longer called. It can only make a test pass wrongly
+    /// when the machine is slow, never fail it.
+    /// </summary>
+    private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(4);
+
+    [Fact]
+    public async Task GivenNoRetryPolicy_WhenTheDependencyIsDown_ThenTheHandlerIsCalledExactlyThresholdTimesAndQueuedMessagesWaitForRecovery()
+    {
+        // Arrange: three failures open the circuit for eight seconds
+        var group = new CircuitBreakerGroup($"test-cb-exact-{Guid.NewGuid():N}", Trip(threshold: 3, pause: TimeSpan.FromSeconds(8)));
+        var (host, sink, dependency) = BuildHost(group);
+        using var _ = host;
+        await host.StartAsync();
+        try
+        {
+            await ProduceAsync(host, "m-1", "m-2", "m-3", "m-4", "m-5");
+
+            // Act
+            await WaitUntilAsync(() => dependency.Failures.Count >= 3, "The circuit's failures were not handled", ReceiveTimeout);
+            await Task.Delay(QuietPeriod);
+            var failuresWhileOpen = dependency.Failures.Count;
+            dependency.Down = false;
+
+            // Assert: the three failed messages are discarded, the queued ones are handled after recovery
+            Assert.Equal(3, failuresWhileOpen);
+            await WaitUntilAsync(() => Received(sink, "m-4", "m-5"), "The queued messages were not handled after recovery", ReceiveTimeout);
+            Assert.DoesNotContain(sink.ReceivedMessages, m => m.Message is "m-1" or "m-2" or "m-3");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GivenRetries_WhenTheDependencyIsDown_ThenEachFailedAttemptCountsAndNoAttemptRunsWhileTheCircuitIsOpen()
+    {
+        // Arrange: ten retries, and three failed attempts open the circuit
+        var group = new CircuitBreakerGroup($"test-cb-retry-{Guid.NewGuid():N}", Trip(threshold: 3, pause: TimeSpan.FromSeconds(8)))
+        {
+            Retries = 10,
+        };
+        var (host, sink, dependency) = BuildHost(group);
+        using var _ = host;
+        await host.StartAsync();
+        try
+        {
+            await ProduceAsync(host, "m-1");
+
+            // Act
+            await WaitUntilAsync(() => dependency.Failures.Count >= 3, "The circuit's failures were not handled", ReceiveTimeout);
+            await Task.Delay(QuietPeriod);
+            var failuresWhileOpen = dependency.Failures.Count;
+            dependency.Down = false;
+
+            // Assert: the message keeps its remaining retries and succeeds once the dependency is back
+            Assert.Equal(3, failuresWhileOpen);
+            await WaitUntilAsync(() => Received(sink, "m-1"), "The message was not handled after recovery", ReceiveTimeout);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    private static Action<CircuitBreakerBuilder> Trip(int threshold, TimeSpan pause) =>
+        cb => cb.FailureThreshold(threshold)
+            .SamplingWindow(TimeSpan.FromSeconds(60))
+            .PauseDuration(pause)
+            .TripOn<InvalidOperationException>();
+
+    private (IHost Host, MessageSink<string> Sink, Dependency Dependency) BuildHost(CircuitBreakerGroup group)
+    {
+        var sink = new MessageSink<string>();
+        var dependency = new Dependency();
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddSingleton(dependency);
+                services.AddEmit(emit => ConfigureEmit(emit, group));
+            })
+            .Build();
+        return (host, sink, dependency);
+    }
+
+    private static async Task ProduceAsync(IHost host, params string[] values)
+    {
+        using var scope = host.Services.CreateScope();
+        var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+        foreach (var value in values)
+        {
+            await producer.ProduceAsync(new EventMessage<string, string>("key", value));
+        }
+    }
+
+    private static bool Received(MessageSink<string> sink, params string[] values) =>
+        values.All(value => sink.ReceivedMessages.Any(m => m.Message == value));
+
+    private static Task WaitUntilAsync(Func<bool> condition, string failMessage, TimeSpan timeout) =>
+        TestHelpers.WaitUntilAsync(condition, failMessage, timeout);
+
+    /// <summary>
+    /// The dependency the handler calls: down until told otherwise, counting each call made while down.
+    /// </summary>
+    public sealed class Dependency
+    {
+        /// <summary>Gets or sets whether the dependency is down.</summary>
+        public volatile bool Down = true;
+
+        /// <summary>Gets the calls made while the dependency was down.</summary>
+        public InvocationCounter Failures { get; } = new();
+    }
+
+    /// <summary>
+    /// Consumer that calls the <see cref="Dependency"/>: fails while it is down, otherwise writes the message to
+    /// the sink.
+    /// </summary>
+    public sealed class CountingFailingConsumer(Dependency dependency, MessageSink<string> sink) : IConsumer<string>
+    {
+        /// <inheritdoc />
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        {
+            if (dependency.Down)
+            {
+                dependency.Failures.Increment();
+                throw new InvalidOperationException("Dependency unavailable.");
+            }
+
+            return sink.WriteAsync(context, cancellationToken);
+        }
+    }
+
     [Fact]
     public async Task GivenCircuitBreaker_WhenFailureTripsBreaker_ThenPausesAndResumesAfterRecovery()
     {

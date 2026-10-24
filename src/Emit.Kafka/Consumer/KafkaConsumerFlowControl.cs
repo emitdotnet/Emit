@@ -20,6 +20,11 @@ using ConfluentKafka = Confluent.Kafka;
 /// it, so a newly assigned partition is paused when its first message arrives: <see cref="TryBeginHandling"/>
 /// refuses that message, and the poll loop seeks back to it so it is fetched again on resume.
 /// </para>
+/// <para>
+/// A partition whose next message goes to a full worker queue is paused on its own until the queue has room, so
+/// the poll loop never waits and the consumer stays in the group however long the handlers take. Resuming the
+/// declaration leaves it paused until then.
+/// </para>
 /// </remarks>
 internal sealed class KafkaConsumerFlowControl
 {
@@ -27,6 +32,7 @@ internal sealed class KafkaConsumerFlowControl
 
     private readonly object sync = new();
     private readonly HashSet<ConfluentKafka.TopicPartition> partitions = [];
+    private readonly HashSet<ConfluentKafka.TopicPartition> waitingForRoom = [];
     private readonly ILogger<KafkaConsumerFlowControl> logger;
     private ConfluentKafka.IConsumer<byte[], byte[]>? consumer;
     private bool pausedByApplication;
@@ -94,6 +100,7 @@ internal sealed class KafkaConsumerFlowControl
         {
             consumer = null;
             partitions.Clear();
+            waitingForRoom.Clear();
             handling = 0;
             ReleaseIdle();
         }
@@ -119,6 +126,7 @@ internal sealed class KafkaConsumerFlowControl
         lock (sync)
         {
             partitions.ExceptWith(taken);
+            waitingForRoom.ExceptWith(taken);
         }
     }
 
@@ -155,6 +163,37 @@ internal sealed class KafkaConsumerFlowControl
             if (handling == 0)
             {
                 ReleaseIdle();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pauses <paramref name="partition"/> until <see cref="ResumeAfterFullQueue"/>: its next message goes to a
+    /// full worker queue. Called on the poll thread, which then seeks back to the message so it is fetched again
+    /// on resume.
+    /// </summary>
+    internal void PauseForFullQueue(ConfluentKafka.TopicPartition partition)
+    {
+        lock (sync)
+        {
+            if (waitingForRoom.Add(partition))
+            {
+                Apply(pause: true, [partition], LogLevel.Debug);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resumes <paramref name="partition"/> paused by <see cref="PauseForFullQueue"/>, now that the worker queue
+    /// has room, unless the declaration is paused or the partition was taken from the consumer meanwhile.
+    /// </summary>
+    internal void ResumeAfterFullQueue(ConfluentKafka.TopicPartition partition)
+    {
+        lock (sync)
+        {
+            if (waitingForRoom.Remove(partition) && !IsHeld)
+            {
+                Apply(pause: false, [partition], LogLevel.Debug);
             }
         }
     }
@@ -224,7 +263,7 @@ internal sealed class KafkaConsumerFlowControl
 
             if (!IsHeld)
             {
-                Apply(pause: false, partitions);
+                Apply(pause: false, partitions.Except(waitingForRoom));
             }
         }
 
@@ -240,7 +279,10 @@ internal sealed class KafkaConsumerFlowControl
     /// <summary>
     /// Pauses or resumes partitions on the consumer, if attached. Must be called under <see cref="sync"/>.
     /// </summary>
-    private void Apply(bool pause, IEnumerable<ConfluentKafka.TopicPartition> targets)
+    private void Apply(
+        bool pause,
+        IEnumerable<ConfluentKafka.TopicPartition> targets,
+        LogLevel level = LogLevel.Information)
     {
         if (consumer is null)
         {
@@ -264,7 +306,7 @@ internal sealed class KafkaConsumerFlowControl
                 consumer.Resume(list);
             }
 
-            logger.LogInformation("{Action} {Count} partitions", pause ? "Paused" : "Resumed", list.Count);
+            logger.Log(level, "{Action} {Count} partitions", pause ? "Paused" : "Resumed", list.Count);
         }
         catch (ConfluentKafka.TopicPartitionException ex)
         {
