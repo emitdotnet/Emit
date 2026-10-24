@@ -103,6 +103,22 @@ public abstract class BatchConsumerCompliance
         Action<BatchOptions> batchConfig);
 
     /// <summary>
+    /// Configures the messaging provider with a <c>string, string</c> source topic in batch mode,
+    /// validating each item with <paramref name="validator"/> and dead-lettering failed validations to
+    /// <paramref name="dlqTopic"/>. The error policy retries every exception 3 times with no backoff, then
+    /// dead-letters it. The source consumer group uses <see cref="BatchSinkConsumer{T}"/> of
+    /// <see cref="string"/>; the DLQ topic uses <see cref="DlqCaptureConsumer"/>.
+    /// </summary>
+    protected abstract void ConfigureEmitBatchWithValidatorAndRetry(
+        EmitBuilder emit,
+        string sourceTopic,
+        string groupId,
+        string dlqTopic,
+        string dlqGroupId,
+        Func<string, MessageValidationResult> validator,
+        Action<BatchOptions> batchConfig);
+
+    /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
     /// with the specified <paramref name="distributionStrategy"/> and <paramref name="workerCount"/>.
     /// The consumer group must use <see cref="BatchSinkConsumer{T}"/> of <see cref="string"/>.
@@ -1326,6 +1342,84 @@ public abstract class BatchConsumerCompliance
 
             Assert.Contains(payloads, p => p.Contains("validation-fail", StringComparison.Ordinal));
             Assert.Contains(payloads, p => p.Contains("handler-fail", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that when the validator throws on one item of a batch, the retry validates again only the
+    /// items not yet decided: an item rejected (and dead-lettered) before the failure is not validated or
+    /// dead-lettered a second time, and the valid items are handled.
+    /// </summary>
+    [Fact]
+    public async Task GivenItemRejectedBeforeTheValidatorThrows_WhenTheBatchIsRetried_ThenTheRejectedItemIsValidatedOnce()
+    {
+        // Arrange
+        var topic = $"batch-val-retry-{Guid.NewGuid():N}";
+        var groupId = $"batch-val-retry-g-{Guid.NewGuid():N}";
+        var dlqTopic = $"batch-val-retry-dlq-{Guid.NewGuid():N}";
+        var dlqGroupId = $"batch-val-retry-dlq-g-{Guid.NewGuid():N}";
+        var sink = new BatchSinkConsumer<string>();
+        var dlqSink = new MessageSink<byte[]>();
+        var rejections = new InvocationCounter();
+        var throwingCalls = new InvocationCounter();
+
+        MessageValidationResult Validate(string message)
+        {
+            if (message.StartsWith("invalid:", StringComparison.Ordinal))
+            {
+                rejections.Increment();
+                return MessageValidationResult.Fail("invalid");
+            }
+
+            if (message == "valid:throws-once" && throwingCalls.Increment() == 1)
+            {
+                throw new TimeoutException("database unreachable");
+            }
+
+            return MessageValidationResult.Success;
+        }
+
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddSingleton(dlqSink);
+                services.AddEmit(emit => ConfigureEmitBatchWithValidatorAndRetry(
+                    emit, topic, groupId, dlqTopic, dlqGroupId, Validate,
+                    b =>
+                    {
+                        b.MaxSize = DefaultBatchMaxSize;
+                        b.Timeout = DefaultBatchTimeout;
+                    }));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act: one key keeps the three items in one partition, in this order, in one batch
+            using var scope = host.Services.CreateScope();
+            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+            await producer.ProduceAsync(new EventMessage<string, string>("k", "invalid:first"));
+            await producer.ProduceAsync(new EventMessage<string, string>("k", "valid:throws-once"));
+            await producer.ProduceAsync(new EventMessage<string, string>("k", "valid:last"));
+
+            // Assert
+            await WaitUntilAsync(
+                () => sink.Messages.Count >= 2,
+                "Expected the 2 valid messages in the batch sink within the timeout.");
+            Assert.Equal(["valid:throws-once", "valid:last"], sink.Messages);
+            Assert.Equal(2, throwingCalls.Count);
+            Assert.Equal(1, rejections.Count);
+
+            var deadLettered = await dlqSink.WaitForMessageAsync(PollTimeout);
+            Assert.Equal("invalid:first", System.Text.Encoding.UTF8.GetString(deadLettered.Message));
         }
         finally
         {

@@ -126,7 +126,7 @@ group.AddBatchConsumer<ScanBatchConsumer>();
 group.ValidateWithFluentValidation(onFailure => onFailure.DeadLetter());
 ```
 
-If every item in a batch fails validation, the handler is not invoked. See [Validation](../../error-handling/validation/) for validator registration options. `SkipNullPayloads()` and `allowNullMessages: true` on `ValidateWithFluentValidation` also apply per item; see [Validation → Null payloads](../../error-handling/validation/#null-payloads).
+If every item in a batch fails validation, the handler is not invoked. A validator that throws on an item fails the batch attempt. The items already rejected leave the batch first, so a retry validates only the items not yet rejected, and a rejected item is dead-lettered once. See [Validation](../../error-handling/validation/) for validator registration options. `SkipNullPayloads()` and `allowNullMessages: true` on `ValidateWithFluentValidation` also apply per item; see [Validation → Null payloads](../../error-handling/validation/#null-payloads).
 
 ### Filtering
 

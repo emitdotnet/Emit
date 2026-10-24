@@ -12,8 +12,8 @@ using Microsoft.Extensions.Logging;
 /// Holds validation configuration for a consumer group and acts as the inbound middleware that
 /// validates each message. Validation failures are routed to the terminal action carried by
 /// <see cref="ValidationErrorAction"/> (dead-letter or discard) inline; the pipeline short-circuits
-/// without invoking the handler. Validator exceptions propagate to the group's error policy; they
-/// are not retried, because validation runs outside the retry layer. Implements <see cref="IMiddleware{TContext}"/> directly so
+/// without invoking the handler, and is never retried. A validator that throws fails the attempt, like a
+/// handler that throws: the group's error policy decides whether it is retried. Implements <see cref="IMiddleware{TContext}"/> directly so
 /// it can be inserted into the pipeline without an intermediate adapter.
 /// </summary>
 /// <typeparam name="TValue">The message type to validate.</typeparam>

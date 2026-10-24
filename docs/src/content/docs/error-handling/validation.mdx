@@ -131,7 +131,15 @@ There is an important distinction between a message that *fails validation* and 
 
 A **validation failure** is a normal, expected outcome. The message is structurally wrong, a required field is missing, a value is out of range. Emit applies the error action you configured on `Validate` (discard or dead-letter). The [error policy](../error-policies/) is not involved.
 
-A **validator exception** is unexpected. Your validator tried to hit a database and the connection timed out, or an internal bug caused a `NullReferenceException`. Emit treats this the same as any other unhandled exception: it falls through to the group-level `OnError` policy. If you configured retries there, the message (including the validation step) will be retried.
+A **validator exception** is unexpected. Your validator tried to hit a database and the connection timed out, or an internal bug caused a `NullReferenceException`. Emit treats this exactly like an exception thrown by your handler: the attempt failed, and the group-level `OnError` policy decides what happens next. If the matching clause retries, the message is validated again on the next attempt, with a fresh DI scope.
+
+Clauses match by exception type, so you can retry infrastructure failures and nothing else:
+
+```csharp
+group.OnError(err => err
+    .When<TimeoutException>(a => a.Retry(5, Backoff.Exponential(TimeSpan.FromMilliseconds(200))).DeadLetter())
+    .Default(a => a.DeadLetter()));
+```
 
 The rule of thumb: return `MessageValidationResult.Fail(...)` for deterministic business failures. Let exceptions propagate for transient infrastructure errors that a retry might fix.
 
@@ -165,12 +173,13 @@ When to pick which: use `allowNullMessages: true` when the handler needs to see 
 
 ## Where validation runs in the pipeline
 
-Validation sits early in the inbound pipeline, after deserialization but before everything else:
+Validation runs inside each attempt, just before the handler's unit of work:
 
 1. Message arrives and is deserialized
-2. **Validation runs here**
-3. Error policy evaluation (retry loop)
-4. Unit of work begins, with a transaction if the handler is `[Transactional]`
-5. Per-consumer middleware and the handler execute
+2. The attempt begins (the retry loop, and the circuit breaker if configured)
+3. Filters run
+4. **Validation runs here**
+5. Unit of work begins, with a transaction if the handler is `[Transactional]`
+6. Per-consumer middleware and the handler execute
 
-Because validation runs before the retry loop, a message that fails validation is never retried. It goes straight to the configured error action. This is by design: if a message has a missing required field, retrying it three times won't grow one.
+A message that fails validation is never retried. It goes straight to the configured error action, because if a message has a missing required field, retrying it three times won't grow one. A validator that throws fails the attempt, so a retry runs validation again before the handler.

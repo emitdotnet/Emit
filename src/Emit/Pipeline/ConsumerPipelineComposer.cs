@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Composes a fully-layered consume middleware pipeline for a single consumer or router entry.
 /// Pipeline order (innermost → outermost):
-/// handler → per-entry → unit of work → retry → validation → filter → group/provider/global → metrics → tracing → observers → error.
+/// handler → per-entry → unit of work → validation → filter → retry → group/provider/global → metrics → tracing → observers → error.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
 internal sealed class ConsumerPipelineComposer<TValue>
@@ -56,7 +56,8 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// Gets the consumer group's <see cref="ValidationMiddleware{TValue}"/> as inbound middleware.
     /// For single consumers it composes directly; for batch consumers the framework wraps it in
     /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Validation handles
-    /// dead-lettering or discarding inline on failure and short-circuits the pipeline.
+    /// dead-lettering or discarding inline on failure and short-circuits the pipeline. It runs inside
+    /// each attempt, so a validator that throws is retried like a handler.
     /// </summary>
     public IMiddleware<ConsumeContext<TValue>>? ValidationMiddleware { get; init; }
 
@@ -64,7 +65,8 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// Gets the consumer group's <see cref="Modules.FilterMiddleware{TValue}"/> as inbound middleware.
     /// For single consumers it composes directly; for batch consumers the framework wraps it in
     /// <see cref="BatchPerItemAdapter{TItem}"/> before setting this slot. Filtered messages
-    /// short-circuit before reaching validation.
+    /// short-circuit before reaching validation. It runs inside each attempt, so a filter that throws
+    /// is retried like a handler.
     /// </summary>
     public IMiddleware<ConsumeContext<TValue>>? FilterMiddleware { get; init; }
 
@@ -82,9 +84,8 @@ internal sealed class ConsumerPipelineComposer<TValue>
     public Func<Exception, ErrorAction>? ErrorPolicy { get; init; }
 
     /// <summary>
-    /// Gets the optional circuit breaker notifier. When set, the error handling middleware
-    /// reports success/failure outcomes so the circuit breaker can track the failure rate
-    /// and pause/resume the consumer group via flow control.
+    /// Gets the optional circuit breaker notifier. When set, the retry middleware holds each attempt
+    /// until the circuit lets it run and reports its outcome.
     /// </summary>
     public ICircuitBreakerNotifier? CircuitBreakerNotifier { get; init; }
 
@@ -133,7 +134,21 @@ internal sealed class ConsumerPipelineComposer<TValue>
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(unitOfWorkMw, terminal);
         }
 
-        // 3. RetryMiddleware: with a retry policy, or a circuit breaker that holds and counts each attempt, which
+        // 3. ValidationMiddleware (if configured). Inside each attempt: a failed validation result short-circuits
+        // with its own action and is never retried, while a validator that throws is a failed attempt
+        if (ValidationMiddleware is not null)
+        {
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(ValidationMiddleware, terminal);
+        }
+
+        // 3.5. FilterMiddleware (outside validation, so filtered items never reach the validator; inside each
+        // attempt, so a filter that throws is a failed attempt)
+        if (FilterMiddleware is not null)
+        {
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(FilterMiddleware, terminal);
+        }
+
+        // 4. RetryMiddleware: with a retry policy, or a circuit breaker that holds and counts each attempt, which
         // is a single one without a retry policy
         if (RetryPolicy is not null || CircuitBreakerNotifier is not null)
         {
@@ -144,18 +159,6 @@ internal sealed class ConsumerPipelineComposer<TValue>
                 LoggerFactory.CreateLogger<RetryMiddleware<TValue>>(),
                 CircuitBreakerNotifier);
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(retryMw, terminal);
-        }
-
-        // 4. ValidationMiddleware (if configured) — outside retry so validation failures skip retry
-        if (ValidationMiddleware is not null)
-        {
-            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(ValidationMiddleware, terminal);
-        }
-
-        // 4.5. FilterMiddleware (outside validation — filtered items never reach the validator)
-        if (FilterMiddleware is not null)
-        {
-            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(FilterMiddleware, terminal);
         }
 
         // 5. Group → Provider → Global user middleware

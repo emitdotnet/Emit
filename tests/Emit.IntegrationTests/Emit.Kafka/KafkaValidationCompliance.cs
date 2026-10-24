@@ -87,12 +87,13 @@ public class KafkaValidationCompliance(KafkaContainerFixture fixture)
         });
     }
 
-    protected override void ConfigureWithThrowingValidatorAndDeadLetter(
+    protected override void ConfigureWithValidatorAndRetry(
         EmitBuilder emit,
         string sourceTopic,
         string groupId,
         string dlqTopic,
-        string dlqGroupId)
+        string dlqGroupId,
+        Func<string, MessageValidationResult> validator)
     {
         emit.AddKafka(kafka =>
         {
@@ -119,10 +120,8 @@ public class KafkaValidationCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.Validate(
-                        (_, _) => throw new InvalidOperationException("Simulated validator exception."),
-                        a => a.Discard());
-                    group.OnError(e => e.Default(d => d.DeadLetter()));
+                    group.Validate(validator, a => a.DeadLetter());
+                    group.OnError(e => e.Default(d => d.Retry(3, Backoff.None).DeadLetter()));
                     group.AddConsumer<SinkConsumer<string>>();
                 });
             });

@@ -338,6 +338,8 @@ consumer.Filter<PizzaOrdered>(async (ctx, ct) =>
 
 Multiple filters can be registered on the same consumer. All registered filters must return `true` for the message to proceed; AND logic. If any filter returns `false`, the message is skipped and no further filters are evaluated.
 
+A filter that throws fails the attempt like a handler that throws: the error policy decides whether it is retried.
+
 Filters work the same way for batch consumers: each item in the batch is evaluated individually, and only items where every filter returns `true` survive into the handler's reduced batch. See [Batch Consuming → Filtering](../batch-consuming/#filtering) for the full per-item semantics.
 
 ### Skipping null payloads

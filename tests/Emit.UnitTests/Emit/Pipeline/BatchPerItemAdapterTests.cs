@@ -106,6 +106,26 @@ public sealed class BatchPerItemAdapterTests
     }
 
     [Fact]
+    public async Task GivenItemDroppedBeforeAnItemThatThrows_WhenInvoked_ThenTheBatchKeepsOnlyTheItemsNotDropped()
+    {
+        // Arrange: a retry runs the batch again, so an item already dropped (and dead-lettered) must not be
+        // evaluated a second time
+        var inner = new PredicateMiddleware<string>(msg => msg.StartsWith("throw:", StringComparison.Ordinal)
+            ? throw new TimeoutException("transient")
+            : msg.StartsWith("keep:", StringComparison.Ordinal));
+        var adapter = new BatchPerItemAdapter<string>(_ => inner);
+        var context = CreateBatchContext(CreateBatch(["keep:1", "drop:1", "throw:1", "drop:2", "keep:2"]));
+
+        // Act
+        var failure = await Record.ExceptionAsync(() =>
+            adapter.InvokeAsync(context, new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => Task.CompletedTask)));
+
+        // Assert
+        Assert.IsType<TimeoutException>(failure);
+        Assert.Equal(["keep:1", "throw:1", "drop:2", "keep:2"], context.Message.Select(item => item.Message));
+    }
+
+    [Fact]
     public async Task GivenInnerCalledForEachItem_WhenInvoked_ThenInnerSeesPerItemContext()
     {
         // Arrange — capture each per-item context the inner sees
