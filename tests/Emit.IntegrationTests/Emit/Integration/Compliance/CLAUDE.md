@@ -22,11 +22,11 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `LeaderElectionCompliance.cs` | Leader election persistence contract: lease acquisition, renewal and takeover by recorded heartbeat, heartbeats that do not claim the lease, resign, services sharing a database, conditional registration removal, and deregistration | Add leader election tests or debug leadership transitions |
 | `DatabaseLeaderElectionCompliance.cs` | Leader election contract that needs a real database: a heartbeat stalled on a lock leaves no registration when it times out | Add leader election tests that depend on database locking |
 | `ServiceCoordinationCompliance.cs` | Real hosts: services sharing a database each elect a leader and run their own daemons (issue #85 scenario), daemon observers registered through DI hear about them, a node that shuts down hands its daemon and leadership to another node of its service once its observers heard the daemon stop, and daemons registered with `AddDaemon` spread when a node joins and fail over when a node loses the database, never acting on two nodes at once | Debug daemon coordination end to end |
-| `OffsetCommitCompliance.cs` | Watermark-based offset commit correctness | Add offset commit tests or debug at-least-once delivery |
+| `OffsetCommitCompliance.cs` | Watermark-based offset commit correctness; redelivered messages keep their message id | Add offset commit tests or debug at-least-once delivery |
 | `OutboundMiddlewareHeadersCompliance.cs` | Header propagation through outbound middleware pipeline | Verify or change outbound header forwarding behavior |
 | `OutboxDeliveryCompliance.cs` | Transactional outbox delivery to Kafka: per-group order, also when the outbox daemon moves to another node of the service, and services sharing a database each delivering only their own entries | Add outbox delivery tests or debug outbox-to-Kafka flow or per-service outbox processing |
 | `TombstoneCompliance.cs` | Tombstones (a key and no value) through the outbox and directly: null value delivered, per-key order with tombstones, rollback, headers added by Emit, schema registry value serializer | Add tombstone tests or debug producing tombstones |
-| `OutboxHeadersCompliance.cs` | Message header propagation through the outbox | Verify or change outbox header forwarding behavior |
+| `OutboxHeadersCompliance.cs` | Message header propagation through the outbox, the producer message id included | Verify or change outbox header forwarding behavior |
 | `OutboxObserverCompliance.cs` | IOutboxObserver lifecycle event delivery | Add outbox observer tests or debug outbox observer invocation |
 | `PerConsumerMiddlewareCompliance.cs` | Per-consumer middleware scoping and execution | Add per-consumer middleware tests |
 | `ProduceConsumeCompliance.cs` | Basic produce-and-consume round-trip | Add end-to-end produce/consume tests |
@@ -34,7 +34,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ProviderPipelineCompliance.cs` | Provider-level pipeline middleware execution and context propagation | Add provider pipeline tests or debug provider middleware |
 | `RateLimiterCompliance.cs` | Consumer rate limiting enforcement | Add rate limiter tests or debug rate limiting behavior |
 | `RetryCompliance.cs` | Retry policy: attempt count, backoff, success after failure, and retries outlasting the poll interval on a full queue without a rebalance | Add retry tests or debug retry sequencing |
-| `RoutingCompliance.cs` | Content-based router: route key matching and handler dispatch | Add routing tests or debug router dispatch |
+| `RoutingCompliance.cs` | Content-based router: route key matching and handler dispatch, and a routed handler dead letter carrying the route key and consumer group | Add routing tests or debug router dispatch |
 | `ValidationCompliance.cs` | Message validation: pass, fail (discard, dead-letter), a failed validation never retried, a validator that throws retried by the error policy | Add validation tests or debug validation outcomes |
 | `WorkerDistributionCompliance.cs` | ByKeyHash and RoundRobin distribution strategy correctness | Add distribution tests or debug worker assignment |
 | `WorkerPoolRebalanceRecoveryCompliance.cs` | Worker pool recovery after Kafka partition rebalance | Add rebalance recovery tests or debug partition reassignment |

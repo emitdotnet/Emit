@@ -31,11 +31,8 @@ internal sealed class TransportTracingMiddleware(
 
         if (context.Headers is { Count: > 0 })
         {
-            var headerMap = context.Headers.ToDictionary(
-                h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase);
-
-            headerMap.TryGetValue(WellKnownHeaders.TraceParent, out var traceParent);
-            headerMap.TryGetValue(WellKnownHeaders.TraceState, out var traceState);
+            var traceParent = context.Headers.GetFirstValue(WellKnownHeaders.TraceParent);
+            var traceState = context.Headers.GetFirstValue(WellKnownHeaders.TraceState);
 
             if (!string.IsNullOrEmpty(traceParent))
             {

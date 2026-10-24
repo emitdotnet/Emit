@@ -8,9 +8,6 @@ using Emit.Abstractions;
 /// </summary>
 internal static class KafkaDeadLetterHeaders
 {
-    /// <summary>The source topic the message was consumed from.</summary>
-    public const string SourceTopic = $"{DeadLetterHeaders.SourcePrefix}topic";
-
     /// <summary>The source partition the message was consumed from.</summary>
     public const string SourcePartition = $"{DeadLetterHeaders.SourcePrefix}partition";
 

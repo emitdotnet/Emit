@@ -18,18 +18,13 @@ public abstract class TransportContext : MessageContext
     public required byte[]? RawValue { get; init; }
 
     /// <summary>
-    /// Message headers as key-value pairs.
+    /// Message headers as key-value pairs, in order; a key may repeat. Each layer of the consume pipeline can add
+    /// what it knows about the message, and a dead letter carries them all.
     /// </summary>
-    public required IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; }
+    public required List<KeyValuePair<string, string>> Headers { get; init; }
 
     /// <summary>
     /// Identifies the transport provider (e.g., "kafka").
     /// </summary>
     public required string ProviderId { get; init; }
-
-    /// <summary>
-    /// Returns transport-specific source properties for dead-letter diagnostic headers.
-    /// Each key-value pair becomes a <c>x-emit-source-{key}</c> header.
-    /// </summary>
-    public virtual IReadOnlyDictionary<string, string>? GetSourceProperties() => null;
 }

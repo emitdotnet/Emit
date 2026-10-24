@@ -302,33 +302,10 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 continue;
             }
 
-            var sourceHeader = deserialized.Headers
-                .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
-            Uri? sourceAddress = ParseSourceAddress(sourceHeader);
-
-            var itemTransport = new KafkaTransportContext<TKey>
-            {
-                MessageId = Guid.NewGuid().ToString(),
-                Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
-                CancellationToken = cancellationToken,
-                Services = itemScope.ServiceProvider,
-                RawKey = raw.Message.Key,
-                RawValue = raw.Message.Value,
-                Headers = deserialized.Headers,
-                ProviderId = "kafka",
-                Topic = deserialized.Topic,
-                Partition = deserialized.Partition,
-                Offset = deserialized.Offset,
-                GroupId = groupId,
-                Key = deserialized.Key,
-                DestinationAddress = destinationAddress,
-                SourceAddress = sourceAddress,
-            };
-
             items.Add(new BatchItem<TValue>
             {
                 Message = deserialized.Value,
-                TransportContext = itemTransport,
+                TransportContext = CreateTransportContext(raw, deserialized, itemScope.ServiceProvider, cancellationToken),
             });
         }
 
@@ -361,7 +338,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
                     RawKey = null,
                     RawValue = null,
                     Headers = [],
-                    ProviderId = "kafka",
+                    ProviderId = Provider.Identifier,
                     Topic = firstItemTransport.Topic,
                     Partition = -1,
                     Offset = -1,
@@ -444,26 +421,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             return;
         }
 
-        // Build headers: preserve originals + add diagnostic headers
-        var headers = new List<KeyValuePair<string, string>>();
-
-        if (raw.Message.Headers is not null)
-        {
-            foreach (var header in raw.Message.Headers)
-            {
-                headers.Add(new KeyValuePair<string, string>(
-                    header.Key,
-                    Encoding.UTF8.GetString(header.GetValueBytes())));
-            }
-        }
-
-        headers.Add(new(DeadLetterHeaders.ExceptionType, exception.GetType().FullName ?? exception.GetType().Name));
-        headers.Add(new(DeadLetterHeaders.ExceptionMessage, exception.Message));
-        headers.Add(new(DeadLetterHeaders.ConsumerGroup, groupId));
-        headers.Add(new(KafkaDeadLetterHeaders.SourceTopic, raw.Topic));
-        headers.Add(new(KafkaDeadLetterHeaders.SourcePartition, raw.Partition.Value.ToString()));
-        headers.Add(new(KafkaDeadLetterHeaders.SourceOffset, raw.Offset.Value.ToString()));
-        headers.Add(new(DeadLetterHeaders.Timestamp, DateTimeOffset.UtcNow.ToString("o")));
+        var headers = DeadLetterHeaders.CreateBase(ReadHeaders(raw), exception.GetType(), exception.Message);
 
         try
         {
@@ -545,14 +503,6 @@ internal sealed class ConsumerWorker<TKey, TValue>
             throw;
         }
 
-        var contextHeaders = new List<KeyValuePair<string, string>>();
-        foreach (var header in headers)
-        {
-            contextHeaders.Add(new KeyValuePair<string, string>(
-                header.Key,
-                Encoding.UTF8.GetString(header.GetValueBytes())));
-        }
-
         return new DeserializedMessage<TKey, TValue>
         {
             Key = key,
@@ -560,7 +510,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             Topic = raw.Topic,
             Partition = raw.Partition.Value,
             Offset = raw.Offset.Value,
-            Headers = contextHeaders,
+            Headers = ReadHeaders(raw),
             Timestamp = raw.Message.Timestamp.Type != ConfluentKafka.TimestampType.NotAvailable
                 ? raw.Message.Timestamp.UtcDateTime
                 : null,
@@ -576,30 +526,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         {
             await using var scope = scopeFactory.CreateAsyncScope();
 
-            // Extract source address from headers if the producer injected it
-            var sourceHeader = deserialized.Headers
-                .FirstOrDefault(h => h.Key == WellKnownHeaders.SourceAddress).Value;
-            Uri? sourceAddress = ParseSourceAddress(sourceHeader);
-
-            var transportContext = new KafkaTransportContext<TKey>
-            {
-                MessageId = Guid.NewGuid().ToString(),
-                Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
-                CancellationToken = cancellationToken,
-                Services = scope.ServiceProvider,
-                RawKey = raw.Message.Key,
-                RawValue = raw.Message.Value,
-                Headers = deserialized.Headers,
-                ProviderId = "kafka",
-                Topic = deserialized.Topic,
-                Partition = deserialized.Partition,
-                Offset = deserialized.Offset,
-                GroupId = groupId,
-                Key = deserialized.Key,
-                DestinationAddress = destinationAddress,
-                SourceAddress = sourceAddress,
-            };
-
+            var transportContext = CreateTransportContext(raw, deserialized, scope.ServiceProvider, cancellationToken);
             var context = new ConsumeContext<TValue>
             {
                 MessageId = transportContext.MessageId,
@@ -609,15 +536,68 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 Message = deserialized.Value,
                 TransportContext = transportContext,
                 DestinationAddress = destinationAddress,
-                SourceAddress = sourceAddress,
+                SourceAddress = transportContext.SourceAddress,
             };
 
             await entry.Pipeline.InvokeAsync(context).ConfigureAwait(false);
         }
     }
 
-    private static Uri? ParseSourceAddress(string? header) =>
-        !string.IsNullOrEmpty(header) ? new Uri(header) : null;
+    /// <summary>
+    /// Creates the transport context of one consumer pipeline for a message. It gets its own copy of the headers,
+    /// since the pipeline adds to them. The message id is the one the producer sent, the same on every delivery;
+    /// a message produced without one is identified by where it is in the topic, which is also the same on
+    /// every delivery.
+    /// </summary>
+    private KafkaTransportContext<TKey> CreateTransportContext(
+        ConfluentKafka.ConsumeResult<byte[], byte[]> raw,
+        DeserializedMessage<TKey, TValue> deserialized,
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var sourceHeader = deserialized.Headers.GetFirstValue(WellKnownHeaders.SourceAddress);
+        var messageId = deserialized.Headers.GetFirstValue(WellKnownHeaders.MessageId);
+        return new KafkaTransportContext<TKey>
+        {
+            MessageId = messageId ?? $"{deserialized.Topic}:{deserialized.Partition}:{deserialized.Offset}",
+            Timestamp = deserialized.Timestamp ?? DateTimeOffset.UtcNow,
+            CancellationToken = cancellationToken,
+            Services = services,
+            RawKey = raw.Message.Key,
+            RawValue = raw.Message.Value,
+            Headers = [.. deserialized.Headers],
+            ProviderId = Provider.Identifier,
+            Topic = deserialized.Topic,
+            Partition = deserialized.Partition,
+            Offset = deserialized.Offset,
+            GroupId = groupId,
+            Key = deserialized.Key,
+            DestinationAddress = destinationAddress,
+            SourceAddress = !string.IsNullOrEmpty(sourceHeader) ? new Uri(sourceHeader) : null,
+        };
+    }
+
+    /// <summary>
+    /// Returns the headers of a record, followed by where it was consumed from: its topic, partition and offset,
+    /// and the consumer group.
+    /// </summary>
+    private List<KeyValuePair<string, string>> ReadHeaders(ConfluentKafka.ConsumeResult<byte[], byte[]> raw)
+    {
+        var headers = new List<KeyValuePair<string, string>>();
+        if (raw.Message.Headers is not null)
+        {
+            foreach (var header in raw.Message.Headers)
+            {
+                headers.Add(new(header.Key, Encoding.UTF8.GetString(header.GetValueBytes())));
+            }
+        }
+
+        headers.Add(new(DeadLetterHeaders.SourceTopic, raw.Topic));
+        headers.Add(new(KafkaDeadLetterHeaders.SourcePartition, raw.Partition.Value.ToString()));
+        headers.Add(new(KafkaDeadLetterHeaders.SourceOffset, raw.Offset.Value.ToString()));
+        headers.Add(new(DeadLetterHeaders.ConsumerGroup, groupId));
+        return headers;
+    }
 }
 
 /// <summary>
@@ -630,6 +610,6 @@ internal sealed class DeserializedMessage<TKey, TValue>
     public required string Topic { get; init; }
     public required int Partition { get; init; }
     public required long Offset { get; init; }
-    public required IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; }
+    public required List<KeyValuePair<string, string>> Headers { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 }

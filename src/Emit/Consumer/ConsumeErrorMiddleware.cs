@@ -190,15 +190,14 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         var headers = DeadLetterHeaders.CreateBase(
             transportContext.Headers,
             exception.GetType(),
-            exception.Message,
-            transportContext.GetSourceProperties());
+            exception.Message);
 
-        headers.Add(new(DeadLetterHeaders.RetryCount, retryAttempt.ToString()));
-        headers.Add(new(DeadLetterHeaders.Consumer, identifier));
+        headers.Upsert(DeadLetterHeaders.RetryCount, retryAttempt.ToString());
+        headers.Upsert(DeadLetterHeaders.Consumer, identifier);
 
         if (consumerType is not null)
         {
-            headers.Add(new(DeadLetterHeaders.ConsumerType, consumerType.FullName ?? consumerType.Name));
+            headers.Upsert(DeadLetterHeaders.ConsumerType, consumerType.FullName ?? consumerType.Name);
         }
 
         return headers;
@@ -228,8 +227,8 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         if (headers is not { Count: > 0 })
             return default;
 
-        var traceParent = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
-        var traceState = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
+        var traceParent = headers.GetFirstValue(WellKnownHeaders.TraceParent);
+        var traceState = headers.GetFirstValue(WellKnownHeaders.TraceState);
 
         if (!string.IsNullOrEmpty(traceParent) && ActivityContext.TryParse(traceParent, traceState, out var ctx))
             return ctx;

@@ -129,8 +129,7 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
             var headers = DeadLetterHeaders.CreateBase(
                 context.TransportContext.Headers,
                 typeof(MessageValidationException),
-                errorMessage,
-                context.TransportContext.GetSourceProperties());
+                errorMessage);
 
             await sink.ProduceAsync(
                 context.TransportContext.RawKey,

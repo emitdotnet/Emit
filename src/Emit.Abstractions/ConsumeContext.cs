@@ -17,7 +17,7 @@ public class ConsumeContext<T> : MessageContext<T>
     /// <summary>
     /// Message headers. Delegated from <see cref="TransportContext"/>.
     /// </summary>
-    public IReadOnlyList<KeyValuePair<string, string>> Headers => TransportContext.Headers;
+    public List<KeyValuePair<string, string>> Headers => TransportContext.Headers;
 
     /// <summary>
     /// Current retry attempt number. Set by <c>RetryMiddleware</c> before each attempt.

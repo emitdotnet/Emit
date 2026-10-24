@@ -40,8 +40,8 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
 
         if (headers is { Count: > 0 })
         {
-            // Check if this is a DLQ replay (has emit.dlq.original_traceparent)
-            var originalTraceParent = headers.FirstOrDefault(h => h.Key == DeadLetterHeaders.OriginalTraceParent).Value;
+            // Check if this is a DLQ replay (has emit-dlq-original-traceparent)
+            var originalTraceParent = headers.GetFirstValue(DeadLetterHeaders.OriginalTraceParent);
             if (!string.IsNullOrEmpty(originalTraceParent))
             {
                 // This is a DLQ replay — link back to the original failed trace
@@ -51,10 +51,10 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             else
             {
                 // Normal consume — use standard traceparent
-                traceParent = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceParent).Value;
+                traceParent = headers.GetFirstValue(WellKnownHeaders.TraceParent);
             }
 
-            traceState = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.TraceState).Value;
+            traceState = headers.GetFirstValue(WellKnownHeaders.TraceState);
 
             if (!string.IsNullOrEmpty(traceParent))
             {
@@ -102,7 +102,7 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             activity.SetTag(ActivityTagNames.DlqReplay, true);
 
             // Extract original topic from headers if available
-            var originalTopic = headers.FirstOrDefault(h => h.Key == DeadLetterHeaders.OriginalTopic).Value;
+            var originalTopic = headers.GetFirstValue(DeadLetterHeaders.OriginalTopic);
             if (!string.IsNullOrEmpty(originalTopic))
             {
                 activity.SetTag(ActivityTagNames.DlqOriginalTopic, originalTopic);
@@ -112,7 +112,7 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
         // Restore baggage from W3C baggage header
         if (this.options.PropagateBaggage && headers is { Count: > 0 })
         {
-            var baggageHeader = headers.FirstOrDefault(h => h.Key == WellKnownHeaders.Baggage).Value;
+            var baggageHeader = headers.GetFirstValue(WellKnownHeaders.Baggage);
             if (!string.IsNullOrEmpty(baggageHeader))
             {
                 ActivityPropagation.RestoreBaggage(activity, baggageHeader);

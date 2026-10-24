@@ -7,6 +7,7 @@ Unit tests for the Emit.Abstractions library: backoff strategies, dead-letter he
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `BackoffTests.cs` | Unit tests for backoff delay calculation | Debugging backoff test failures or understanding backoff behavior |
+| `HeaderExtensionsTests.cs` | Unit tests for header lookup and upsert: keys match without regard to case, and an upserted key appears once | Debugging header extension test failures |
 | `DeadLetterHeadersTests.cs` | Unit tests for dead-letter header construction and values | Debugging dead-letter header test failures |
 | `EventMessageTests.cs` | Unit tests for EventMessage: the Tombstone factory | Debugging event message test failures |
 | `MessageValidationResultTests.cs` | Unit tests for MessageValidationResult construction and state | Debugging validation result test failures |

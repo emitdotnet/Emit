@@ -109,7 +109,7 @@ public sealed class KafkaPipelineProducerTests
         Assert.NotNull(capturedContext);
         Assert.Null(capturedContext.Message);
         Assert.Equal("order-key", capturedContext.TryGetPayload<KafkaTransportContext<string>>()!.Key);
-        Assert.Equal([new KeyValuePair<string, string>("reason", "deleted")], capturedContext.Headers);
+        Assert.Equal(new KeyValuePair<string, string>("reason", "deleted"), capturedContext.Headers[0]);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class KafkaPipelineProducerTests
     }
 
     [Fact]
-    public async Task GivenMessageWithHeaders_WhenProduceAsync_ThenContextHasHeaders()
+    public async Task GivenMessageWithForwardedHeaders_WhenProduceAsync_ThenItsOwnIdAndSourceAddressReplaceTheForwardedOnes()
     {
         // Arrange
         SendContext<string>? capturedContext = null;
@@ -174,6 +174,8 @@ public sealed class KafkaPipelineProducerTests
             "value",
             [
                 new("correlation-id", "test-correlation"),
+                new(WellKnownHeaders.MessageId, "consumed-message-id"),
+                new(WellKnownHeaders.SourceAddress, "kafka://other-broker:9092"),
                 new("source", "test-source")
             ]);
 
@@ -182,9 +184,14 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        Assert.Equal(2, capturedContext.Headers.Count);
-        Assert.Contains(capturedContext.Headers, h => h.Key == "correlation-id" && h.Value == "test-correlation");
-        Assert.Contains(capturedContext.Headers, h => h.Key == "source" && h.Value == "test-source");
+        Assert.Equal(
+            [
+                new("correlation-id", "test-correlation"),
+                new("source", "test-source"),
+                new(WellKnownHeaders.MessageId, capturedContext.MessageId),
+                new(WellKnownHeaders.SourceAddress, TestHost.ToString()),
+            ],
+            capturedContext.Headers);
     }
 
     [Fact]

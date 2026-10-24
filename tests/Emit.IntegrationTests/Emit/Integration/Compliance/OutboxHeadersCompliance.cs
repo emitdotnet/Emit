@@ -52,7 +52,7 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
     /// pipeline after the outbox daemon delivers the message.
     /// </summary>
     [Fact]
-    public async Task GivenOutboxEntryWithCustomHeaders_WhenDelivered_ThenHeadersPreservedInConsumer()
+    public async Task GivenOutboxEntryWithCustomHeaders_WhenDelivered_ThenHeadersAndTheProducersMessageIdPreservedInConsumer()
     {
         // Arrange
         var topic = $"test-outbox-headers-{Guid.NewGuid():N}";
@@ -87,6 +87,10 @@ public abstract class OutboxHeadersCompliance : IAsyncLifetime
 
             Assert.NotNull(receivedCorrelationId);
             Assert.Equal(correlationId, receivedCorrelationId);
+
+            // Assert: the message id is the one the producer assigned, stored with the outbox entry
+            Assert.Equal(headers.Single(h => h.Key == WellKnownHeaders.MessageId).Value, ctx.MessageId);
+            Assert.True(Guid.TryParse(ctx.MessageId, out _));
         }
         finally
         {

@@ -55,20 +55,22 @@ When forwarding to the DLQ, Emit preserves the original message headers first, t
 
 | Header | Content |
 |---|---|
-| *(original headers)* | All headers from the source message, preserved in order |
-| `emit.dlq.original_traceparent` | W3C traceparent from the source message, for linking the DLQ entry back to the original distributed trace |
-| `emit.dlq.original_topic` | Source topic name |
-| `x-emit-exception-type` | Fully qualified name of the exception type (e.g. `System.TimeoutException` or `Emit.MessageValidationException`) |
-| `x-emit-exception-message` | The exception message text. For validation failures, this contains the concatenated validation error strings. |
-| `x-emit-source-topic` | Source topic name |
-| `x-emit-source-partition` | Source partition number |
-| `x-emit-source-offset` | Source offset within the partition |
-| `x-emit-timestamp` | ISO 8601 UTC timestamp of when the DLQ forward occurred |
-| `x-emit-consumer-group` | Consumer group ID that failed to process the message |
-| `x-emit-consumer` | Consumer identifier within the group |
-| `x-emit-consumer-type` | Fully qualified type name of the consumer handler |
-| `x-emit-route-key` | The matched route key, if [content-based routing](../../kafka/routing/) is in use |
-| `x-emit-retry-count` | Number of retry attempts before the message was dead-lettered (0 if no retries were configured) |
+| *(original headers)* | All headers of the message as the consumer saw it, preserved in order, including `emit-message-id`. The `emit-source-topic`, `emit-source-partition`, `emit-source-offset`, `emit-consumer-group` and `emit-route-key` headers below are among them: the consumer adds them as the message goes through its pipeline, so handlers see them in `context.Headers` too |
+| `emit-dlq-original-traceparent` | W3C traceparent from the source message, for linking the DLQ entry back to the original distributed trace |
+| `emit-dlq-original-topic` | Source topic name |
+| `emit-exception-type` | Fully qualified name of the exception type (e.g. `System.TimeoutException` or `Emit.MessageValidationException`) |
+| `emit-exception-message` | The exception message text. For validation failures, this contains the concatenated validation error strings. |
+| `emit-source-topic` | Source topic name |
+| `emit-source-partition` | Source partition number |
+| `emit-source-offset` | Source offset within the partition |
+| `emit-timestamp` | ISO 8601 UTC timestamp of when the DLQ forward occurred |
+| `emit-consumer-group` | Consumer group ID that failed to process the message |
+| `emit-consumer` | Consumer identifier within the group |
+| `emit-consumer-type` | Fully qualified type name of the consumer handler |
+| `emit-route-key` | The matched route key, if [content-based routing](../../kafka/routing/) is in use |
+
+A dead letter consumed again keeps its headers, and its consumer adds its own `emit-source-topic`, `emit-source-partition`, `emit-source-offset` and `emit-consumer-group` after them: the first of each is where the message failed. If it fails and is dead-lettered again, the new dead letter's exception, timestamp, retry count and consumer headers replace the old ones.
+| `emit-retry-count` | Number of retry attempts before the message was dead-lettered (0 if no retries were configured) |
 
 Between the original headers and the diagnostic metadata, you have everything you need to understand the failure without digging through logs.
 
@@ -102,7 +104,7 @@ The intended workflow:
 4. Fix the root cause. Deploy the fix.
 5. Re-publish the raw bytes back to the original topic.
 
-Because the raw bytes are preserved and Emit's headers are additive metadata, step 5 is straightforward. Read the key and value from the DLQ message, publish them to the topic in `emit.dlq.original_topic`, and let your (now fixed) consumer process them normally.
+Because the raw bytes are preserved and Emit's headers are additive metadata, step 5 is straightforward. Read the key and value from the DLQ message, publish them to the topic in `emit-dlq-original-topic`, and let your (now fixed) consumer process them normally.
 
 You can also register a consumer group directly on the DLQ topic to automate inspection or alerting:
 

@@ -105,9 +105,9 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
             Assert.NotNull(headers);
 
             var exceptionType = headers
-                .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
+                .FirstOrDefault(h => h.Key == "emit-exception-type").Value;
             var sourceTopic_ = headers
-                .FirstOrDefault(h => h.Key == "x-emit-source-topic").Value;
+                .FirstOrDefault(h => h.Key == "emit-source-topic").Value;
 
             Assert.NotNull(exceptionType);
             Assert.NotNull(sourceTopic_);

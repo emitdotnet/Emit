@@ -141,9 +141,9 @@ public abstract class RetryCompliance
             Assert.NotNull(headers);
 
             var exceptionType = headers
-                .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
+                .FirstOrDefault(h => h.Key == "emit-exception-type").Value;
             var retryCount = headers
-                .FirstOrDefault(h => h.Key == "x-emit-retry-count").Value;
+                .FirstOrDefault(h => h.Key == "emit-retry-count").Value;
 
             Assert.NotNull(exceptionType);
             Assert.Contains(nameof(InvalidOperationException), exceptionType);

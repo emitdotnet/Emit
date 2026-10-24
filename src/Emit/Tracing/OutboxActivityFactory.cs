@@ -20,16 +20,12 @@ public static class OutboxActivityFactory
     /// </returns>
     public static ActivityContext RestoreContext(OutboxEntry entry)
     {
-        string? traceParent = null;
-        string? traceState = null;
-
-        foreach (var header in entry.Headers)
-        {
-            if (header.Key == WellKnownHeaders.TraceParent)
-                traceParent = Encoding.UTF8.GetString(header.Value);
-            else if (header.Key == WellKnownHeaders.TraceState)
-                traceState = Encoding.UTF8.GetString(header.Value);
-        }
+        var traceParent = entry.Headers.GetFirstValue(WellKnownHeaders.TraceParent) is { } traceParentBytes
+            ? Encoding.UTF8.GetString(traceParentBytes)
+            : null;
+        var traceState = entry.Headers.GetFirstValue(WellKnownHeaders.TraceState) is { } traceStateBytes
+            ? Encoding.UTF8.GetString(traceStateBytes)
+            : null;
 
         if (!string.IsNullOrEmpty(traceParent) &&
             ActivityContext.TryParse(traceParent, traceState, out var context))

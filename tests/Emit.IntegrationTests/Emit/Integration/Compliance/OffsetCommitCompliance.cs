@@ -1,5 +1,6 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
@@ -254,10 +255,11 @@ public abstract class OffsetCommitCompliance
 
     /// <summary>
     /// Verifies that offsets are not committed when messages have not completed processing,
-    /// and that the restarted consumer group redelivers those messages from the beginning.
+    /// and that the restarted consumer group redelivers those messages from the beginning, each with the
+    /// message id it had on its first delivery.
     /// </summary>
     [Fact]
-    public async Task GivenMessagesInFlight_WhenHostStopsBeforeProcessing_ThenMessagesRedeliveredOnRestart()
+    public async Task GivenMessagesInFlight_WhenHostStopsBeforeProcessing_ThenMessagesRedeliveredOnRestartWithTheSameMessageId()
     {
         // Arrange — commit interval is irrelevant; the gate is never released so
         // ConsumeAsync never returns, MarkAsProcessed is never called, and pendingCommits
@@ -324,17 +326,18 @@ public abstract class OffsetCommitCompliance
 
         try
         {
-            // Assert — all three original messages are redelivered.
-            var delivered = new HashSet<string>();
+            // Assert: all three original messages are redelivered, and those that reached the hanging consumer
+            // keep the message id of that first delivery.
+            var delivered = new Dictionary<string, string>();
             while (delivered.Count < 3)
             {
                 var ctx = await sink2.WaitForMessageAsync();
-                delivered.Add(ctx.Message);
+                delivered[ctx.Message] = ctx.MessageId;
             }
 
-            Assert.Contains("msg-1", delivered);
-            Assert.Contains("msg-2", delivered);
-            Assert.Contains("msg-3", delivered);
+            Assert.Equal(["msg-1", "msg-2", "msg-3"], delivered.Keys.Order());
+            Assert.NotEmpty(gate.Arrived);
+            Assert.All(gate.Arrived, first => Assert.Equal(first.Value, delivered[first.Key]));
         }
         finally
         {
@@ -466,6 +469,9 @@ public abstract class OffsetCommitCompliance
         /// <summary>Task that completes when <see cref="Release"/> is called.</summary>
         public Task Task => tcs.Task;
 
+        /// <summary>The message id of each message that reached the gate, by message value.</summary>
+        public ConcurrentDictionary<string, string> Arrived { get; } = new();
+
         /// <summary>Unblocks all consumers currently awaiting the gate.</summary>
         public void Release() => tcs.TrySetResult();
     }
@@ -480,6 +486,7 @@ public abstract class OffsetCommitCompliance
         /// <inheritdoc />
         public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
         {
+            gate.Arrived.TryAdd(context.Message, context.MessageId);
             await gate.Task.ConfigureAwait(false);
             await sink.WriteAsync(context, cancellationToken).ConfigureAwait(false);
         }

@@ -64,8 +64,8 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
             activity.SetTag(ActivityTagNames.MessagingDestinationName, destination);
         }
 
-        // Inject W3C trace context + source address into context.Headers
-        InjectTraceContext(activity, context.Headers, context.SourceAddress);
+        // Inject W3C trace context into context.Headers
+        InjectTraceContext(activity, context.Headers);
 
         // Invoke enrichers
         enricherInvoker.InvokeEnrichers(
@@ -83,25 +83,18 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
     private void InjectTraceContext(
         Activity activity,
-        List<KeyValuePair<string, string>> headers,
-        Uri? sourceAddress)
+        List<KeyValuePair<string, string>> headers)
     {
         var traceParent = activity.Id;
         if (traceParent is not null)
         {
-            headers.Add(new(WellKnownHeaders.TraceParent, traceParent));
+            headers.Upsert(WellKnownHeaders.TraceParent, traceParent);
         }
 
         var traceState = activity.TraceStateString;
         if (traceState is not null)
         {
-            headers.Add(new(WellKnownHeaders.TraceState, traceState));
-        }
-
-        // Inject source address so consumers can reconstruct SourceAddress
-        if (sourceAddress is not null)
-        {
-            headers.Add(new(WellKnownHeaders.SourceAddress, sourceAddress.ToString()));
+            headers.Upsert(WellKnownHeaders.TraceState, traceState);
         }
 
         if (this.options.PropagateBaggage)
@@ -118,7 +111,7 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
             if (baggageHeader is not null)
             {
-                headers.Add(new(WellKnownHeaders.Baggage, baggageHeader));
+                headers.Upsert(WellKnownHeaders.Baggage, baggageHeader);
             }
         }
     }
