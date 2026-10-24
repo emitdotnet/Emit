@@ -108,7 +108,7 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
 
         if (result.IsValid)
         {
-            metrics.RecordValidationCompleted("passed", "none");
+            metrics.RecordValidationCompleted(EmitMetrics.ValidationResultPassed, EmitMetrics.ValidationActionNone);
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
@@ -124,7 +124,7 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
         var sink = context.Services.GetService<IDeadLetterSink>();
         if (ValidationErrorAction is ErrorAction.DeadLetterAction && sink is not null)
         {
-            metrics.RecordValidationCompleted("failed", "dead_letter");
+            metrics.RecordValidationCompleted(EmitMetrics.ValidationResultFailed, EmitMetrics.ValidationActionDeadLetter);
 
             var headers = DeadLetterHeaders.CreateBase(
                 context.TransportContext.Headers,
@@ -137,11 +137,12 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
                 context.TransportContext.RawValue,
                 headers,
                 context.CancellationToken).ConfigureAwait(false);
+            metrics.RecordDlqProduced(EmitMetrics.DlqReasonValidation);
         }
         else
         {
             // DiscardAction, or DeadLetterAction without a sink configured.
-            metrics.RecordValidationCompleted("failed", "discard");
+            metrics.RecordValidationCompleted(EmitMetrics.ValidationResultFailed, EmitMetrics.ValidationActionDiscard);
         }
 
         // Short-circuit: do not invoke the rest of the pipeline.

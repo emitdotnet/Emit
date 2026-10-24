@@ -81,12 +81,12 @@ internal sealed class OffsetCommitter : IAsyncDisposable
         try
         {
             consumer.Commit(offsets);
-            kafkaMetrics.RecordOffsetCommit(groupId, "success");
+            kafkaMetrics.RecordOffsetCommit(groupId, KafkaMetrics.ResultSuccess);
             observerInvoker.OnOffsetsCommittedAsync(new OffsetsCommittedEvent(groupId, offsets.Select(o => new TopicPartitionOffset(o.Topic, o.Partition.Value, o.Offset.Value)).ToList())).GetAwaiter().GetResult();
         }
         catch (ConfluentKafka.KafkaException ex)
         {
-            kafkaMetrics.RecordOffsetCommit(groupId, "error");
+            kafkaMetrics.RecordOffsetCommit(groupId, KafkaMetrics.ResultError);
             observerInvoker.OnOffsetCommitErrorAsync(new OffsetCommitErrorEvent(groupId, offsets.Select(o => new TopicPartitionOffset(o.Topic, o.Partition.Value, o.Offset.Value)).ToList(), ex)).GetAwaiter().GetResult();
 
             if (ex.Error.Code == ConfluentKafka.ErrorCode.UnknownMemberId)

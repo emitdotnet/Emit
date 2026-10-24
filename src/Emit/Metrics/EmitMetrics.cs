@@ -10,6 +10,63 @@ using Emit.Abstractions.Metrics;
 /// </summary>
 public sealed class EmitMetrics
 {
+    /// <summary>The <c>result</c> of an operation that succeeded.</summary>
+    internal const string ResultSuccess = "success";
+
+    /// <summary>The <c>result</c> of an operation that failed.</summary>
+    internal const string ResultError = "error";
+
+    /// <summary>The <c>result</c> of a retry sequence whose attempts were all used up.</summary>
+    internal const string ResultExhausted = "exhausted";
+
+    /// <summary>The <c>action</c> of a message the error policy dead-lettered.</summary>
+    internal const string ErrorActionDeadLetter = "dead_letter";
+
+    /// <summary>The <c>action</c> of a message the error policy failed to dead-letter.</summary>
+    internal const string ErrorActionDeadLetterFailed = "dead_letter_failed";
+
+    /// <summary>The <c>action</c> of a message the error policy could not dead-letter because no dead-letter topic is configured.</summary>
+    internal const string ErrorActionDeadLetterNoSink = "dead_letter_no_sink";
+
+    /// <summary>The <c>action</c> of a message the error policy discarded.</summary>
+    internal const string ErrorActionDiscard = "discard";
+
+    /// <summary>The <c>action</c> of a message discarded because no error policy is configured.</summary>
+    internal const string ErrorActionDiscardUnconfigured = "discard_unconfigured";
+
+    /// <summary>The <c>result</c> of a message that passed validation.</summary>
+    internal const string ValidationResultPassed = "passed";
+
+    /// <summary>The <c>result</c> of a message that failed validation.</summary>
+    internal const string ValidationResultFailed = "failed";
+
+    /// <summary>The validation <c>action</c> of a message that passed validation.</summary>
+    internal const string ValidationActionNone = "none";
+
+    /// <summary>The validation <c>action</c> of a message dead-lettered after failing validation.</summary>
+    internal const string ValidationActionDeadLetter = "dead_letter";
+
+    /// <summary>The validation <c>action</c> of a message discarded after failing validation.</summary>
+    internal const string ValidationActionDiscard = "discard";
+
+    /// <summary>The <c>to_state</c> of a circuit that closed.</summary>
+    internal const string CircuitStateClosed = "closed";
+
+    /// <summary>The <c>to_state</c> of a circuit that opened.</summary>
+    internal const string CircuitStateOpen = "open";
+
+    /// <summary>The <c>to_state</c> of a circuit that went half-open.</summary>
+    internal const string CircuitStateHalfOpen = "half_open";
+
+    /// <summary>The <c>reason</c> of a message the error policy forwarded to the dead-letter topic.</summary>
+    internal const string DlqReasonErrorPolicy = "error_policy";
+
+    /// <summary>The <c>reason</c> of a message validation forwarded to the dead-letter topic.</summary>
+    internal const string DlqReasonValidation = "validation";
+
+    /// <summary>The <c>reason</c> of a message that could not be deserialized, forwarded to the dead-letter topic.</summary>
+    internal const string DlqReasonDeserializationError = "deserialization_error";
+
     private readonly EmitMetricsEnrichment enrichment;
 
     private readonly ConcurrentDictionary<string, CircuitBreakerGaugeState> circuitBreakerRegistry = new(StringComparer.Ordinal);
@@ -159,10 +216,11 @@ public sealed class EmitMetrics
         RetryDuration.Record(seconds, tags);
     }
 
-    internal void RecordDiscard()
+    internal void RecordDiscard(long count = 1)
     {
+        if (count <= 0) return;
         var tags = enrichment.CreateTags();
-        Discards.Add(1, tags);
+        Discards.Add(count, tags);
     }
 
     // ── Validation recording methods ──

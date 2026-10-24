@@ -291,7 +291,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         logger.LogInformation("Partitions revoked for group '{GroupId}': [{Partitions}]",
             registration.GroupId, string.Join(", ", partitions));
 
-        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, "revoked", partitions.Count);
+        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, KafkaMetrics.PartitionEventRevoked, partitions.Count);
         observerInvoker.OnPartitionsRevokedAsync(new PartitionsRevokedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         supervisor?.StopAsync().GetAwaiter().GetResult();
@@ -307,7 +307,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         logger.LogWarning("Partitions lost for group '{GroupId}': [{Partitions}]",
             registration.GroupId, string.Join(", ", partitions));
 
-        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, "lost", partitions.Count);
+        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, KafkaMetrics.PartitionEventLost, partitions.Count);
         observerInvoker.OnPartitionsLostAsync(new PartitionsLostEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         supervisor?.StopAsync().GetAwaiter().GetResult();
@@ -333,7 +333,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                 ? string.Join(", ", totalPartitions)
                 : "none");
 
-        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, "assigned", partitions.Count);
+        kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, KafkaMetrics.PartitionEventAssigned, partitions.Count);
         observerInvoker.OnPartitionsAssignedAsync(new PartitionsAssignedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         flowControl.OnPartitionsAssigned(partitions);

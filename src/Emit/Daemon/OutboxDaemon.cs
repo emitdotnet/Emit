@@ -328,8 +328,8 @@ internal sealed class OutboxDaemon : IDaemonAgent
         var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
         foreach (var entry in delivered)
         {
-            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, "success");
-            outboxMetrics.RecordProcessingCompleted(entry.SystemId, "success");
+            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, OutboxMetrics.ResultSuccess);
+            outboxMetrics.RecordProcessingCompleted(entry.SystemId, OutboxMetrics.ResultSuccess);
             outboxMetrics.RecordCriticalTime((DateTime.UtcNow - entry.EnqueuedAt).TotalSeconds, entry.SystemId);
             await observerInvoker.OnProcessedAsync(entry, drainToken).ConfigureAwait(false);
         }
@@ -342,8 +342,8 @@ internal sealed class OutboxDaemon : IDaemonAgent
         var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
         foreach (var entry in failed)
         {
-            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, "error");
-            outboxMetrics.RecordProcessingCompleted(entry.SystemId, "error");
+            outboxMetrics.RecordProcessingDuration(elapsed, entry.SystemId, OutboxMetrics.ResultError);
+            outboxMetrics.RecordProcessingCompleted(entry.SystemId, OutboxMetrics.ResultError);
             await observerInvoker.OnProcessErrorAsync(entry, exception, cancellationToken).ConfigureAwait(false);
         }
     }

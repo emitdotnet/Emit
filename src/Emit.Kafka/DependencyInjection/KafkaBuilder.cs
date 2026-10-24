@@ -480,8 +480,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
                 await confluentProducer.ProduceAsync(topicName, kafkaMessage, context.CancellationToken).ConfigureAwait(false);
 
                 var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
-                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "success");
-                kafkaMetrics.RecordProduceMessage(topicName, "success");
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, KafkaMetrics.ResultSuccess);
+                kafkaMetrics.RecordProduceMessage(topicName, KafkaMetrics.ResultSuccess);
             }
             catch (OperationCanceledException)
             {
@@ -490,8 +490,8 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             catch
             {
                 var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalSeconds;
-                kafkaMetrics.RecordProduceDuration(elapsed, topicName, "error");
-                kafkaMetrics.RecordProduceMessage(topicName, "error");
+                kafkaMetrics.RecordProduceDuration(elapsed, topicName, KafkaMetrics.ResultError);
+                kafkaMetrics.RecordProduceMessage(topicName, KafkaMetrics.ResultError);
                 throw;
             }
         }

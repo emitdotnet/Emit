@@ -7,6 +7,7 @@ Consolidated unit tests for all Emit projects using xUnit, Moq, and Given-When-T
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `Emit.UnitTests.csproj` | Test project file with xUnit and Moq dependencies | Configure test dependencies |
+| `MeasurementRecorder.cs` | Records the counter measurements one test makes on a meter, kept apart from other tests by a tag unique to the recorder | Assert what a component records in metrics |
 
 ## Subdirectories
 

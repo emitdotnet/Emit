@@ -100,7 +100,9 @@ internal sealed class ConsumerWorker<TKey, TValue>
         this.deadLetterSink = deadLetterSink;
         this.logger = logger;
         this.flowControl = flowControl;
-        this.deserializationAction = registration.DeserializationErrorAction is ErrorAction.DeadLetterAction ? "dead_letter" : "discard";
+        this.deserializationAction = registration.DeserializationErrorAction is ErrorAction.DeadLetterAction
+            ? KafkaMetrics.DeserializationActionDeadLetter
+            : KafkaMetrics.DeserializationActionDiscard;
 
         channel = Channel.CreateBounded<ConfluentKafka.ConsumeResult<byte[], byte[]>>(
             new BoundedChannelOptions(registration.BufferSize)
@@ -472,6 +474,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 cancellationToken).ConfigureAwait(false);
 
             kafkaMetrics.RecordDlqProduced(groupId, raw.Topic);
+            emitMetrics.RecordDlqProduced(EmitMetrics.DlqReasonDeserializationError);
 
             logger.LogWarning(exception,
                 "Dead-lettered deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}' to {Destination}",
@@ -483,7 +486,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         }
         catch (Exception dlqEx)
         {
-            emitMetrics.RecordDlqProduceErrors("deserialization_error");
+            emitMetrics.RecordDlqProduceErrors(EmitMetrics.DlqReasonDeserializationError);
 
             logger.LogError(dlqEx,
                 "Failed to dead-letter deserialization failure from {Topic}[{Partition}]@{Offset} in group '{GroupId}'. Discarding message.",
@@ -514,7 +517,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         catch (Exception ex)
         {
             kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "key");
-            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, "key", deserializationAction);
+            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, KafkaMetrics.DeserializationComponentKey, deserializationAction);
             await observerInvoker.OnDeserializationErrorAsync(new DeserializationErrorEvent(groupId, raw.Topic, raw.Partition.Value, raw.Offset.Value, ex)).ConfigureAwait(false);
             throw;
         }
@@ -537,7 +540,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
         catch (Exception ex)
         {
             kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "value");
-            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, "value", deserializationAction);
+            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, KafkaMetrics.DeserializationComponentValue, deserializationAction);
             await observerInvoker.OnDeserializationErrorAsync(new DeserializationErrorEvent(groupId, raw.Topic, raw.Partition.Value, raw.Offset.Value, ex)).ConfigureAwait(false);
             throw;
         }

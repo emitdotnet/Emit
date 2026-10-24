@@ -142,7 +142,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
             {
                 state = StateClosed;
                 failureTimestamps.Clear();
-                emitMetrics.RecordStateTransition(consumerGroup, topic, "closed");
+                emitMetrics.RecordStateTransition(consumerGroup, topic, EmitMetrics.CircuitStateClosed);
                 logger.LogInformation("Circuit breaker closed — consumer group fully resumed");
                 SignalStateChanged();
             }
@@ -214,7 +214,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         halfOpenCts = cts;
         _ = ScheduleHalfOpenAsync(cts.Token);
 
-        emitMetrics.RecordStateTransition(consumerGroup, topic, "open");
+        emitMetrics.RecordStateTransition(consumerGroup, topic, EmitMetrics.CircuitStateOpen);
         logger.LogWarning(
             "Circuit breaker opened — pausing consumer group. Pause duration: {PauseDuration}",
             config.PauseDuration);
@@ -253,7 +253,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
                         consumerGroup, topic, Stopwatch.GetElapsedTime(openedTicks).TotalSeconds);
                 }
 
-                emitMetrics.RecordStateTransition(consumerGroup, topic, "half_open");
+                emitMetrics.RecordStateTransition(consumerGroup, topic, EmitMetrics.CircuitStateHalfOpen);
                 logger.LogInformation("Circuit breaker half-open — resuming consumer group for probe message");
 
                 await ResumeWithRetryAsync(ct).ConfigureAwait(false);
@@ -301,7 +301,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         state = StateClosed;
         failureTimestamps.Clear();
         SignalStateChanged();
-        emitMetrics.RecordStateTransition(consumerGroup, topic, "closed");
+        emitMetrics.RecordStateTransition(consumerGroup, topic, EmitMetrics.CircuitStateClosed);
         logger.LogCritical(
             "All resume attempts failed — forcing circuit breaker to closed state to prevent permanent pause");
     }

@@ -19,11 +19,12 @@ public sealed class ConsumeErrorMiddlewareTests
 
     private static ConsumeErrorMiddleware<string> CreateMiddleware(
         Func<Exception, ErrorAction>? evaluatePolicy = null,
-        IDeadLetterSink? deadLetterSink = null) =>
+        IDeadLetterSink? deadLetterSink = null,
+        EmitMetrics? metrics = null) =>
         new(
             evaluatePolicy,
             deadLetterSink,
-            Metrics,
+            metrics ?? Metrics,
             new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<string>>.Instance,
             "test-consumer",
@@ -224,11 +225,12 @@ public sealed class ConsumeErrorMiddlewareTests
 
     private static ConsumeErrorMiddleware<MessageBatch<string>> CreateBatchMiddleware(
         Func<Exception, ErrorAction>? evaluatePolicy = null,
-        IDeadLetterSink? deadLetterSink = null) =>
+        IDeadLetterSink? deadLetterSink = null,
+        EmitMetrics? metrics = null) =>
         new(
             evaluatePolicy,
             deadLetterSink,
-            Metrics,
+            metrics ?? Metrics,
             new Mock<INodeIdentity>().Object,
             NullLogger<ConsumeErrorMiddleware<MessageBatch<string>>>.Instance,
             "batch-consumer",
@@ -383,6 +385,77 @@ public sealed class ConsumeErrorMiddlewareTests
         // Assert — failure at item 3 does not stop items 4 and 5 from being DLQ'd
         Assert.Null(exception);
         Assert.Equal(5, callCount);
+    }
+
+    // ── Metrics ──
+
+    [Fact]
+    public async Task GivenDeadLetterAction_WhenTheMessageIsDeadLettered_ThenOneDeadLetterIsCountedForTheErrorPolicy()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var sink = new Mock<IDeadLetterSink>();
+        sink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/dlq"));
+        var middleware = CreateMiddleware(_ => ErrorAction.DeadLetter(), sink.Object, new EmitMetrics(null, recorder.Enrichment));
+
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("failed")));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.consumer.dlq.produced", "reason", "error_policy"));
+    }
+
+    [Fact]
+    public async Task GivenBatchOf5_WhenTheThirdDeadLetterFails_ThenFourDeadLettersAndOneFailureAreCounted()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var calls = 0;
+        var sink = new Mock<IDeadLetterSink>();
+        sink.Setup(s => s.DestinationAddress).Returns(new Uri("kafka://broker:9092/dlq"));
+        sink.Setup(s => s.ProduceAsync(
+                It.IsAny<byte[]?>(), It.IsAny<byte[]?>(), It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()))
+            .Returns(() => ++calls == 3 ? throw new TimeoutException("DLQ unavailable") : Task.CompletedTask);
+        var middleware = CreateBatchMiddleware(_ => ErrorAction.DeadLetter(), sink.Object, new EmitMetrics(null, recorder.Enrichment));
+
+        // Act
+        await middleware.InvokeAsync(
+            CreateBatchContext(itemCount: 5),
+            new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed")));
+
+        // Assert
+        Assert.Equal(4, recorder.Total("emit.consumer.dlq.produced", "reason", "error_policy"));
+        Assert.Equal(1, recorder.Total("emit.consumer.dlq.produce_errors", "reason", "error_policy"));
+    }
+
+    [Fact]
+    public async Task GivenDiscardAction_WhenABatchOf3IsDiscarded_ThenThreeDiscardsAreCounted()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var middleware = CreateBatchMiddleware(_ => ErrorAction.Discard(), metrics: new EmitMetrics(null, recorder.Enrichment));
+
+        // Act
+        await middleware.InvokeAsync(
+            CreateBatchContext(itemCount: 3),
+            new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed")));
+
+        // Assert
+        Assert.Equal(3, recorder.Total("emit.consumer.discards"));
+    }
+
+    [Fact]
+    public async Task GivenNoErrorPolicy_WhenTheHandlerThrows_ThenOneDiscardIsCounted()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var middleware = CreateMiddleware(metrics: new EmitMetrics(null, recorder.Enrichment));
+
+        // Act
+        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("failed")));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.consumer.discards"));
     }
 
     [Fact]

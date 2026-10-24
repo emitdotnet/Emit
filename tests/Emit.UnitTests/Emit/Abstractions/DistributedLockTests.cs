@@ -1,6 +1,7 @@
 namespace Emit.UnitTests.Abstractions;
 
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.Metrics;
 using Xunit;
 
 public class DistributedLockTests
@@ -71,6 +72,56 @@ public class DistributedLockTests
             () => @lock.ExtendAsync(TimeSpan.FromSeconds(30)));
     }
 
+    [Theory]
+    [InlineData(true, "extended")]
+    [InlineData(false, "lost")]
+    public async Task GivenLock_WhenExtended_ThenTheRenewalIsCountedWithItsResult(bool extended, string result)
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.EmitLock);
+        var provider = new TestDistributedLockProvider { ExtendResult = extended };
+        var @lock = new DistributedLock(provider, "test-key", Guid.NewGuid(), new LockMetrics(null, recorder.Enrichment));
+
+        // Act
+        await @lock.ExtendAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.lock.renewal.completed", "result", result));
+        Assert.Equal(1, recorder.Total("emit.lock.renewal.completed"));
+    }
+
+    [Fact]
+    public async Task GivenProviderThatThrows_WhenExtended_ThenAFailedRenewalIsCounted()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.EmitLock);
+        var provider = new TestDistributedLockProvider { ExtendException = new TimeoutException("database unreachable") };
+        var @lock = new DistributedLock(provider, "test-key", Guid.NewGuid(), new LockMetrics(null, recorder.Enrichment));
+
+        // Act
+        await Assert.ThrowsAsync<TimeoutException>(() => @lock.ExtendAsync(TimeSpan.FromSeconds(30)));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.lock.renewal.completed", "result", "failed"));
+    }
+
+    [Fact]
+    public async Task GivenCancelledToken_WhenExtended_ThenACancelledRenewalIsCounted()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.EmitLock);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var provider = new TestDistributedLockProvider { ExtendException = new OperationCanceledException(cts.Token) };
+        var @lock = new DistributedLock(provider, "test-key", Guid.NewGuid(), new LockMetrics(null, recorder.Enrichment));
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => @lock.ExtendAsync(TimeSpan.FromSeconds(30), cts.Token));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.lock.renewal.completed", "result", "cancelled"));
+    }
+
     [Fact]
     public void GivenLock_WhenAccessKey_ThenReturnsCorrectKey()
     {
@@ -90,6 +141,7 @@ public class DistributedLockTests
         public List<(string Key, Guid LockId)> ReleaseCalls { get; } = [];
         public List<(string Key, Guid LockId, TimeSpan Ttl)> ExtendCalls { get; } = [];
         public bool ExtendResult { get; set; } = true;
+        public Exception? ExtendException { get; set; }
 
         protected override Task<bool> TryAcquireCoreAsync(
             string key, Guid lockId, TimeSpan ttl, CancellationToken cancellationToken)
@@ -106,7 +158,7 @@ public class DistributedLockTests
             string key, Guid lockId, TimeSpan ttl, CancellationToken cancellationToken)
         {
             ExtendCalls.Add((key, lockId, ttl));
-            return Task.FromResult(ExtendResult);
+            return ExtendException is null ? Task.FromResult(ExtendResult) : Task.FromException<bool>(ExtendException);
         }
     }
 }

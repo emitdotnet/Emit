@@ -84,13 +84,13 @@ public sealed class LockMetricsTests : IDisposable
         var metrics = new LockMetrics(null, new EmitMetricsEnrichment());
 
         // Act
-        metrics.RecordRenewalCompleted("success");
+        metrics.RecordRenewalCompleted("extended");
 
         // Assert
         var m = Assert.Single(longMeasurements);
         Assert.Equal("emit.lock.renewal.completed", m.Name);
         Assert.Equal(1L, m.Value);
-        Assert.Contains(m.Tags, t => t.Key == "result" && t.Value?.ToString() == "success");
+        Assert.Contains(m.Tags, t => t.Key == "result" && t.Value?.ToString() == "extended");
     }
 
     [Fact]

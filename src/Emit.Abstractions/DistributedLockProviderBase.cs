@@ -70,14 +70,14 @@ public abstract class DistributedLockProviderBase : IDistributedLockProvider
             {
                 if (await TryAcquireCoreAsync(key, lockId, ttl, cancellationToken).ConfigureAwait(false))
                 {
-                    acquireResult = "acquired";
+                    acquireResult = LockMetrics.AcquireResultAcquired;
                     return new DistributedLock(this, key, lockId, lockMetrics);
                 }
 
                 // Single-attempt mode (timeout == default/Zero)
                 if (timeout == TimeSpan.Zero)
                 {
-                    acquireResult = "timeout";
+                    acquireResult = LockMetrics.AcquireResultTimeout;
                     return null;
                 }
 
@@ -86,11 +86,11 @@ public abstract class DistributedLockProviderBase : IDistributedLockProvider
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        acquireResult = "cancelled";
+                        acquireResult = LockMetrics.AcquireResultCancelled;
                         cancellationToken.ThrowIfCancellationRequested();
                     }
 
-                    acquireResult = "timeout";
+                    acquireResult = LockMetrics.AcquireResultTimeout;
                     return null;
                 }
 
@@ -104,14 +104,14 @@ public abstract class DistributedLockProviderBase : IDistributedLockProvider
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
                     // Timeout expired during delay — return null
-                    acquireResult = "timeout";
+                    acquireResult = LockMetrics.AcquireResultTimeout;
                     return null;
                 }
             }
         }
         catch (OperationCanceledException) when (acquireResult is null)
         {
-            acquireResult = "cancelled";
+            acquireResult = LockMetrics.AcquireResultCancelled;
             throw;
         }
         finally
