@@ -11,7 +11,7 @@ Kafka provider: producer/consumer implementations with middleware pipeline, outb
 | `KafkaPipelineProducer.cs` | IEventProducer implementation invoking outbound middleware pipeline before serializing and producing | Understand producer pipeline integration |
 | `KafkaProducePayload.cs` | Payload the producer sets on the send context: the message key for the terminal, and whether the message is a tombstone | Understand how the key reaches the Kafka terminals |
 | `KafkaSerializer.cs` | Shared serialization utilities for Kafka key/value serialization | Understand or modify Kafka message serialization |
-| `KafkaTopicVerifier.cs` | Hosted service that verifies all required Kafka topics exist before the application starts; auto-provisions missing topics when enabled | Troubleshoot topic provisioning or understand startup topic validation |
+| `KafkaTopicVerifier.cs` | Hosted service that verifies all required Kafka topics exist before the application starts; auto-provisions missing topics when enabled, treating a topic another instance created first as provisioned | Troubleshoot topic provisioning or understand startup topic validation |
 | `TopicCleanupPolicy.cs` | Enum specifying Kafka topic cleanup policy (Delete or Compact) | Configure topic cleanup behavior when auto-provisioning topics |
 | `TopicCompressionType.cs` | Enum specifying Kafka topic compression codec | Configure topic compression when auto-provisioning topics |
 | `Provider.cs` | Well-known "kafka" provider identifier constant | Reference Kafka provider ID |

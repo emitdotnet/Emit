@@ -10,6 +10,8 @@ using Xunit;
 
 public class KafkaTopicVerifierTests
 {
+    private static readonly TimeSpan MetadataTimeout = TimeSpan.FromSeconds(30);
+
     private static Metadata BuildMetadata(params (string topic, ErrorCode errorCode)[] topics)
     {
         var brokers = new List<BrokerMetadata> { new BrokerMetadata(1, "localhost", 9092) };
@@ -30,6 +32,7 @@ public class KafkaTopicVerifierTests
             requiredTopics,
             autoProvision,
             provisioningConfigs ?? new Dictionary<string, TopicCreationOptions>(),
+            MetadataTimeout,
             NullLogger<KafkaTopicVerifier>.Instance);
     }
 
@@ -53,7 +56,7 @@ public class KafkaTopicVerifierTests
         // Arrange
         var adminClientMock = new Mock<IAdminClient>();
         var metadata = BuildMetadata(("topic-a", ErrorCode.NoError), ("topic-b", ErrorCode.NoError));
-        adminClientMock.Setup(a => a.GetMetadata(It.IsAny<TimeSpan>())).Returns(metadata);
+        adminClientMock.Setup(a => a.GetMetadata(MetadataTimeout)).Returns(metadata);
 
         var requiredTopics = new HashSet<string> { "topic-a", "topic-b" };
         var verifier = CreateVerifier(adminClientMock, requiredTopics);
@@ -207,21 +210,45 @@ public class KafkaTopicVerifierTests
     }
 
     [Fact]
-    public async Task GivenCreateTopicsAsyncThrows_WhenAutoProvisionEnabled_ThenExceptionPropagates()
+    public async Task GivenTopicCreatedConcurrentlyByAnotherInstance_WhenAutoProvisionEnabled_ThenStarts()
+    {
+        // Arrange: another instance created one of the topics between the check and the creation
+        var adminClientMock = MissingTopicsFailingToCreate(
+            ("topic-a", ErrorCode.NoError),
+            ("topic-b", ErrorCode.TopicAlreadyExists));
+        var verifier = CreateVerifier(adminClientMock, new HashSet<string> { "topic-a", "topic-b" }, autoProvision: true);
+
+        // Act
+        await verifier.StartAsync(CancellationToken.None);
+
+        // Assert
+        adminClientMock.Verify(
+            a => a.CreateTopicsAsync(It.IsAny<IEnumerable<TopicSpecification>>(), It.IsAny<CreateTopicsOptions>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenTopicCreationFails_WhenAutoProvisionEnabled_ThenExceptionPropagates()
     {
         // Arrange
-        var adminClientMock = new Mock<IAdminClient>();
-        var metadata = BuildMetadata();
-        adminClientMock.Setup(a => a.GetMetadata(It.IsAny<TimeSpan>())).Returns(metadata);
-        adminClientMock
-            .Setup(a => a.CreateTopicsAsync(It.IsAny<IEnumerable<TopicSpecification>>(), It.IsAny<CreateTopicsOptions>()))
-            .ThrowsAsync(new CreateTopicsException([]));
-
-        var requiredTopics = new HashSet<string> { "topic-new" };
-        var verifier = CreateVerifier(adminClientMock, requiredTopics, autoProvision: true);
+        var adminClientMock = MissingTopicsFailingToCreate(
+            ("topic-a", ErrorCode.TopicAlreadyExists),
+            ("topic-b", ErrorCode.PolicyViolation));
+        var verifier = CreateVerifier(adminClientMock, new HashSet<string> { "topic-a", "topic-b" }, autoProvision: true);
 
         // Act & Assert
         await Assert.ThrowsAsync<CreateTopicsException>(
             () => verifier.StartAsync(CancellationToken.None));
+    }
+
+    private static Mock<IAdminClient> MissingTopicsFailingToCreate(params (string topic, ErrorCode errorCode)[] results)
+    {
+        var adminClientMock = new Mock<IAdminClient>();
+        adminClientMock.Setup(a => a.GetMetadata(It.IsAny<TimeSpan>())).Returns(BuildMetadata());
+        adminClientMock
+            .Setup(a => a.CreateTopicsAsync(It.IsAny<IEnumerable<TopicSpecification>>(), It.IsAny<CreateTopicsOptions>()))
+            .ThrowsAsync(new CreateTopicsException(
+                [.. results.Select(r => new CreateTopicReport { Topic = r.topic, Error = new Error(r.errorCode) })]));
+        return adminClientMock;
     }
 }

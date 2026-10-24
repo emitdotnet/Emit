@@ -69,7 +69,7 @@ The second argument to `Retry` controls how long Emit waits between attempts.
 
 | Strategy | Signature | Behavior |
 |---|---|---|
-| Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt. Jitter adds a random factor of +/-20% to prevent thundering herds. Default max delay is 5 minutes. |
+| Exponential | `Backoff.Exponential(initialDelay, jitter: true, maxDelay: null)` | Delay doubles each attempt. Jitter adds a random factor of +/-20% to prevent thundering herds. Default max delay is 5 minutes, and no delay exceeds it, jitter included. |
 | Fixed | `Backoff.Fixed(delay)` | Same delay between every retry. Predictable, but offers no spread when multiple consumers fail simultaneously. |
 | None | `Backoff.None` | Zero delay between retries. Useful in tests or when an external system has its own backoff. |
 
