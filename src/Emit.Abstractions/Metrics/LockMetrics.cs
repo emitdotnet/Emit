@@ -7,6 +7,27 @@ using System.Diagnostics.Metrics;
 /// </summary>
 public sealed class LockMetrics
 {
+    /// <summary>The <c>result</c> of a lock acquired.</summary>
+    internal const string AcquireResultAcquired = "acquired";
+
+    /// <summary>The <c>result</c> of a lock not acquired before the timeout.</summary>
+    internal const string AcquireResultTimeout = "timeout";
+
+    /// <summary>The <c>result</c> of a lock acquisition cancelled.</summary>
+    internal const string AcquireResultCancelled = "cancelled";
+
+    /// <summary>The <c>result</c> of a lock renewal that extended the lock.</summary>
+    internal const string RenewalResultExtended = "extended";
+
+    /// <summary>The <c>result</c> of a lock renewal that found the lock no longer held.</summary>
+    internal const string RenewalResultLost = "lost";
+
+    /// <summary>The <c>result</c> of a lock renewal that threw.</summary>
+    internal const string RenewalResultFailed = "failed";
+
+    /// <summary>The <c>result</c> of a lock renewal cancelled.</summary>
+    internal const string RenewalResultCancelled = "cancelled";
+
     private readonly EmitMetricsEnrichment enrichment;
 
     /// <summary>

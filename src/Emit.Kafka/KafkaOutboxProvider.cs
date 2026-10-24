@@ -227,7 +227,7 @@ internal sealed class KafkaOutboxProvider : IOutboxProvider, IDisposable
         var start = Stopwatch.GetTimestamp();
         producer.Producer.Produce(topic, message, report =>
         {
-            var outcome = report.Error.IsError ? "error" : "success";
+            var outcome = report.Error.IsError ? KafkaMetrics.ResultError : KafkaMetrics.ResultSuccess;
             kafkaMetrics.RecordProduceDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, topic, outcome);
             kafkaMetrics.RecordProduceMessage(topic, outcome);
             if (report.Error.IsError)

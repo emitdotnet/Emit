@@ -9,6 +9,33 @@ using Emit.Abstractions.Metrics;
 /// </summary>
 public sealed class KafkaMetrics
 {
+    /// <summary>The <c>result</c> of an operation that succeeded.</summary>
+    internal const string ResultSuccess = "success";
+
+    /// <summary>The <c>result</c> of an operation that failed.</summary>
+    internal const string ResultError = "error";
+
+    /// <summary>The <c>type</c> of partitions assigned.</summary>
+    internal const string PartitionEventAssigned = "assigned";
+
+    /// <summary>The <c>type</c> of partitions revoked.</summary>
+    internal const string PartitionEventRevoked = "revoked";
+
+    /// <summary>The <c>type</c> of partitions lost.</summary>
+    internal const string PartitionEventLost = "lost";
+
+    /// <summary>The <c>component</c> of a key that could not be deserialized.</summary>
+    internal const string DeserializationComponentKey = "key";
+
+    /// <summary>The <c>component</c> of a value that could not be deserialized.</summary>
+    internal const string DeserializationComponentValue = "value";
+
+    /// <summary>The <c>action</c> of a message that could not be deserialized and was dead-lettered.</summary>
+    internal const string DeserializationActionDeadLetter = "dead_letter";
+
+    /// <summary>The <c>action</c> of a message that could not be deserialized and was discarded.</summary>
+    internal const string DeserializationActionDiscard = "discard";
+
     private readonly EmitMetricsEnrichment enrichment;
     private readonly ConcurrentDictionary<string, ConsumerGroupGaugeState> consumerGroupRegistry = new(StringComparer.Ordinal);
 

@@ -57,17 +57,17 @@ Pipeline and consumer middleware metrics.
 | `emit.pipeline.consume.duration` | Histogram (s) | `provider`, `result`, `consumer` | Time from message receipt to handler return |
 | `emit.pipeline.consume.completed` | Counter | `provider`, `result`, `consumer` | Consume operations completed |
 | `emit.pipeline.consume.messages` | Counter | `provider`, `result`, `consumer` | Individual messages processed (batch-aware: counts each item in a batch) |
-| `emit.consumer.error.actions` | Counter | `action` | Error actions taken (`retry`, `dead_letter`, `discard`) |
+| `emit.consumer.error.actions` | Counter | `action` | Error actions taken, once per message or batch (`dead_letter`, `dead_letter_failed`, `dead_letter_no_sink`, `discard`, `discard_unconfigured`) |
 | `emit.consumer.retry.attempts` | Histogram | `result` | Retry counts per sequence (`success`, `exhausted`) |
 | `emit.consumer.retry.duration` | Histogram (s) | `result` | Total time spent in retry loops |
-| `emit.consumer.discards` | Counter | | Messages discarded by error policy |
+| `emit.consumer.discards` | Counter | | Messages discarded by the error policy, or because no error policy is configured; each item of a batch counts |
 | `emit.consumer.validation.completed` | Counter | `result`, `action` | Validation results |
 | `emit.consumer.circuit_breaker.state_transitions` | Counter | `consumer_group`, `topic`, `to_state` | Circuit state changes |
 | `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | `consumer_group`, `topic` | How long the circuit stayed open |
 | `emit.consumer.circuit_breaker.state` | Gauge | `consumer_group`, `topic` | Current circuit state of each consumer group: 0=closed, 1=open, 2=half-open |
 | `emit.consumer.rate_limit.wait_duration` | Histogram (s) | | Time waiting for a rate limit permit |
-| `emit.consumer.dlq.produced` | Counter | `reason` | Messages forwarded to DLQ |
-| `emit.consumer.dlq.produce_errors` | Counter | `reason` | Failures while forwarding to DLQ |
+| `emit.consumer.dlq.produced` | Counter | `reason` | Messages forwarded to DLQ, each item of a batch counted (`error_policy`, `validation`, `deserialization_error`) |
+| `emit.consumer.dlq.produce_errors` | Counter | `reason` | Failures while forwarding to DLQ (`error_policy`, `deserialization_error`) |
 
 ## Meter: `Emit.Outbox`
 
@@ -93,7 +93,7 @@ Distributed lock acquisition and hold duration.
 |---|---|---|---|
 | `emit.lock.acquire.duration` | Histogram (s) | `result` | Time to acquire a lock (including retries) |
 | `emit.lock.acquire.retries` | Histogram | | Retry count before a lock was acquired |
-| `emit.lock.renewal.completed` | Counter | `result` | Lock renewal attempts |
+| `emit.lock.renewal.completed` | Counter | `result` | Lock renewal attempts (`extended`, `lost`, `failed`, `cancelled`) |
 | `emit.lock.held.duration` | Histogram (s) | | How long a lock was held before release |
 
 ## Meter: `Emit.Daemon`

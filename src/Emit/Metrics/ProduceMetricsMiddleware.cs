@@ -23,12 +23,12 @@ internal sealed class ProduceMetricsMiddleware<TMessage>(
             await next.InvokeAsync(context).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordProduceCompleted(elapsed, provider, "success");
+            metrics.RecordProduceCompleted(elapsed, provider, EmitMetrics.ResultSuccess);
         }
         catch
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordProduceCompleted(elapsed, provider, "error");
+            metrics.RecordProduceCompleted(elapsed, provider, EmitMetrics.ResultError);
             throw;
         }
     }

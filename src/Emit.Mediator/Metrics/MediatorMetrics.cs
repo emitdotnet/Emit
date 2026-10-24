@@ -8,6 +8,12 @@ using Emit.Abstractions.Metrics;
 /// </summary>
 public sealed class MediatorMetrics
 {
+    /// <summary>The <c>result</c> of a request handled.</summary>
+    internal const string ResultSuccess = "success";
+
+    /// <summary>The <c>result</c> of a request whose handling failed.</summary>
+    internal const string ResultError = "error";
+
     private readonly EmitMetricsEnrichment enrichment;
 
     /// <summary>

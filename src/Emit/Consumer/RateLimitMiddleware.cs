@@ -19,7 +19,7 @@ public sealed class RateLimitMiddleware<TMessage>(
     /// <inheritdoc />
     public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
-        var permitCount = context.Message is IBatchMessage batch ? batch.Count : 1;
+        var permitCount = context.MessageCount;
 
         var start = Stopwatch.GetTimestamp();
         using var lease = await rateLimiter.AcquireAsync(permitCount, context.CancellationToken).ConfigureAwait(false);

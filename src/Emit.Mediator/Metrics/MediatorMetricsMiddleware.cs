@@ -24,12 +24,12 @@ internal sealed class MediatorMetricsMiddleware<TMessage>(
             await next.InvokeAsync(context).ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordSendCompleted(elapsed, RequestTypeName, "success");
+            metrics.RecordSendCompleted(elapsed, RequestTypeName, MediatorMetrics.ResultSuccess);
         }
         catch
         {
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            metrics.RecordSendCompleted(elapsed, RequestTypeName, "error");
+            metrics.RecordSendCompleted(elapsed, RequestTypeName, MediatorMetrics.ResultError);
             throw;
         }
         finally

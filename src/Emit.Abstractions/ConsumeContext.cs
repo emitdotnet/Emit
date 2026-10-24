@@ -25,6 +25,11 @@ public class ConsumeContext<T> : MessageContext<T>
     public int RetryAttempt { get; set; }
 
     /// <summary>
+    /// The number of messages this context carries: the item count of a batch, otherwise one.
+    /// </summary>
+    public int MessageCount => Message is IBatchMessage batch ? batch.Count : 1;
+
+    /// <summary>
     /// Builds a per-item <see cref="ConsumeContext{T}"/> from a batch context and one of its
     /// items. Used by batch-aware middleware that needs to evaluate per-item logic (e.g. filters)
     /// against the same surface a single-message consumer would see.

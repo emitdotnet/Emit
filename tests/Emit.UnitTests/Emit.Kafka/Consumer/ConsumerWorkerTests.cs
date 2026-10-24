@@ -582,6 +582,27 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
+    public async Task GivenDeserializationError_WhenDeadLettered_ThenOneDeadLetterIsCountedForDeserialization()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var registration = CreateRegistrationWithFailingDeserializer(deserializationErrorAction: ErrorAction.DeadLetter());
+        var worker = CreateWorker(
+            registration: registration,
+            deadLetterSink: CreateMockDeadLetterSink().Object,
+            emitMetrics: new EmitMetrics(null, recorder.Enrichment));
+        worker.Writer.TryWrite(CreateConsumeResult());
+        worker.Complete();
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.consumer.dlq.produced", "reason", "deserialization_error"));
+    }
+
+    [Fact]
     public async Task GivenDeserializationError_WhenDeadLetterButNoSink_ThenDiscardsAndReportsOffset()
     {
         // Arrange — dead letter configured but no IDeadLetterSink provided
@@ -1007,13 +1028,14 @@ public sealed class ConsumerWorkerTests
         ConsumerGroupRegistration<string, string>? registration = null,
         OffsetManager? offsetManager = null,
         IServiceScopeFactory? scopeFactory = null,
-        IDeadLetterSink? deadLetterSink = null)
+        IDeadLetterSink? deadLetterSink = null,
+        EmitMetrics? emitMetrics = null)
     {
         registration ??= CreateRegistration();
         var committer = CreateCommitter();
         offsetManager ??= new OffsetManager(committer);
         scopeFactory ??= Mock.Of<IServiceScopeFactory>();
-        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
+        return new ConsumerWorker<string, string>("Worker[0]", registration, offsetManager, scopeFactory, "test-group", new Uri("kafka://broker:9092/test-topic"), CreateObserverInvoker(), CreateKafkaMetrics(), emitMetrics ?? CreateEmitMetrics(), deadLetterSink, NullLogger.Instance);
     }
 
     private static ConfluentKafka.ConsumeResult<byte[], byte[]> CreateConsumeResult(

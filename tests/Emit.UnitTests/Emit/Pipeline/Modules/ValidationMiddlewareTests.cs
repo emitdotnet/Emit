@@ -108,6 +108,26 @@ public sealed class ValidationMiddlewareTests
     }
 
     [Fact]
+    public async Task GivenInvalidMessageAndDeadLetterAction_WhenDeadLettered_ThenOneDeadLetterIsCountedForValidation()
+    {
+        // Arrange
+        using var recorder = new MeasurementRecorder(MeterNames.Emit);
+        var module = new ValidationMiddleware<string>();
+        module.Configure((_, _) => Task.FromResult(MessageValidationResult.Fail("invalid")), a => a.DeadLetter());
+        var services = new ServiceCollection();
+        services.AddSingleton(new EmitMetrics(null, recorder.Enrichment));
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton<IDeadLetterSink>(new RecordingDeadLetterSink());
+        var sp = services.BuildServiceProvider();
+
+        // Act
+        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+
+        // Assert
+        Assert.Equal(1, recorder.Total("emit.consumer.dlq.produced", "reason", "validation"));
+    }
+
+    [Fact]
     public async Task GivenInvalidMessageAndDiscardAction_WhenInvoked_ThenDoesNotDeadLetter()
     {
         // Arrange

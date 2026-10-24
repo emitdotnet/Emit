@@ -24,7 +24,22 @@ internal sealed class DistributedLock(
     public async Task<bool> ExtendAsync(TimeSpan ttl, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) == 1, this);
-        return await provider.ExtendLockAsync(Key, lockId, ttl, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var extended = await provider.ExtendLockAsync(Key, lockId, ttl, cancellationToken).ConfigureAwait(false);
+            lockMetrics?.RecordRenewalCompleted(extended ? LockMetrics.RenewalResultExtended : LockMetrics.RenewalResultLost);
+            return extended;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            lockMetrics?.RecordRenewalCompleted(LockMetrics.RenewalResultCancelled);
+            throw;
+        }
+        catch
+        {
+            lockMetrics?.RecordRenewalCompleted(LockMetrics.RenewalResultFailed);
+            throw;
+        }
     }
 
     /// <inheritdoc />

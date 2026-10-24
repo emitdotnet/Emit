@@ -8,6 +8,12 @@ using Emit.Abstractions.Metrics;
 /// </summary>
 public sealed class OutboxMetrics
 {
+    /// <summary>The <c>result</c> of an entry delivered.</summary>
+    internal const string ResultSuccess = "success";
+
+    /// <summary>The <c>result</c> of an entry that failed to deliver.</summary>
+    internal const string ResultError = "error";
+
     private readonly EmitMetricsEnrichment enrichment;
 
     /// <summary>

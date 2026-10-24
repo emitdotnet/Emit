@@ -48,7 +48,8 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             logger.LogWarning(exception,
                 "No error policy configured for consumer {Consumer}. Discarding message {MessageId}",
                 identifier, context.MessageId);
-            emitMetrics.RecordErrorAction("discard_unconfigured");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscardUnconfigured);
+            emitMetrics.RecordDiscard(context.MessageCount);
         }
         else
         {
@@ -64,7 +65,8 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                     logger.LogWarning(exception,
                         "Discarding message {MessageId} for consumer {Consumer}",
                         context.MessageId, identifier);
-                    emitMetrics.RecordErrorAction("discard");
+                    emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscard);
+                    emitMetrics.RecordDiscard(context.MessageCount);
                     break;
             }
         }
@@ -79,7 +81,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             logger.LogError(exception,
                 "Dead letter sink not configured. Cannot dead-letter message {MessageId} for consumer {Consumer}",
                 context.MessageId, identifier);
-            emitMetrics.RecordErrorAction("dead_letter_no_sink");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetterNoSink);
             return;
         }
 
@@ -93,14 +95,14 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
         if (await DeadLetterItemAsync(exception, context.TransportContext, context.RetryAttempt, destinationName, context.CancellationToken).ConfigureAwait(false))
         {
-            emitMetrics.RecordErrorAction("dead_letter");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetter);
             logger.LogWarning(exception,
                 "Dead-lettered message {MessageId} to {Destination} for consumer {Consumer}",
                 context.MessageId, destinationName, identifier);
         }
         else
         {
-            emitMetrics.RecordErrorAction("dead_letter_failed");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetterFailed);
             logger.LogError(exception,
                 "Failed to dead-letter message {MessageId} to {Destination} for consumer {Consumer}",
                 context.MessageId, destinationName, identifier);
@@ -133,12 +135,12 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
         if (succeeded > 0)
         {
-            emitMetrics.RecordErrorAction("dead_letter");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetter);
         }
 
         if (failed > 0)
         {
-            emitMetrics.RecordErrorAction("dead_letter_failed");
+            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetterFailed);
         }
 
         logger.LogWarning(exception,
@@ -169,11 +171,13 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
                 transportContext.RawValue,
                 headers,
                 cancellationToken).ConfigureAwait(false);
+            emitMetrics.RecordDlqProduced(EmitMetrics.DlqReasonErrorPolicy);
             return true;
         }
         catch (Exception dlqEx)
         {
             dlqActivity?.SetStatus(ActivityStatusCode.Error, dlqEx.Message);
+            emitMetrics.RecordDlqProduceErrors(EmitMetrics.DlqReasonErrorPolicy);
             return false;
         }
     }

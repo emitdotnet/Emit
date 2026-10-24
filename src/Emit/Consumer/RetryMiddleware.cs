@@ -152,8 +152,8 @@ internal sealed class RetryMiddleware<TMessage>(
                 context.WithServices(originalServices);
 
                 var retryElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
-                emitMetrics.RecordRetryAttempts(context.RetryAttempt, "success");
-                emitMetrics.RecordRetryDuration(retryElapsed, "success");
+                emitMetrics.RecordRetryAttempts(context.RetryAttempt, EmitMetrics.ResultSuccess);
+                emitMetrics.RecordRetryDuration(retryElapsed, EmitMetrics.ResultSuccess);
                 return;
             }
             catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
@@ -177,8 +177,8 @@ internal sealed class RetryMiddleware<TMessage>(
         context.WithServices(originalServices);
 
         var exhaustedElapsed = Stopwatch.GetElapsedTime(retryStart).TotalSeconds;
-        emitMetrics.RecordRetryAttempts(context.RetryAttempt, "exhausted");
-        emitMetrics.RecordRetryDuration(exhaustedElapsed, "exhausted");
+        emitMetrics.RecordRetryAttempts(context.RetryAttempt, EmitMetrics.ResultExhausted);
+        emitMetrics.RecordRetryDuration(exhaustedElapsed, EmitMetrics.ResultExhausted);
 
         // No further attempt runs: rethrow for ConsumeErrorMiddleware to handle
         throw lastException;
