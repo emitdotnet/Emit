@@ -185,32 +185,7 @@ public sealed class StartupDiagnosticsLoggerTests
         Assert.Contains("orders.dlt", warning.Message);
     }
 
-    // ── 5. Worst-case retry exceeds max.poll.interval.ms logs Warning ──
-
-    [Fact]
-    public void GivenWorstCaseRetryExceedsMaxPollInterval_WhenLog_ThenLogsWarning()
-    {
-        // Arrange — Retry(100x, Fixed(5s)) = 500s > 300s max.poll.interval.ms
-        var logger = new CapturingLogger();
-        var groupPolicy = new ErrorPolicyBuilder();
-        groupPolicy.Default(a => a.Retry(100, Backoff.Fixed(TimeSpan.FromSeconds(5))).Discard());
-
-        var registration = CreateRegistration(
-            groupErrorPolicy: groupPolicy.Build(),
-            circuitBreakerEnabled: true,
-            consumerTypes: [typeof(TestConsumerA)]);
-
-        // Act
-        StartupDiagnosticsLogger.Log(registration, null, logger);
-
-        // Assert
-        var warning = Assert.Single(logger.Entries, e =>
-            e.Level == LogLevel.Warning && e.Message.Contains("max.poll.interval.ms"));
-        Assert.Contains(nameof(TestConsumerA), warning.Message);
-        Assert.Contains("kicked from group", warning.Message);
-    }
-
-    // ── 6. Group-level OnError shows "Group" for all consumers ──
+    // ── 5. Group-level OnError shows "Group" for all consumers ──
 
     [Fact]
     public void GivenGroupOnError_WhenLog_ThenShowsGroupForAllConsumers()
@@ -240,7 +215,7 @@ public sealed class StartupDiagnosticsLoggerTests
             && e.Message.Contains("ErrorPolicy=Group"));
     }
 
-    // ── 7. Retries without circuit breaker logs Warning ──
+    // ── 6. Retries without circuit breaker logs Warning ──
 
     [Fact]
     public void GivenRetriesWithoutCircuitBreaker_WhenLog_ThenLogsWarning()

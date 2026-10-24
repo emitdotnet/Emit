@@ -23,7 +23,7 @@ public abstract class Backoff
     /// <param name="initialDelay">The delay for the first retry attempt. Must be non-negative.</param>
     /// <param name="jitter">
     /// When <c>true</c>, applies random jitter of ±20% to each calculated delay
-    /// to prevent thundering herd problems.
+    /// to prevent thundering herd problems. A delay never exceeds <paramref name="maxDelay"/>.
     /// </param>
     /// <param name="maxDelay">
     /// The maximum delay cap. Defaults to 5 minutes.
@@ -82,19 +82,14 @@ public abstract class Backoff
                 return TimeSpan.Zero;
             }
 
-            var delayTicks = Math.Min(
-                initialDelay.Ticks * Math.Pow(2, attemptNumber),
-                maxDelay.Ticks);
-
-            var delay = TimeSpan.FromTicks((long)delayTicks);
+            var delayTicks = initialDelay.Ticks * Math.Pow(2, attemptNumber);
 
             if (jitter)
             {
-                var jitterFactor = 0.8 + (Random.Shared.NextDouble() * 0.4);
-                delay = TimeSpan.FromTicks((long)(delay.Ticks * jitterFactor));
+                delayTicks *= 0.8 + (Random.Shared.NextDouble() * 0.4);
             }
 
-            return delay;
+            return TimeSpan.FromTicks((long)Math.Min(delayTicks, maxDelay.Ticks));
         }
 
         public override TimeSpan ComputeTotalDelay(int attempts)
@@ -104,29 +99,27 @@ public abstract class Backoff
                 return TimeSpan.Zero;
             }
 
+            // The longest an attempt waits before the cap, with the largest jitter factor
+            var peakInitialTicks = initialDelay.Ticks * (jitter ? 1.2 : 1.0);
+
             // Find the crossover attempt where delay reaches maxDelay.
-            // Before crossover: geometric growth (initialDelay * 2^i).
+            // Before crossover: geometric growth (peakInitialTicks * 2^i).
             // At and after crossover: capped at maxDelay.
-            var crossover = Math.Ceiling(Math.Log2((double)maxDelay.Ticks / initialDelay.Ticks));
+            var crossover = Math.Ceiling(Math.Log2(maxDelay.Ticks / peakInitialTicks));
 
             double totalTicks;
 
             if (crossover >= attempts)
             {
                 // All attempts are in the geometric growth phase.
-                // Sum = initialDelay * (2^attempts - 1)
-                totalTicks = initialDelay.Ticks * (Math.Pow(2, attempts) - 1);
+                // Sum = peakInitialTicks * (2^attempts - 1)
+                totalTicks = peakInitialTicks * (Math.Pow(2, attempts) - 1);
             }
             else
             {
                 var geometricCount = Math.Max((int)crossover, 0);
-                totalTicks = initialDelay.Ticks * (Math.Pow(2, geometricCount) - 1)
+                totalTicks = peakInitialTicks * (Math.Pow(2, geometricCount) - 1)
                     + (double)maxDelay.Ticks * (attempts - geometricCount);
-            }
-
-            if (jitter)
-            {
-                totalTicks *= 1.2;
             }
 
             return double.IsInfinity(totalTicks) || totalTicks >= long.MaxValue

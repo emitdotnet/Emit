@@ -16,6 +16,7 @@ internal sealed class KafkaTopicVerifier(
     IReadOnlySet<string> requiredTopics,
     bool autoProvision,
     IReadOnlyDictionary<string, TopicCreationOptions> provisioningConfigs,
+    TimeSpan metadataTimeout,
     ILogger<KafkaTopicVerifier> logger) : IHostedService
 {
     /// <inheritdoc />
@@ -26,7 +27,7 @@ internal sealed class KafkaTopicVerifier(
             return;
         }
 
-        var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(10));
+        var metadata = adminClient.GetMetadata(metadataTimeout);
         var existingTopics = new HashSet<string>(
             metadata.Topics
                 .Where(t => t.Error.Code == ConfluentKafka.ErrorCode.NoError)
@@ -58,9 +59,17 @@ internal sealed class KafkaTopicVerifier(
         logger.LogInformation("Auto-provisioning {Count} missing Kafka topic(s): {Topics}",
             missing.Count, string.Join(", ", missing));
 
-        await adminClient.CreateTopicsAsync(specifications).ConfigureAwait(false);
+        try
+        {
+            await adminClient.CreateTopicsAsync(specifications).ConfigureAwait(false);
+        }
+        catch (ConfluentKafka.Admin.CreateTopicsException ex) when (ex.Results.All(r =>
+            r.Error.Code is ConfluentKafka.ErrorCode.NoError or ConfluentKafka.ErrorCode.TopicAlreadyExists))
+        {
+            // Another instance starting at the same time created some of them first
+        }
 
-        logger.LogInformation("Successfully created {Count} Kafka topic(s)", missing.Count);
+        logger.LogInformation("Provisioned {Count} Kafka topic(s)", missing.Count);
     }
 
     /// <inheritdoc />

@@ -40,6 +40,12 @@ public static class KafkaEmitBuilderExtensions
     internal const int DefaultTransactionTimeoutMs = 60_000;
 
     /// <summary>
+    /// The timeout, in milliseconds, the Kafka client applies to network requests when none is set
+    /// (<c>socket.timeout.ms</c>).
+    /// </summary>
+    internal const int DefaultSocketTimeoutMs = 60_000;
+
+    /// <summary>
     /// The time, in milliseconds, the Kafka client waits to batch messages when none is set.
     /// </summary>
     internal const int DefaultLingerMs = 5;
@@ -225,6 +231,11 @@ public static class KafkaEmitBuilderExtensions
         var autoProvision = kafkaBuilder.AutoProvisionEnabled;
         var provisioningConfigs = kafkaBuilder.GetProvisioningConfigs();
 
+        // Fetching the topics is an admin request, so it waits as long as the client waits for any network request
+        var clientOptions = new KafkaClientOptions();
+        kafkaBuilder.ClientConfigAction?.Invoke(clientOptions);
+        var metadataTimeout = clientOptions.SocketTimeout ?? TimeSpan.FromMilliseconds(DefaultSocketTimeoutMs);
+
         // Insert at position 0 so it runs before all other hosted services
         services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp =>
             new KafkaTopicVerifier(
@@ -232,6 +243,7 @@ public static class KafkaEmitBuilderExtensions
                 requiredTopics,
                 autoProvision,
                 provisioningConfigs,
+                metadataTimeout,
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<KafkaTopicVerifier>())));
     }
 

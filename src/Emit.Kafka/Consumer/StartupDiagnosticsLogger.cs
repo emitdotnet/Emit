@@ -9,8 +9,6 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 internal static class StartupDiagnosticsLogger
 {
-    private static readonly TimeSpan DefaultMaxPollInterval = TimeSpan.FromMinutes(5);
-
     /// <summary>
     /// Logs full startup diagnostics for a consumer group registration.
     /// Emits group-level configuration at Information level and per-consumer
@@ -84,15 +82,6 @@ internal static class StartupDiagnosticsLogger
                 "No error handling configured for consumer {Handler} in group {GroupId}. " +
                 "Failed messages will be discarded without retry.",
                 consumerType.Name, registration.GroupId);
-        }
-
-        // Warning: worst-case retry exceeds max.poll.interval.ms
-        if (worstCaseRetry > DefaultMaxPollInterval)
-        {
-            logger.LogWarning(
-                "Consumer {Handler} in group {GroupId}: worst-case retry duration {WorstCaseRetry} " +
-                "exceeds max.poll.interval.ms ({MaxPollInterval}). Consumer may be kicked from group.",
-                consumerType.Name, registration.GroupId, worstCaseRetry, DefaultMaxPollInterval);
         }
 
         // Warning: retries without circuit breaker

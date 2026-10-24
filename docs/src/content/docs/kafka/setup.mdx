@@ -157,7 +157,7 @@ emit.AddKafka(kafka =>
 });
 ```
 
-Without per-topic `Provisioning`, missing topics are created with broker defaults and 7-day retention.
+Without per-topic `Provisioning`, missing topics are created with broker defaults and 7-day retention. Instances starting together can all provision the same topics: a topic another instance created first counts as provisioned.
 
 ### Topic creation options
 

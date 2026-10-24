@@ -159,7 +159,7 @@ public sealed class BackoffTests
     [InlineData(int.MaxValue)]
     [InlineData(1_000_000)]
     [InlineData(10_000)]
-    public void GivenExponentialWithJitter_WhenExcessiveAttemptNumber_ThenCapsNearMaxDelay(int attempt)
+    public void GivenExponentialWithJitter_WhenExcessiveAttemptNumber_ThenNeverExceedsMaxDelay(int attempt)
     {
         // Arrange
         var maxDelay = TimeSpan.FromMinutes(5);
@@ -168,11 +168,10 @@ public sealed class BackoffTests
         // Act
         var delay = backoff.CalculateDelay(attempt);
 
-        // Assert — must be within jitter range of maxDelay (80%-120%), never negative or overflow
-        Assert.True(delay >= TimeSpan.Zero, $"Delay must be non-negative, got {delay}");
+        // Assert: jitter applies before the cap, so the delay is at most maxDelay and never below 80% of it
         Assert.InRange(delay.TotalMilliseconds,
             maxDelay.TotalMilliseconds * 0.8,
-            maxDelay.TotalMilliseconds * 1.2);
+            maxDelay.TotalMilliseconds);
     }
 
     [Theory]
@@ -272,6 +271,19 @@ public sealed class BackoffTests
 
         // Assert
         Assert.Equal(TimeSpan.FromSeconds(18), total);
+    }
+
+    [Fact]
+    public void GivenExponentialWithJitter_WhenDelaysCapped_ThenJitterNeverRaisesACappedAttempt()
+    {
+        // Arrange: 1s initial, 4s max; worst-case delays are 1.2s, 2.4s, then 4s (capped) twice
+        var backoff = Backoff.Exponential(TimeSpan.FromSeconds(1), jitter: true, maxDelay: TimeSpan.FromSeconds(4));
+
+        // Act
+        var total = backoff.ComputeTotalDelay(4);
+
+        // Assert
+        Assert.Equal(TimeSpan.FromSeconds(11.6), total);
     }
 
     [Theory]
