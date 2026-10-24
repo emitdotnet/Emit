@@ -3,6 +3,8 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 using System.Collections.Concurrent;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
+using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -159,6 +161,67 @@ public abstract class RoutingCompliance
             // Assert — only the sentinel "A:route-a" arrives; "unmatched" was discarded.
             await capture.WaitForCountAsync(1, TimeSpan.FromSeconds(30));
             Assert.Equal("A:route-a", capture.Messages.Single());
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Configures the messaging provider with a <c>string, string</c> source topic that has a producer and a
+    /// consumer group containing a router whose selector uses the message value as the route key, with the route
+    /// "route-fails" dispatching to <see cref="AlwaysFailingConsumer"/>. The error policy dead-letters to
+    /// <paramref name="dlqTopic"/>, whose consumer group contains <see cref="DlqCaptureConsumer"/>.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="topic">The source topic name.</param>
+    /// <param name="groupId">The consumer group ID for the source topic.</param>
+    /// <param name="dlqTopic">The dead letter topic name.</param>
+    /// <param name="dlqGroupId">The consumer group ID for the DLQ topic.</param>
+    protected abstract void ConfigureWithFailingRouteAndDeadLetter(
+        EmitBuilder emit,
+        string topic,
+        string groupId,
+        string dlqTopic,
+        string dlqGroupId);
+
+    /// <summary>
+    /// Verifies that a message whose routed handler fails is dead-lettered with the matched route key and the
+    /// consumer group.
+    /// </summary>
+    [Fact]
+    public async Task GivenRoutedHandlerThatFails_WhenDeadLettered_ThenTheDeadLetterHasTheRouteKeyAndConsumerGroup()
+    {
+        // Arrange
+        var topic = $"test-route-dlq-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var dlqTopic = $"test-route-dlq-dlt-{Guid.NewGuid():N}";
+        var dlqGroupId = $"group-dlt-{Guid.NewGuid():N}";
+        var dlqSink = new MessageSink<byte[]>();
+
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(dlqSink);
+                services.AddEmit(emit => ConfigureWithFailingRouteAndDeadLetter(emit, topic, groupId, dlqTopic, dlqGroupId));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act
+            using var scope = host.Services.CreateScope();
+            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+            await producer.ProduceAsync(new EventMessage<string, string>("k", "route-fails"));
+
+            // Assert
+            var deadLetter = await dlqSink.WaitForMessageAsync();
+            Assert.Contains(new KeyValuePair<string, string>(DeadLetterHeaders.RouteKey, "route-fails"), deadLetter.Headers);
+            Assert.Contains(new KeyValuePair<string, string>(DeadLetterHeaders.ConsumerGroup, groupId), deadLetter.Headers);
         }
         finally
         {

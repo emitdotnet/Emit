@@ -19,8 +19,7 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert
         Assert.Contains(headers, h => h.Key == "x-custom-header" && h.Value == "custom-value");
@@ -34,8 +33,7 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders: null,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert
         Assert.DoesNotContain(headers, h => h.Key == "x-custom-header");
@@ -55,8 +53,7 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert
         Assert.Contains(headers, h => h.Key == DeadLetterHeaders.OriginalTraceParent && h.Value == traceparent);
@@ -75,83 +72,51 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert
         Assert.DoesNotContain(headers, h => h.Key == DeadLetterHeaders.OriginalTraceParent);
     }
 
     [Fact]
-    public void GivenSourcePropertiesWithTopic_WhenCreateBase_ThenAddsOriginalTopicHeader()
+    public void GivenSourceTopicHeaders_WhenCreateBase_ThenTheLastIsTheOriginalTopic()
     {
-        // Arrange
-        var sourceProperties = new Dictionary<string, string>
+        // Arrange: a dead letter replayed and consumed again carries the topic it was first consumed from too
+        var originalHeaders = new List<KeyValuePair<string, string>>
         {
-            ["topic"] = "my-source-topic",
+            new(DeadLetterHeaders.SourceTopic, "first-topic"),
+            new(DeadLetterHeaders.SourceTopic, "my-source-topic"),
         };
 
         // Act
         var headers = DeadLetterHeaders.CreateBase(
-            originalHeaders: null,
+            originalHeaders,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties);
+            "error");
 
         // Assert
-        Assert.Contains(headers, h => h.Key == DeadLetterHeaders.OriginalTopic && h.Value == "my-source-topic");
+        Assert.Equal("my-source-topic", Assert.Single(headers, h => h.Key == DeadLetterHeaders.OriginalTopic).Value);
     }
 
     [Fact]
-    public void GivenExceptionType_WhenCreateBase_ThenAddsExceptionTypeFullName()
-    {
-        // Act
-        var headers = DeadLetterHeaders.CreateBase(
-            originalHeaders: null,
-            typeof(InvalidOperationException),
-            "error message",
-            sourceProperties: null);
-
-        // Assert
-        Assert.Contains(headers, h =>
-            h.Key == DeadLetterHeaders.ExceptionType &&
-            h.Value == typeof(InvalidOperationException).FullName);
-    }
-
-    [Fact]
-    public void GivenSourceProperties_WhenCreateBase_ThenAddsPrefixedSourceHeaders()
+    public void GivenADeadLetterDeadLetteredAgain_WhenCreateBase_ThenItHasOnlyTheNewException()
     {
         // Arrange
-        var sourceProperties = new Dictionary<string, string>
+        var originalHeaders = new List<KeyValuePair<string, string>>
         {
-            ["partition"] = "3",
-            ["provider"] = "kafka",
+            new(DeadLetterHeaders.ExceptionType, typeof(TimeoutException).FullName!),
+            new(DeadLetterHeaders.ExceptionMessage, "first failure"),
         };
 
         // Act
         var headers = DeadLetterHeaders.CreateBase(
-            originalHeaders: null,
+            originalHeaders,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties);
+            "error message");
 
         // Assert
-        Assert.Contains(headers, h => h.Key == $"{DeadLetterHeaders.SourcePrefix}partition" && h.Value == "3");
-        Assert.Contains(headers, h => h.Key == $"{DeadLetterHeaders.SourcePrefix}provider" && h.Value == "kafka");
-    }
-
-    [Fact]
-    public void GivenNullSourceProperties_WhenCreateBase_ThenNoSourceHeaders()
-    {
-        // Act
-        var headers = DeadLetterHeaders.CreateBase(
-            originalHeaders: null,
-            typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
-
-        // Assert
-        Assert.DoesNotContain(headers, h => h.Key.StartsWith(DeadLetterHeaders.SourcePrefix, StringComparison.Ordinal));
+        Assert.Equal(typeof(InvalidOperationException).FullName, Assert.Single(headers, h => h.Key == DeadLetterHeaders.ExceptionType).Value);
+        Assert.Equal("error message", Assert.Single(headers, h => h.Key == DeadLetterHeaders.ExceptionMessage).Value);
     }
 
     [Fact]
@@ -164,8 +129,7 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders: null,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert
         var timestampHeader = Assert.Single(headers, h => h.Key == DeadLetterHeaders.Timestamp);
@@ -181,8 +145,7 @@ public sealed class DeadLetterHeadersTests
         var headers = DeadLetterHeaders.CreateBase(
             originalHeaders: null,
             typeof(InvalidOperationException),
-            "error",
-            sourceProperties: null);
+            "error");
 
         // Assert — can add to the returned list without exception
         headers.Add(new(DeadLetterHeaders.RetryCount, "3"));

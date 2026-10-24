@@ -30,7 +30,10 @@ public abstract class MessageContext
     public IFeatureCollection Features { get; } = new FeatureCollection();
 
     /// <summary>
-    /// Unique identifier for this message processing operation.
+    /// The identity of the message. On consume it is the same on every delivery of the message (after a
+    /// restart or a rebalance, or a redelivery from the outbox), which makes it the key to deduplicate on. A
+    /// message produced outside Emit is identified by where it is in the broker, also the same on every
+    /// delivery. A batch has its own identifier; each of its items has the identity of its message.
     /// </summary>
     public required string MessageId { get; init; }
 

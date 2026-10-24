@@ -40,7 +40,8 @@ Consumers are resolved from the DI container per message, so constructor injecti
 | Member | Type | Description |
 |---|---|---|
 | `Message` | `TValue` | The deserialized message value |
-| `Headers` | `IReadOnlyList<...>` | Message headers |
+| `MessageId` | `string` | The message's identity, the same on every delivery |
+| `Headers` | `List<...>` | Message headers, followed by `emit-source-topic`, `emit-source-partition`, `emit-source-offset` and `emit-consumer-group`; a router adds `emit-route-key` |
 | `RetryAttempt` | `int` | Current retry count (0 on first attempt) |
 | `TransportContext` | `TransportContext` | Kafka-specific metadata |
 | `Services` | `IServiceProvider` | Scoped provider for this message |
@@ -208,6 +209,8 @@ group.CommitInterval = TimeSpan.FromSeconds(5);  // default
 ```
 
 Commits happen in the background on this interval. You do not call commit manually.
+
+Delivery is at least once: a message whose offset was not committed yet is delivered again after a restart or a rebalance. `MessageId` is the same on every delivery of a message, so it is the key to deduplicate on. A message produced by Emit carries its id in the `emit-message-id` header, through the outbox too, and a message produced with the headers of a consumed message gets its own id, not the consumed one; a message produced outside Emit is identified by its topic, partition and offset.
 
 ## Transactional consumers
 

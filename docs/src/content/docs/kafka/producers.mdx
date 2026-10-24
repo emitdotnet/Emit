@@ -59,7 +59,7 @@ Headers are string key-value pairs that travel with the message through the full
 
 **Producing:** Set headers on `EventMessage` at produce time, either via the record constructor or a convenience overload.
 
-**Pipeline enrichment:** Emit's `ProduceTracingMiddleware` appends W3C trace context headers (`traceparent`, `tracestate`, `baggage`) and `emit-source-address` before delivery. The canonical header names are defined on `WellKnownHeaders`.
+**Pipeline enrichment:** every message gets `emit-message-id` (its identity, the same on every delivery) and `emit-source-address`, and Emit's `ProduceTracingMiddleware` adds W3C trace context headers (`traceparent`, `tracestate`, `baggage`) when tracing is on. Each of these appears once on a message: it replaces any header with the same name you passed, such as one forwarded from a consumed message. The canonical header names are defined on `WellKnownHeaders`.
 
 **Outbox path:** Headers are UTF-8 encoded to `byte[]` and stored alongside the message body in the outbox. The background worker forwards them byte-for-byte to Kafka.
 

@@ -123,7 +123,7 @@ Every `Validate` call requires an error action that determines what Emit does wi
 | `Discard()` | The message is silently dropped and acknowledged. The handler is never invoked. |
 | `DeadLetter()` | The message is forwarded to the configured [dead-letter topic](../dead-letter-queue/) with diagnostic headers. |
 
-When a message is dead-lettered due to validation failure, the `x-emit-exception-type` header contains `Emit.MessageValidationException` and the individual error messages appear in `x-emit-exception-message`.
+When a message is dead-lettered due to validation failure, the `emit-exception-type` header contains `Emit.MessageValidationException` and the individual error messages appear in `emit-exception-message`.
 
 ## Validation failures vs. validator exceptions
 

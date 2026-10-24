@@ -42,6 +42,7 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `MessageValidationResult.cs` | Result type for IMessageValidator with static Success singleton and Fail factory methods | Return or inspect validation outcomes in validators and validation middleware |
 | `MessageValidationException.cs` | Exception thrown when a message fails validation; carries the list of validation error messages | Handle or inspect validation failures in error policies or dead-letter headers |
 | `EmitEndpointAddress.cs` | Transport endpoint address as a URI with scheme, host, port, and entity name | Understand or construct endpoint addresses for producers and dead-letter sinks |
+| `HeaderExtensions.cs` | Header list helpers matching keys without regard to case: first and last value of a key, and `Upsert` for headers that may only appear once | Read a header, or write one that must not repeat |
 | `WellKnownHeaders.cs` | Well-known message header name constants for trace context and address propagation | Reference header names in middleware, producers, or consumers |
 | `DeadLetterHeaders.cs` | Well-known dead-letter header constants and factory methods for failed messages | Implement dead-letter producers or read DLQ diagnostic headers |
 | `IBatchConsumer.cs` | Generic interface for handling a batch of consumed messages | Implement batch consumer handlers |

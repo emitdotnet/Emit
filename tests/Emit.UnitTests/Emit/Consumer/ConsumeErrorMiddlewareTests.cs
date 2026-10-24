@@ -40,7 +40,7 @@ public sealed class ConsumeErrorMiddlewareTests
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = ct,
             Services = services,
-            TransportContext = new TestTransportContextWithSource
+            TransportContext = new TestTransportContext
             {
                 RawKey = [0x01],
                 RawValue = [0x02],
@@ -52,12 +52,6 @@ public sealed class ConsumeErrorMiddlewareTests
                 Services = services,
             },
         };
-    }
-
-    private sealed class TestTransportContextWithSource : TransportContext
-    {
-        public override IReadOnlyDictionary<string, string>? GetSourceProperties() =>
-            new Dictionary<string, string> { ["topic"] = "source-topic" };
     }
 
     // ── Tests ──
@@ -245,7 +239,7 @@ public sealed class ConsumeErrorMiddlewareTests
             .Select(i => new BatchItem<string>
             {
                 Message = $"item-{i}",
-                TransportContext = new TestTransportContextWithSource
+                TransportContext = new TestTransportContext
                 {
                     RawKey = [(byte)i],
                     RawValue = [(byte)(i + 10)],
@@ -266,7 +260,7 @@ public sealed class ConsumeErrorMiddlewareTests
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = ct,
             Services = services,
-            TransportContext = new TestTransportContextWithSource
+            TransportContext = new TestTransportContext
             {
                 RawKey = null,
                 RawValue = null,

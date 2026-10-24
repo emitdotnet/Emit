@@ -79,9 +79,9 @@ public abstract class DeadLetterCompliance
             Assert.NotNull(headers);
 
             var exceptionType = headers
-                .FirstOrDefault(h => h.Key == "x-emit-exception-type").Value;
+                .FirstOrDefault(h => h.Key == "emit-exception-type").Value;
             var exceptionMessage = headers
-                .FirstOrDefault(h => h.Key == "x-emit-exception-message").Value;
+                .FirstOrDefault(h => h.Key == "emit-exception-message").Value;
 
             Assert.NotNull(exceptionType);
             Assert.Contains(nameof(InvalidOperationException), exceptionType);
@@ -215,47 +215,51 @@ public abstract class DeadLetterCompliance
             var headers = ctx.Headers;
             Assert.NotNull(headers);
 
-            var headerDict = headers.ToDictionary(h => h.Key, h => h.Value);
+            // The dead letter's own headers come first: consuming it adds where it was consumed from after them
+            var headerDict = headers.GroupBy(h => h.Key).ToDictionary(g => g.Key, g => g.First().Value);
 
             // Exception type and message must be present and non-null.
-            Assert.True(headerDict.TryGetValue("x-emit-exception-type", out var exType),
-                "Missing header x-emit-exception-type");
+            Assert.True(headerDict.TryGetValue("emit-exception-type", out var exType),
+                "Missing header emit-exception-type");
             Assert.NotNull(exType);
 
-            Assert.True(headerDict.TryGetValue("x-emit-exception-message", out var exMsg),
-                "Missing header x-emit-exception-message");
+            Assert.True(headerDict.TryGetValue("emit-exception-message", out var exMsg),
+                "Missing header emit-exception-message");
             Assert.NotNull(exMsg);
 
-            // Source topic must be present.
-            Assert.True(headerDict.TryGetValue("x-emit-source-topic", out var srcTopic),
-                "Missing header x-emit-source-topic");
+            // Source topic and consumer group must be present.
+            Assert.True(headerDict.TryGetValue("emit-source-topic", out var srcTopic),
+                "Missing header emit-source-topic");
             Assert.Equal(sourceTopic, srcTopic);
+            Assert.True(headerDict.TryGetValue("emit-consumer-group", out var consumerGroup),
+                "Missing header emit-consumer-group");
+            Assert.Equal(groupId, consumerGroup);
 
             // Source partition must be parseable as non-negative integer.
-            Assert.True(headerDict.TryGetValue("x-emit-source-partition", out var srcPartition),
-                "Missing header x-emit-source-partition");
+            Assert.True(headerDict.TryGetValue("emit-source-partition", out var srcPartition),
+                "Missing header emit-source-partition");
             Assert.True(int.TryParse(srcPartition, out var partitionValue),
-                $"x-emit-source-partition is not a valid integer: '{srcPartition}'");
+                $"emit-source-partition is not a valid integer: '{srcPartition}'");
             Assert.True(partitionValue >= 0,
-                $"x-emit-source-partition must be >= 0 but was {partitionValue}");
+                $"emit-source-partition must be >= 0 but was {partitionValue}");
 
             // Source offset must be parseable as non-negative long.
-            Assert.True(headerDict.TryGetValue("x-emit-source-offset", out var srcOffset),
-                "Missing header x-emit-source-offset");
+            Assert.True(headerDict.TryGetValue("emit-source-offset", out var srcOffset),
+                "Missing header emit-source-offset");
             Assert.True(long.TryParse(srcOffset, out var offsetValue),
-                $"x-emit-source-offset is not a valid long: '{srcOffset}'");
+                $"emit-source-offset is not a valid long: '{srcOffset}'");
             Assert.True(offsetValue >= 0,
-                $"x-emit-source-offset must be >= 0 but was {offsetValue}");
+                $"emit-source-offset must be >= 0 but was {offsetValue}");
 
             // Timestamp must be parseable as a DateTimeOffset.
-            Assert.True(headerDict.TryGetValue("x-emit-timestamp", out var timestamp),
-                "Missing header x-emit-timestamp");
+            Assert.True(headerDict.TryGetValue("emit-timestamp", out var timestamp),
+                "Missing header emit-timestamp");
             Assert.True(DateTimeOffset.TryParse(timestamp, out _),
-                $"x-emit-timestamp is not a valid DateTimeOffset: '{timestamp}'");
+                $"emit-timestamp is not a valid DateTimeOffset: '{timestamp}'");
 
             // Retry count must be "0" (no retries configured — direct dead-letter).
-            Assert.True(headerDict.TryGetValue("x-emit-retry-count", out var retryCount),
-                "Missing header x-emit-retry-count");
+            Assert.True(headerDict.TryGetValue("emit-retry-count", out var retryCount),
+                "Missing header emit-retry-count");
             Assert.Equal("0", retryCount);
         }
         finally

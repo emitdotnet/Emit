@@ -47,6 +47,12 @@ internal sealed class MessageRouterInvoker<TMessage>(
             activity.SetTag(ActivityTagNames.RouteKey, routeKey.ToString());
         }
 
+        // A retry routes the message again: the header is added once
+        if (context.RetryAttempt == 0)
+        {
+            context.Headers.Add(new(DeadLetterHeaders.RouteKey, routeKey.ToString()!));
+        }
+
         logger.LogDebug(
             "Router '{Identifier}' matched route key '{RouteKey}' to {ConsumerType}",
             identifier, routeKey, match.ConsumerType.Name);

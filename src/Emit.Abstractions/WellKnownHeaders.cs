@@ -16,4 +16,10 @@ public static class WellKnownHeaders
 
     /// <summary>Source address header. Injected by the producer so consumers can identify the sender.</summary>
     public const string SourceAddress = "emit-source-address";
+
+    /// <summary>
+    /// Message id header. Injected by the producer, so every delivery of the message has the same
+    /// <see cref="MessageContext.MessageId"/>.
+    /// </summary>
+    public const string MessageId = "emit-message-id";
 }

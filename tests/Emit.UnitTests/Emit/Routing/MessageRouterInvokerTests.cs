@@ -33,7 +33,7 @@ public sealed class MessageRouterInvokerTests
     }
 
     [Fact]
-    public async Task GivenMatchingRoute_WhenActivityPresent_ThenSetsRouteKeyTag()
+    public async Task GivenMatchingRoute_WhenRoutedAndRoutedAgainOnARetry_ThenTheRouteKeyIsTaggedAndAddedToTheHeadersOnce()
     {
         // Arrange
         using var activitySource = new ActivitySource("test");
@@ -54,10 +54,13 @@ public sealed class MessageRouterInvokerTests
         // Act
         using var activity = activitySource.StartActivity("test-consume");
         await invoker.InvokeAsync(context);
+        context.RetryAttempt = 1;
+        await invoker.InvokeAsync(context);
 
         // Assert
         Assert.NotNull(activity);
         Assert.Equal("key-a", activity.GetTagItem("emit.route.key"));
+        Assert.Equal("key-a", Assert.Single(context.Headers, h => h.Key == DeadLetterHeaders.RouteKey).Value);
     }
 
     [Fact]

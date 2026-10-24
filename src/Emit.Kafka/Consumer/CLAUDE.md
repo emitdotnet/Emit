@@ -5,11 +5,11 @@
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `ConsumerGroupWorker.cs` | BackgroundService managing Kafka consumer group lifecycle and partition assignment | Understand consumer group orchestration |
-| `ConsumerWorker.cs` | Per-partition/per-group worker processing messages via channel and IConsumer; signals when its full queue is half empty again | Understand message dispatch and processing flow |
+| `ConsumerWorker.cs` | Per-partition/per-group worker processing messages via channel and IConsumer: adds where each message was consumed from to its headers and takes its message id from them; signals when its full queue is half empty again | Understand message dispatch and processing flow |
 | `ConsumerGroupRegistration.cs` | Immutable descriptor capturing build-time consumer group configuration | Understand consumer group registration model |
 | `KafkaConsumerFlowControl.cs` | A declaration's pause state: separate application and circuit breaker holds, partitions paused until a full worker queue has room, the partitions reported by the rebalance handlers, and the count of messages being handled that an application pause waits for | Change how a consumer group is paused or resumed |
 | `KafkaTransportContext.cs` | Kafka-specific TransportContext subclass carrying topic, partition, and offset metadata | Understand Kafka transport context or implement Kafka-specific middleware |
-| `KafkaDeadLetterHeaders.cs` | Kafka-specific dead-letter header constants for source topic, partition, and offset | Implement DLQ producers or read Kafka-specific DLQ diagnostic headers |
+| `KafkaDeadLetterHeaders.cs` | Kafka-specific header constants for the source partition and offset the consumer adds to each message | Implement DLQ producers or read Kafka-specific DLQ diagnostic headers |
 | `DlqProducer.cs` | Dead letter queue producer for routing failed messages to DLQ topics | Understand DLQ message routing or debug DLQ behavior |
 | `StartupDiagnosticsLogger.cs` | Logs consumer group startup diagnostics and configuration | Debug consumer startup issues or understand consumer configuration |
 | `OffsetCommitter.cs` | Accumulates committable watermark offsets and periodically flushes to Kafka | Understand or debug offset commit behavior |

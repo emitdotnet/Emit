@@ -317,12 +317,18 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenFanOut_WhenEachConsumer_ThenGetsOwnServiceScope()
+    public async Task GivenFanOut_WhenEachConsumer_ThenGetsOwnServiceScopeAndHeadersWithTheSameMessageId()
     {
-        // Arrange
-        var registration = CreateRegistration(consumerTypes: [typeof(TestConsumer), typeof(TestConsumer)]);
+        // Arrange: each consumer's pipeline adds to its own headers
+        var registration = CreateRegistration(consumerTypes: [typeof(CapturingConsumer), typeof(CapturingConsumer)]);
+        var consumers = new List<CapturingConsumer>();
         var mockScopeFactory = new Mock<IServiceScopeFactory>();
-        mockScopeFactory.Setup(f => f.CreateScope()).Returns(() => CreateScope(typeof(TestConsumer), new TestConsumer()));
+        mockScopeFactory.Setup(f => f.CreateScope()).Returns(() =>
+        {
+            var consumer = new CapturingConsumer();
+            consumers.Add(consumer);
+            return CreateScope(typeof(CapturingConsumer), consumer);
+        });
         var worker = CreateWorker(registration: registration, scopeFactory: mockScopeFactory.Object);
         var result = CreateConsumeResult();
         worker.Writer.TryWrite(result);
@@ -334,16 +340,20 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         mockScopeFactory.Verify(f => f.CreateScope(), Times.Exactly(2));
+        var first = consumers[0].CapturedContext!;
+        var second = consumers[1].CapturedContext!;
+        Assert.NotSame(first.Headers, second.Headers);
+        Assert.Equal(first.MessageId, second.MessageId);
     }
 
     [Fact]
-    public async Task GivenDeserializeAsync_WhenConsumeResultHasHeaders_ThenContextHasHeaders()
+    public async Task GivenConsumeResultWithHeaders_WhenConsumed_ThenContextHasThemAndWhereItWasConsumedFromAndTheProducersMessageId()
     {
         // Arrange
         var headers = new ConfluentKafka.Headers
         {
             { "key1", System.Text.Encoding.UTF8.GetBytes("value1") },
-            { "key2", System.Text.Encoding.UTF8.GetBytes("value2") }
+            { WellKnownHeaders.MessageId, System.Text.Encoding.UTF8.GetBytes("message-42") },
         };
         var consumer = new CapturingConsumer();
         var registration = CreateRegistration(consumerTypes: [typeof(CapturingConsumer)]);
@@ -359,18 +369,28 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Equal(2, consumer.CapturedContext.Headers.Count);
+        Assert.Equal(
+            [
+                new("key1", "value1"),
+                new(WellKnownHeaders.MessageId, "message-42"),
+                new(DeadLetterHeaders.SourceTopic, "test-topic"),
+                new("emit-source-partition", "0"),
+                new("emit-source-offset", "0"),
+                new(DeadLetterHeaders.ConsumerGroup, "test-group"),
+            ],
+            consumer.CapturedContext.Headers);
+        Assert.Equal("message-42", consumer.CapturedContext.MessageId);
     }
 
     [Fact]
-    public async Task GivenDeserializeAsync_WhenConsumeResultHasNoHeaders_ThenContextHeadersEmpty()
+    public async Task GivenConsumeResultWithoutHeaders_WhenConsumed_ThenItIsIdentifiedByItsPositionInTheTopic()
     {
         // Arrange
         var consumer = new CapturingConsumer();
         var registration = CreateRegistration(consumerTypes: [typeof(CapturingConsumer)]);
         var scopeFactory = CreateScopeFactory(typeof(CapturingConsumer), consumer);
         var worker = CreateWorker(registration: registration, scopeFactory: scopeFactory);
-        var result = CreateConsumeResult(headers: null);
+        var result = CreateConsumeResult(partition: 2, offset: 7, headers: null);
         worker.Writer.TryWrite(result);
         worker.Complete();
         using var cts = new CancellationTokenSource();
@@ -378,9 +398,9 @@ public sealed class ConsumerWorkerTests
         // Act
         await worker.RunAsync(cts.Token);
 
-        // Assert
+        // Assert: the same on every delivery of the record
         Assert.NotNull(consumer.CapturedContext);
-        Assert.Empty(consumer.CapturedContext.Headers);
+        Assert.Equal("test-topic:2:7", consumer.CapturedContext.MessageId);
     }
 
     [Fact]
@@ -558,7 +578,7 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
-    public async Task GivenDeserializationError_WhenDeadLetterWithSink_ThenProducesToDlq()
+    public async Task GivenDeserializationError_WhenDeadLetterWithSink_ThenProducesToDlqWithWhereItWasConsumedFrom()
     {
         // Arrange
         var mockSink = CreateMockDeadLetterSink();
@@ -574,10 +594,11 @@ public sealed class ConsumerWorkerTests
         await worker.RunAsync(cts.Token);
 
         // Assert
-        mockSink.Verify(s => s.ProduceAsync(
-            It.IsAny<byte[]?>(), It.IsAny<byte[]?>(),
-            It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        var produce = Assert.Single(mockSink.Invocations, i => i.Method.Name == nameof(IDeadLetterSink.ProduceAsync));
+        var headers = (IReadOnlyList<KeyValuePair<string, string>>)produce.Arguments[2];
+        Assert.Contains(new KeyValuePair<string, string>(DeadLetterHeaders.SourceTopic, "test-topic"), headers);
+        Assert.Contains(new KeyValuePair<string, string>(DeadLetterHeaders.ConsumerGroup, "test-group"), headers);
+        Assert.Contains(headers, h => h.Key == DeadLetterHeaders.ExceptionType);
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
     }
 
@@ -643,13 +664,13 @@ public sealed class ConsumerWorkerTests
 
         // Assert
         Assert.NotNull(capturedHeaders);
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-exception-type");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-exception-message");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-consumer-group" && h.Value == "test-group");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-source-topic" && h.Value == "test-topic");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-source-partition" && h.Value == "0");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-source-offset" && h.Value == "0");
-        Assert.Contains(capturedHeaders, h => h.Key == "x-emit-timestamp");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-exception-type");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-exception-message");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-consumer-group" && h.Value == "test-group");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-source-topic" && h.Value == "test-topic");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-source-partition" && h.Value == "0");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-source-offset" && h.Value == "0");
+        Assert.Contains(capturedHeaders, h => h.Key == "emit-timestamp");
     }
 
     [Fact]
@@ -748,13 +769,14 @@ public sealed class ConsumerWorkerTests
     // ── Batch mode ──
 
     [Fact]
-    public async Task GivenBatchMode_WhenSourceAddressHeaderPresent_ThenItemTransportContextHasSourceAddress()
+    public async Task GivenBatchMode_WhenSourceAddressAndMessageIdHeadersPresent_ThenItemTransportContextHasThem()
     {
         // Arrange
         var sourceUri = "kafka://producer:9092";
         var headers = new ConfluentKafka.Headers
         {
-            { WellKnownHeaders.SourceAddress, System.Text.Encoding.UTF8.GetBytes(sourceUri) }
+            { WellKnownHeaders.SourceAddress, System.Text.Encoding.UTF8.GetBytes(sourceUri) },
+            { WellKnownHeaders.MessageId, System.Text.Encoding.UTF8.GetBytes("message-42") },
         };
         ConsumeContext<MessageBatch<string>>? capturedContext = null;
         var registration = CreateBatchRegistration(ctx =>
@@ -775,6 +797,7 @@ public sealed class ConsumerWorkerTests
         Assert.NotNull(capturedContext);
         var item = Assert.Single(capturedContext.Message.Items);
         Assert.Equal(new Uri(sourceUri), item.TransportContext.SourceAddress);
+        Assert.Equal("message-42", item.TransportContext.MessageId);
     }
 
     [Fact]

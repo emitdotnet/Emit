@@ -62,9 +62,9 @@ public sealed class DlqProducerTests
         // Arrange
         var headers = new List<KeyValuePair<string, string>>
         {
-            new("x-emit-original-topic", "orders"),
-            new("x-emit-partition", "0"),
-            new("x-emit-offset", "42"),
+            new("emit-original-topic", "orders"),
+            new("emit-partition", "0"),
+            new("emit-offset", "42"),
         };
         ConfluentKafka.Message<byte[], byte[]>? capturedMessage = null;
         mockProducer
@@ -92,7 +92,7 @@ public sealed class DlqProducerTests
         var headers = new List<KeyValuePair<string, string>>
         {
             new("correlation-id", "abc-123"),
-            new("x-emit-original-topic", "orders"),
+            new("emit-original-topic", "orders"),
         };
         ConfluentKafka.Message<byte[], byte[]>? capturedMessage = null;
         mockProducer

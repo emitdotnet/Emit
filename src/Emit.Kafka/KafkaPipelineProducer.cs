@@ -60,6 +60,11 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
             context.Headers.AddRange(message.Headers);
         }
 
+        // Every delivery of the message carries the same id, and where it was produced from; they replace those of
+        // another message among the headers given, as when a handler forwards the headers of a message it consumed
+        context.Headers.Upsert(WellKnownHeaders.MessageId, context.MessageId);
+        context.Headers.Upsert(WellKnownHeaders.SourceAddress, hostAddress.ToString());
+
         await pipeline.InvokeAsync(context).ConfigureAwait(false);
     }
 }
