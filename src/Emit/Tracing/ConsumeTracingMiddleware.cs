@@ -7,8 +7,11 @@ using Emit.Abstractions.Tracing;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Middleware that creates an <c>emit.consume</c> child Activity for each consumer entry.
-/// Consumer identity is baked in at build time by <see cref="Pipeline.ConsumerPipelineComposer{TValue}"/>.
+/// Middleware that starts the <c>process</c> span of each consumer entry, outermost in its pipeline so the span
+/// covers the whole processing of the message: its retries and what is done when it fails. A single message's span
+/// has the message's creation context as its parent, and links to it. A batch can't have one parent: its span
+/// links to the creation context of each of its messages. Consumer identity is baked in at build time by
+/// <see cref="Pipeline.ConsumerPipelineComposer{TValue}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ConsumeTracingMiddleware<TMessage>(
@@ -18,118 +21,86 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
     string consumerIdentifier,
     Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
 {
+    // The type of the message, or of each message of a batch
+    private static readonly string MessageTypeName =
+        typeof(TMessage).IsGenericType && typeof(TMessage).GetGenericTypeDefinition() == typeof(MessageBatch<>)
+            ? typeof(TMessage).GetGenericArguments()[0].Name
+            : typeof(TMessage).Name;
+
     private readonly EmitTracingOptions options = options.Value;
 
     public async Task InvokeAsync(
         ConsumeContext<TMessage> context,
         IMiddlewarePipeline<ConsumeContext<TMessage>> next)
     {
-        // Check if tracing is enabled
-        if (!this.options.Enabled)
+        if (!MessagingActivity.IsEnabled(EmitActivitySources.Consumer, options))
         {
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        // Extract traceparent and tracestate from headers (direct property on ConsumeContext)
-        var headers = context.Headers;
-        ActivityContext parentContext = default;
-        string? traceParent = null;
-        string? traceState = null;
-        bool isDlqReplay = false;
+        List<KeyValuePair<string, object?>> tags =
+        [
+            .. context.TransportContext.GetTracingTags(),
+            new(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString()),
+            new(ActivityTagNames.MessageType, MessageTypeName),
+            new(ActivityTagNames.Consumer, consumerIdentifier),
+        ];
 
-        if (headers is { Count: > 0 })
+        if (consumerType is not null)
         {
-            // Check if this is a DLQ replay (has emit-dlq-original-traceparent)
-            var originalTraceParent = headers.GetFirstValue(DeadLetterHeaders.OriginalTraceParent);
-            if (!string.IsNullOrEmpty(originalTraceParent))
-            {
-                // This is a DLQ replay — link back to the original failed trace
-                traceParent = originalTraceParent;
-                isDlqReplay = true;
-            }
-            else
-            {
-                // Normal consume — use standard traceparent
-                traceParent = headers.GetFirstValue(WellKnownHeaders.TraceParent);
-            }
-
-            traceState = headers.GetFirstValue(WellKnownHeaders.TraceState);
-
-            if (!string.IsNullOrEmpty(traceParent))
-            {
-                ActivityContext.TryParse(traceParent, traceState, out parentContext);
-            }
+            tags.Add(new(ActivityTagNames.ConsumerType, consumerType.Name));
         }
 
-        // Create Activity for consume operation (or DLQ replay)
-        using var activity = EmitActivitySources.Consumer.StartActivity(
-            isDlqReplay ? ActivityNames.DlqReplay : ActivityNames.Consume,
+        ActivityContext parent = default;
+        List<ActivityLink> links;
+
+        if (context.Message is IBatchMessage batch)
+        {
+            links = [.. batch.GetItemTransportContexts()
+                .Select(item => MessagingActivity.CreationContext(item.Headers))
+                .Where(creationContext => creationContext != default)
+                .Select(creationContext => new ActivityLink(creationContext))];
+            tags.Add(new(ActivityTagNames.MessagingBatchMessageCount, batch.Count));
+        }
+        else
+        {
+            parent = MessagingActivity.CreationContext(context.Headers);
+            links = parent != default ? [new ActivityLink(parent)] : [];
+        }
+
+        using var activity = MessagingActivity.Start(
+            EmitActivitySources.Consumer,
+            options,
+            ActivityNames.Process,
             ActivityKind.Consumer,
-            parentContext);
+            context.DestinationAddress,
+            context.Message is IBatchMessage ? null : context.MessageId,
+            parent,
+            links,
+            tags);
 
         if (activity is null)
         {
-            // ActivitySource not enabled (no listeners)
             await next.InvokeAsync(context).ConfigureAwait(false);
             return;
         }
 
-        activity.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
-
-        // Add standard tags — derive messaging.system from URI scheme
-        activity.SetTag(ActivityTagNames.MessagingSystem,
-            EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "emit");
-        activity.SetTag(ActivityTagNames.MessagingOperation, "receive");
-        activity.SetTag(ActivityTagNames.MessageType, typeof(TMessage).Name);
-
-        // Add consumer identity (baked at build time)
-        activity.SetTag(ActivityTagNames.Consumer, consumerIdentifier);
-        if (consumerType is not null)
+        if (context.Message is not IBatchMessage)
         {
-            activity.SetTag(ActivityTagNames.ConsumerType, consumerType.Name);
+            MessagingActivity.RestoreBaggage(activity, context.Headers, options);
         }
 
-        // Add destination name from URI
-        if (EmitEndpointAddress.GetEntityName(context.DestinationAddress) is { } destination)
-        {
-            activity.SetTag(ActivityTagNames.MessagingDestinationName, destination);
-        }
-
-        // Add DLQ replay indicator if applicable
-        if (isDlqReplay)
-        {
-            activity.SetTag(ActivityTagNames.DlqReplay, true);
-
-            // Extract original topic from headers if available
-            var originalTopic = headers.GetFirstValue(DeadLetterHeaders.OriginalTopic);
-            if (!string.IsNullOrEmpty(originalTopic))
-            {
-                activity.SetTag(ActivityTagNames.DlqOriginalTopic, originalTopic);
-            }
-        }
-
-        // Restore baggage from W3C baggage header
-        if (this.options.PropagateBaggage && headers is { Count: > 0 })
-        {
-            var baggageHeader = headers.GetFirstValue(WellKnownHeaders.Baggage);
-            if (!string.IsNullOrEmpty(baggageHeader))
-            {
-                ActivityPropagation.RestoreBaggage(activity, baggageHeader);
-            }
-        }
-
-        // Invoke enrichers
         enricherInvoker.InvokeEnrichers(
             activity,
             new EnrichmentContext
             {
                 MessageContext = context,
-                Phase = "consume"
+                Phase = EnrichmentPhases.Consume
             },
             context.Services);
 
-        // Continue pipeline
+        // A failure is recorded on the span by the error handling inside it, which decides it is final
         await next.InvokeAsync(context).ConfigureAwait(false);
     }
 }

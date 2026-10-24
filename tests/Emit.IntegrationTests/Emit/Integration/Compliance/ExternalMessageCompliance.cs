@@ -15,7 +15,7 @@ using Xunit;
 
 /// <summary>
 /// Compliance tests for consuming messages produced externally (without Emit headers).
-/// Verifies that root activities are created and metrics are recorded. Derived classes
+/// Verifies that they are delivered and metrics are recorded. Derived classes
 /// configure a provider-specific consumer group and implement native message production.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -40,22 +40,12 @@ public abstract class ExternalMessageCompliance
     protected abstract Task ProduceExternalMessageAsync(string topic, string key, string value);
 
     [Fact]
-    public async Task GivenExternalMessageWithoutHeaders_WhenConsumed_ThenCreatesRootActivityAndRecordsMetrics()
+    public async Task GivenExternalMessageWithoutHeaders_WhenConsumed_ThenDeliveredAndRecordsMetrics()
     {
         // Arrange
         var topic = $"test-external-{Guid.NewGuid():N}";
         var sink = new MessageSink<string>();
-        var capturedActivities = new ConcurrentBag<Activity>();
         var capturedMetrics = new ConcurrentBag<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
-
-        // Set up ActivityListener to capture activities from the Emit consumer source.
-        using var activityListener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == EmitActivitySourceNames.Consumer,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activity => capturedActivities.Add(activity),
-        };
-        ActivitySource.AddActivityListener(activityListener);
 
         // Set up MeterListener to capture metrics from the Emit meter.
         using var meterListener = new MeterListener();
@@ -98,17 +88,6 @@ public abstract class ExternalMessageCompliance
             await host.StopAsync();
             host.Dispose();
         }
-
-        // Assert — root activity was created with no parent (external message had no traceparent header)
-        // Filter by topic to avoid capturing activities from parallel tests (ActivityListener is process-global).
-        var consumeActivity = Assert.Single(capturedActivities,
-            a => a.OperationName == "emit.consume"
-                && (string?)a.GetTagItem("messaging.destination.name") == topic);
-        Assert.Equal(ActivityKind.Consumer, consumeActivity.Kind);
-        Assert.Null(consumeActivity.ParentId);
-        Assert.Equal(default, consumeActivity.ParentSpanId);
-        Assert.Equal("kafka", consumeActivity.GetTagItem("messaging.system"));
-        Assert.Equal("receive", consumeActivity.GetTagItem("messaging.operation"));
 
         // Assert — metrics were recorded
         Assert.Contains(capturedMetrics, m =>

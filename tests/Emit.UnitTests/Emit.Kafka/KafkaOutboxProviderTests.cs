@@ -1,11 +1,15 @@
 namespace Emit.Kafka.Tests;
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
+using global::Emit.Abstractions.Tracing;
 using global::Emit.Kafka;
 using global::Emit.Kafka.DependencyInjection;
 using global::Emit.Kafka.Metrics;
 using global::Emit.Models;
+using global::Emit.Tracing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -219,18 +223,34 @@ public class KafkaOutboxProviderTests
     [InlineData(ConfluentKafka.ErrorCode.Local_AllBrokersDown, true)]
     [InlineData(ConfluentKafka.ErrorCode.MsgSizeTooLarge, false)]
     [InlineData(ConfluentKafka.ErrorCode.TopicAuthorizationFailed, false)]
-    public async Task GivenMessageThatCouldNotBeSent_WhenTheDeliveryCompletes_ThenItIsNotCommittedAndOnlyAFailureToReachTheBrokerIsReportedAsSuch(
+    public async Task GivenMessageThatCouldNotBeSent_WhenTheDeliveryCompletes_ThenItIsNotCommittedItsSendSpanEndsInErrorAndOnlyAFailureToReachTheBrokerIsReportedAsSuch(
         ConfluentKafka.ErrorCode error,
         bool brokerUnreachable)
     {
         // Arrange: a message that times out was retried by the client until the broker stayed out of reach, which
         // another node may not be; a broker that refuses the entry refuses it from every node
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var sends = new ConcurrentQueue<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == EmitActivitySourceNames.Producer,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if ((string?)activity.GetTagItem("messaging.destination.name") == topic)
+                {
+                    sends.Enqueue(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
         using var provider = CreateProvider(producer => producer
             .Setup(p => p.Produce(It.IsAny<string>(), It.IsAny<ConfluentKafka.Message<byte[], byte[]>>(), It.IsAny<Action<ConfluentKafka.DeliveryReport<byte[], byte[]>>>()))
             .Callback((string _, ConfluentKafka.Message<byte[], byte[]> _, Action<ConfluentKafka.DeliveryReport<byte[], byte[]>> report) =>
                 report(new ConfluentKafka.DeliveryReport<byte[], byte[]> { Error = new ConfluentKafka.Error(error) })));
         await using var delivery = await provider.BeginDeliveryAsync(run);
-        await delivery.SendAsync(CreateValidEntry());
+        await delivery.SendAsync(KafkaBuilder.CreateOutboxEntry(
+            $"kafka://localhost:9092/{topic}", topic, typeof(byte[]), typeof(byte[]), [1, 2, 3], [4, 5, 6], headers: null));
 
         // Act
         var exception = await Record.ExceptionAsync(() => delivery.CompleteAsync());
@@ -239,6 +259,9 @@ public class KafkaOutboxProviderTests
         Assert.Equal(brokerUnreachable, exception is MessageBrokerUnreachableException);
         Assert.IsType<ConfluentKafka.KafkaException>(brokerUnreachable ? exception!.InnerException : exception);
         Assert.Single(producers).Producer.Verify(p => p.CommitTransaction(It.IsAny<TimeSpan>()), Times.Never);
+        var send = Assert.Single(sends);
+        Assert.Equal(ActivityStatusCode.Error, send.Status);
+        Assert.Equal(error.ToString(), send.GetTagItem("error.type"));
     }
 
     private KafkaOutboxProvider CreateProvider(Action<Mock<ConfluentKafka.IProducer<byte[], byte[]>>>? setup = null) =>
@@ -261,6 +284,7 @@ public class KafkaOutboxProviderTests
             TransactionTimeout,
             new KafkaMetrics(null, new EmitMetricsEnrichment()),
             Mock.Of<INodeIdentity>(n => n.NodeId == Guid.NewGuid()),
+            new EmitTracingOptions(),
             NullLogger<KafkaOutboxProvider>.Instance);
 
     private static OutboxEntry CreateValidEntry() =>

@@ -1,6 +1,5 @@
 namespace Emit.Tracing;
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Emit.Abstractions.Tracing;
 
@@ -9,29 +8,18 @@ using Emit.Abstractions.Tracing;
 /// </summary>
 internal static class EmitActivitySources
 {
-    private const string Version = "1.0.0";
-
-    private static readonly ConcurrentDictionary<string, ActivitySource> ProviderSources = new();
-
     /// <summary>
-    /// Gets the ActivitySource for outbox operations (enqueue, process).
+    /// The version of the telemetry the sources emit.
     /// </summary>
-    public static readonly ActivitySource Outbox = new(EmitActivitySourceNames.Outbox, Version);
+    internal const string Version = "1.0.0";
 
     /// <summary>
-    /// Gets the ActivitySource for consumer operations (consume, DLQ replay).
+    /// Gets the ActivitySource for producing messages: create and send.
+    /// </summary>
+    public static readonly ActivitySource Producer = new(EmitActivitySourceNames.Producer, Version);
+
+    /// <summary>
+    /// Gets the ActivitySource for consuming messages: process, retry, and dead letter send.
     /// </summary>
     public static readonly ActivitySource Consumer = new(EmitActivitySourceNames.Consumer, Version);
-
-    /// <summary>
-    /// Gets the ActivitySource for a specific provider.
-    /// </summary>
-    /// <param name="providerId">The provider identifier (e.g., "kafka").</param>
-    /// <returns>The ActivitySource for the provider.</returns>
-    public static ActivitySource ForProvider(string providerId)
-    {
-        return ProviderSources.GetOrAdd(
-            providerId,
-            id => new ActivitySource(EmitActivitySourceNames.ForProvider(id), Version));
-    }
 }

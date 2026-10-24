@@ -11,6 +11,7 @@ PostgreSQL integration tests: EF Core compliance implementations and test DbCont
 | `PostgreSqlLeaderElectionCompliance.cs` | Inherits DatabaseLeaderElectionCompliance; proves EF Core leader election correctness | Debug or extend PostgreSQL leader election tests |
 | `PostgreSqlDaemonAssignmentCompliance.cs` | Inherits DaemonAssignmentCompliance; proves EF Core daemon assignment correctness | Debug or extend PostgreSQL daemon assignment tests |
 | `EfCoreOutboxDeliveryCompliance.cs` | Inherits OutboxDeliveryCompliance; proves EF Core outbox delivery correctness | Debug or extend EF Core outbox delivery tests |
+| `EfCoreTracingCompliance.cs` | Inherits TracingCompliance; proves Emit's spans with the EF Core outbox | Debug or extend EF Core tracing tests |
 | `EfCoreTombstoneCompliance.cs` | Inherits TombstoneCompliance; proves tombstones through the EF Core outbox | Debug or extend EF Core tombstone tests |
 | `EfCoreOutboxHeadersCompliance.cs` | Inherits OutboxHeadersCompliance; verifies header propagation through the EF Core outbox | Debug or extend header propagation tests |
 | `EfCoreOutboxObserverCompliance.cs` | Inherits OutboxObserverCompliance; proves EF Core outbox observer event delivery | Debug or extend EF Core outbox observer tests |

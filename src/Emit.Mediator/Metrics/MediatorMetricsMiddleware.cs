@@ -5,7 +5,7 @@ using Emit.Abstractions.Pipeline;
 
 /// <summary>
 /// Inbound middleware that records mediator dispatch duration, completion, and concurrency metrics.
-/// Auto-inserted as the outermost layer of the mediator pipeline.
+/// Auto-inserted right inside the tracing layer of the mediator pipeline.
 /// </summary>
 /// <typeparam name="TMessage">The request type.</typeparam>
 internal sealed class MediatorMetricsMiddleware<TMessage>(

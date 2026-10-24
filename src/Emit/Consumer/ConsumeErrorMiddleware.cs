@@ -9,16 +9,15 @@ using Emit.Tracing;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Outermost middleware in the consume pipeline. Catches handler/validation/retry-exhausted
-/// errors and applies the error policy (dead-letter or discard). Consumer identity is baked
-/// in at build time by <c>ConsumerPipelineComposer</c> for DLQ headers and tracing.
+/// Middleware right inside the process span of the consume pipeline. Catches handler/validation/retry-exhausted
+/// errors, records the failure on the process span, and applies the error policy (dead-letter or discard).
+/// Consumer identity is baked in at build time by <c>ConsumerPipelineComposer</c> for DLQ headers.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ConsumeErrorMiddleware<TMessage>(
     Func<Exception, ErrorAction>? evaluatePolicy,
     IDeadLetterSink? deadLetterSink,
     EmitMetrics emitMetrics,
-    INodeIdentity nodeIdentity,
     ILogger<ConsumeErrorMiddleware<TMessage>> logger,
     string identifier,
     Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
@@ -42,6 +41,12 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
     private async Task HandleErrorAsync(ConsumeContext<TMessage> context, Exception exception)
     {
+        // The failure is final: the processing of the message failed, whatever is done with it now
+        if (Activity.Current is { Kind: ActivityKind.Consumer } process && process.Source == EmitActivitySources.Consumer)
+        {
+            MessagingActivity.RecordFailure(process, exception);
+        }
+
         if (evaluatePolicy is null)
         {
             // No policy configured — discard with warning
@@ -93,7 +98,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
         var destinationName = EmitEndpointAddress.GetEntityName(deadLetterSink.DestinationAddress);
 
-        if (await DeadLetterItemAsync(exception, context.TransportContext, context.RetryAttempt, destinationName, context.CancellationToken).ConfigureAwait(false))
+        if (await DeadLetterItemAsync(exception, context.TransportContext, context.RetryAttempt, context.CancellationToken).ConfigureAwait(false))
         {
             emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDeadLetter);
             logger.LogWarning(exception,
@@ -120,7 +125,7 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
 
         foreach (var itemTransport in batchMessage.GetItemTransportContexts())
         {
-            if (await DeadLetterItemAsync(exception, itemTransport, context.RetryAttempt, destinationName, context.CancellationToken).ConfigureAwait(false))
+            if (await DeadLetterItemAsync(exception, itemTransport, context.RetryAttempt, context.CancellationToken).ConfigureAwait(false))
             {
                 succeeded++;
             }
@@ -149,20 +154,16 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
     }
 
     /// <summary>
-    /// Dead-letters a single item: builds headers, creates a DLQ activity span, and produces to the sink.
+    /// Dead-letters a single item: builds headers and produces to the sink.
     /// Returns <c>true</c> on success, <c>false</c> if the produce failed.
     /// </summary>
     private async Task<bool> DeadLetterItemAsync(
         Exception exception,
         TransportContext transportContext,
         int retryAttempt,
-        string? destinationName,
         CancellationToken cancellationToken)
     {
         var headers = BuildDeadLetterHeaders(exception, transportContext, retryAttempt);
-
-        var parentContext = ExtractParentContext(transportContext.Headers);
-        using var dlqActivity = StartDlqActivity(parentContext, destinationName, exception);
 
         try
         {
@@ -174,9 +175,8 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             emitMetrics.RecordDlqProduced(EmitMetrics.DlqReasonErrorPolicy);
             return true;
         }
-        catch (Exception dlqEx)
+        catch (Exception)
         {
-            dlqActivity?.SetStatus(ActivityStatusCode.Error, dlqEx.Message);
             emitMetrics.RecordDlqProduceErrors(EmitMetrics.DlqReasonErrorPolicy);
             return false;
         }
@@ -201,38 +201,5 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
         }
 
         return headers;
-    }
-
-    private Activity? StartDlqActivity(
-        ActivityContext parentContext,
-        string? destinationName,
-        Exception exception)
-    {
-        var dlqActivity = EmitActivitySources.Consumer.StartActivity(
-            ActivityNames.DlqPublish,
-            ActivityKind.Producer,
-            parentContext);
-
-        dlqActivity?.SetTag(ActivityTagNames.NodeId, nodeIdentity.NodeId.ToString());
-        dlqActivity?.SetTag(ActivityTagNames.MessagingDestinationName, destinationName);
-        dlqActivity?.SetTag(ActivityTagNames.MessagingSystem,
-            EmitEndpointAddress.GetScheme(deadLetterSink!.DestinationAddress) ?? "emit");
-        dlqActivity?.SetTag(ActivityTagNames.DlqReason, exception.GetType().Name);
-
-        return dlqActivity;
-    }
-
-    private static ActivityContext ExtractParentContext(IReadOnlyList<KeyValuePair<string, string>> headers)
-    {
-        if (headers is not { Count: > 0 })
-            return default;
-
-        var traceParent = headers.GetFirstValue(WellKnownHeaders.TraceParent);
-        var traceState = headers.GetFirstValue(WellKnownHeaders.TraceState);
-
-        if (!string.IsNullOrEmpty(traceParent) && ActivityContext.TryParse(traceParent, traceState, out var ctx))
-            return ctx;
-
-        return default;
     }
 }

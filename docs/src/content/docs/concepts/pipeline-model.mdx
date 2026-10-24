@@ -26,9 +26,9 @@ Before any middleware runs, Emit handles the mechanics of getting a message from
 After fan-out, each consumer runs its own fully composed pipeline from outermost to innermost:
 
 <Mermaid code={`flowchart TD
-    A["Error handling"] --> B["Observers"]
-    B --> C["Tracing"]
-    C --> D["Metrics"]
+    T["Tracing"] --> A["Error handling"]
+    A --> B["Observers"]
+    B --> D["Metrics"]
     D --> E["User middleware (Global → Provider → Group)"]
     E --> F["Retry"]
     F --> G["Filters"]
@@ -39,9 +39,9 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 
 | Layer | What it does | Always present? |
 |---|---|---|
-| **Error handling** | Catches exceptions, evaluates the error policy (dead-letter, discard) | Yes |
+| **Tracing** | Starts the `process` span of the message for this consumer. See [Distributed Tracing](../../observability/tracing/) | Yes |
+| **Error handling** | Catches exceptions, records the failure on the `process` span, evaluates the error policy (dead-letter, discard) | Yes |
 | **Observers** | Invokes registered `IConsumeObserver` callbacks | Yes |
-| **Tracing** | Creates an `emit.consume` activity with consumer identity tags | Yes |
 | **Metrics** | Records duration and success/failure counters | Yes |
 | **User middleware** | Your custom middleware, composed Global to Provider to Group | Only if registered |
 | **Retry** | Runs each attempt (filters, validation and the unit of work): re-executes it on failure, as the matching error policy clause decides, and holds it while the circuit breaker is open, reporting its outcome | Only if the error policy retries or a circuit breaker is configured |
@@ -51,7 +51,7 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 | **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
 | **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |
 
-The ordering is deliberate. Error handling sits outermost so it catches exceptions from every other layer. Filters and validation run inside each attempt: a failed validation result is final and never retried, while a filter or validator that throws fails the attempt like a handler, so a dependency it calls that is briefly down gets retried. The unit of work wraps the per-consumer middleware, so a failure there rolls the transaction back instead of failing after the commit, and each retry attempt is a fresh unit of work. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
+The ordering is deliberate. Tracing sits outermost so the `process` span covers everything done with the message, retries and dead-lettering included. Error handling sits right inside it so it catches exceptions from every other layer. Filters and validation run inside each attempt: a failed validation result is final and never retried, while a filter or validator that throws fails the attempt like a handler, so a dependency it calls that is briefly down gets retried. The unit of work wraps the per-consumer middleware, so a failure there rolls the transaction back instead of failing after the commit, and each retry attempt is a fresh unit of work. User middleware runs inside tracing and metrics so your code is automatically observed without any extra plumbing.
 
 ### Fan-out and independent failure
 
@@ -70,7 +70,7 @@ The outbound path is simpler: no fan-out, no deserialization. When you call `IEv
 | Layer | What it does | Always present? |
 |---|---|---|
 | **Observers** | Invokes registered `IProduceObserver` callbacks | Yes |
-| **Tracing** | Creates an `emit.produce` activity | Yes |
+| **Tracing** | Starts the `create` span of the message and puts its trace context in the headers | Yes |
 | **Metrics** | Records produce duration and counters | Yes |
 | **User middleware** | Your custom middleware, composed Global to Provider to per-producer | Only if registered |
 | **Terminal** | Delivers the message to its destination | Yes |

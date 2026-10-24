@@ -6,6 +6,7 @@ using global::Emit.Abstractions.Metrics;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
+using global::Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -22,7 +23,7 @@ public sealed class RetryMiddlewareTests
         CreateMiddleware(_ => ErrorAction.Retry(maxAttempts, Backoff.None, ErrorAction.DeadLetter()));
 
     private static RetryMiddleware<string> CreateMiddleware(Func<Exception, ErrorAction> policy) =>
-        new(policy, Metrics, NodeIdentity.Object, NullLogger<RetryMiddleware<string>>.Instance);
+        new(policy, Metrics, new EmitTracingOptions(), NodeIdentity.Object, NullLogger<RetryMiddleware<string>>.Instance);
 
     private static ConsumeContext<string> CreateContext(
         IServiceProvider services,
@@ -337,6 +338,7 @@ public sealed class RetryMiddlewareTests
         var middleware = new RetryMiddleware<string>(
             _ => ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter()),
             Metrics,
+            new EmitTracingOptions(),
             NodeIdentity.Object,
             NullLogger<RetryMiddleware<string>>.Instance,
             breaker.Object);

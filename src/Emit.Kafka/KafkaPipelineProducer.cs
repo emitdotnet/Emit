@@ -23,10 +23,13 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        var messageId = Guid.NewGuid().ToString();
+        var timestamp = timeProvider.GetUtcNow();
+
         var context = new SendContext<TValue>
         {
-            MessageId = Guid.NewGuid().ToString(),
-            Timestamp = timeProvider.GetUtcNow(),
+            MessageId = messageId,
+            Timestamp = timestamp,
             CancellationToken = cancellationToken,
             Services = services,
             Message = message.Value,
@@ -34,25 +37,8 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
             SourceAddress = hostAddress,
         };
 
-        // Set Kafka transport context as payload so the terminal can extract the key
-        context.SetPayload(new KafkaTransportContext<TKey>
-        {
-            Key = message.Key,
-            MessageId = context.MessageId,
-            Timestamp = context.Timestamp,
-            CancellationToken = cancellationToken,
-            Services = services,
-            RawKey = null,
-            RawValue = null,
-            Headers = [],
-            ProviderId = Provider.Identifier,
-            Topic = EmitEndpointAddress.GetEntityName(destinationAddress) ?? "",
-            Partition = -1,
-            Offset = -1,
-            GroupId = "",
-            DestinationAddress = destinationAddress,
-            SourceAddress = hostAddress,
-        });
+        // The key travels to the terminal as a payload of the send context
+        context.SetPayload(new KafkaProducePayload(message.Key, message.Value is null));
 
         // Copy user-provided headers to context
         if (message.Headers is { Count: > 0 })

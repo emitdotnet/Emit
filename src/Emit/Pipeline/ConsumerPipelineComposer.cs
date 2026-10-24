@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Composes a fully-layered consume middleware pipeline for a single consumer or router entry.
 /// Pipeline order (innermost → outermost):
-/// handler → per-entry → unit of work → validation → filter → retry → group/provider/global → metrics → tracing → observers → error.
+/// handler → per-entry → unit of work → validation → filter → retry → group/provider/global → metrics → observers → error → tracing.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
 internal sealed class ConsumerPipelineComposer<TValue>
@@ -155,6 +155,7 @@ internal sealed class ConsumerPipelineComposer<TValue>
             var retryMw = new RetryMiddleware<TValue>(
                 RetryPolicy,
                 Services.GetRequiredService<EmitMetrics>(),
+                Services.GetRequiredService<IOptions<EmitTracingOptions>>().Value,
                 Services.GetRequiredService<INodeIdentity>(),
                 LoggerFactory.CreateLogger<RetryMiddleware<TValue>>(),
                 CircuitBreakerNotifier);
@@ -173,7 +174,28 @@ internal sealed class ConsumerPipelineComposer<TValue>
             pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(metricsMw, pipeline);
         }
 
-        // 7. ConsumeTracingMiddleware (baked identity)
+        // 7. ConsumeObserverMiddleware
+        {
+            var observerMw = new ConsumeObserverMiddleware<TValue>(
+                ConsumeObservers,
+                LoggerFactory.CreateLogger<ConsumeObserverMiddleware<TValue>>());
+            pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(observerMw, pipeline);
+        }
+
+        // 8. ConsumeErrorMiddleware (catches everything inside it, baked identity)
+        {
+            var errorMw = new ConsumeErrorMiddleware<TValue>(
+                ErrorPolicy,
+                Services.GetService<IDeadLetterSink>(),
+                Services.GetRequiredService<EmitMetrics>(),
+                LoggerFactory.CreateLogger<ConsumeErrorMiddleware<TValue>>(),
+                identifier,
+                consumerType);
+            pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(errorMw, pipeline);
+        }
+
+        // 9. ConsumeTracingMiddleware (outermost, baked identity): the process span covers the whole processing of the
+        // message, including what the error handling does when it fails
         {
             var tracingMw = new ConsumeTracingMiddleware<TValue>(
                 Services.GetRequiredService<IOptions<EmitTracingOptions>>(),
@@ -182,27 +204,6 @@ internal sealed class ConsumerPipelineComposer<TValue>
                 identifier,
                 consumerType);
             pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(tracingMw, pipeline);
-        }
-
-        // 8. ConsumeObserverMiddleware
-        {
-            var observerMw = new ConsumeObserverMiddleware<TValue>(
-                ConsumeObservers,
-                LoggerFactory.CreateLogger<ConsumeObserverMiddleware<TValue>>());
-            pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(observerMw, pipeline);
-        }
-
-        // 9. ConsumeErrorMiddleware (outermost — catches everything, baked identity)
-        {
-            var errorMw = new ConsumeErrorMiddleware<TValue>(
-                ErrorPolicy,
-                Services.GetService<IDeadLetterSink>(),
-                Services.GetRequiredService<EmitMetrics>(),
-                Services.GetRequiredService<INodeIdentity>(),
-                LoggerFactory.CreateLogger<ConsumeErrorMiddleware<TValue>>(),
-                identifier,
-                consumerType);
-            pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(errorMw, pipeline);
         }
 
         return new ConsumerPipelineEntry<TValue>

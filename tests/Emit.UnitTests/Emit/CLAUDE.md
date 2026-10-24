@@ -26,3 +26,4 @@ Unit tests for the core Emit library: pipeline, consumer, daemon, routing, error
 | `Pipeline/` | Tests for consumer filter middleware, feature collection, and pipeline builder | Debugging pipeline test failures |
 | `RateLimiting/` | Tests for rate limit builder | Debugging rate limiting test failures |
 | `Routing/` | Tests for message router builder and invoker | Debugging routing test failures |
+| `Tracing/` | Tests for starting spans, recording failures and reading the creation context | Debugging tracing test failures |

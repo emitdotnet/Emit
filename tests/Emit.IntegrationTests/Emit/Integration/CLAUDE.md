@@ -4,6 +4,7 @@
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
+| `ActivityRecorder.cs` | Records the spans Emit's sources finish, found by name, destination or parent, with a wait for spans that end later | Assert the spans Emit starts |
 | `TestHelpers.cs` | `WaitUntilAsync` polling, producing through the real outbox pipeline in a transaction, and fast leader election settings for real hosts | Write any compliance or integration test that polls, produces through the outbox, or runs several hosts |
 | `AlwaysFailingConsumer.cs` | `IConsumer<string>` and `IBatchConsumer<string>` that always throw — for error policy and DLQ tests | Simulate persistent consumer failures in compliance tests |
 | `ConsumerToggle.cs` | Toggle controlling whether `ToggleableConsumer`/`ToggleableBatchConsumer` throws | Simulate runtime failure toggling in circuit breaker tests |

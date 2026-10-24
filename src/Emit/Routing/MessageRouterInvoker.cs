@@ -41,10 +41,12 @@ internal sealed class MessageRouterInvoker<TMessage>(
             throw new UnmatchedRouteException(routeKey);
         }
 
-        // Tag the current Activity with route details (identity is baked into tracing middleware)
+        // Tag the current span with the route and the consumer it dispatches to (the router's identity is baked into
+        // the tracing middleware)
         if (Activity.Current is { } activity)
         {
             activity.SetTag(ActivityTagNames.RouteKey, routeKey.ToString());
+            activity.SetTag(ActivityTagNames.ConsumerType, match.ConsumerType.Name);
         }
 
         // A retry routes the message again: the header is added once

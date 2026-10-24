@@ -9,15 +9,17 @@ namespace Emit.Abstractions.Tracing;
 public static class EmitActivitySourceNames
 {
     /// <summary>
-    /// ActivitySource name for outbox operations (enqueue, process).
+    /// ActivitySource name for producing messages: creating a message, and sending it to the message broker,
+    /// directly or from the outbox.
     /// </summary>
     /// <remarks>
-    /// Value: "Emit.Outbox"
+    /// Value: "Emit.Producer"
     /// </remarks>
-    public const string Outbox = "Emit.Outbox";
+    public const string Producer = "Emit.Producer";
 
     /// <summary>
-    /// ActivitySource name for consumer operations (consume, DLQ replay).
+    /// ActivitySource name for consuming messages: processing a message, its retries, and sending it to a dead
+    /// letter topic.
     /// </summary>
     /// <remarks>
     /// Value: "Emit.Consumer"
@@ -25,25 +27,10 @@ public static class EmitActivitySourceNames
     public const string Consumer = "Emit.Consumer";
 
     /// <summary>
-    /// Prefix for provider-specific ActivitySource names.
+    /// ActivitySource name for mediator requests.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Value: "Emit.Provider."
-    /// </para>
-    /// <para>
-    /// Provider sources follow the pattern: "Emit.Provider.{ProviderId}"
-    /// </para>
-    /// <para>
-    /// Example: "Emit.Provider.kafka"
-    /// </para>
+    /// Value: "Emit.Mediator"
     /// </remarks>
-    public const string ProviderPrefix = "Emit.Provider.";
-
-    /// <summary>
-    /// Gets the ActivitySource name for a specific provider.
-    /// </summary>
-    /// <param name="providerId">The provider identifier (e.g., "kafka").</param>
-    /// <returns>The ActivitySource name (e.g., "Emit.Provider.kafka").</returns>
-    public static string ForProvider(string providerId) => $"{ProviderPrefix}{providerId}";
+    public const string Mediator = "Emit.Mediator";
 }
