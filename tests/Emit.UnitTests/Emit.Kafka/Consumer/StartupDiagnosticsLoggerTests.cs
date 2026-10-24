@@ -46,6 +46,7 @@ public sealed class StartupDiagnosticsLoggerTests
     {
         return new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = topicName,
             GroupId = "group-1",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),

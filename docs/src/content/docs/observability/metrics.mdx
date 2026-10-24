@@ -62,9 +62,9 @@ Pipeline and consumer middleware metrics.
 | `emit.consumer.retry.duration` | Histogram (s) | `result` | Total time spent in retry loops |
 | `emit.consumer.discards` | Counter | | Messages discarded by error policy |
 | `emit.consumer.validation.completed` | Counter | `result`, `action` | Validation results |
-| `emit.consumer.circuit_breaker.state_transitions` | Counter | `to_state` | Circuit state changes |
-| `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | | How long the circuit stayed open |
-| `emit.consumer.circuit_breaker.state` | Gauge | | Current circuit state: 0=closed, 1=open, 2=half-open |
+| `emit.consumer.circuit_breaker.state_transitions` | Counter | `consumer_group`, `topic`, `to_state` | Circuit state changes |
+| `emit.consumer.circuit_breaker.open_duration` | Histogram (s) | `consumer_group`, `topic` | How long the circuit stayed open |
+| `emit.consumer.circuit_breaker.state` | Gauge | `consumer_group`, `topic` | Current circuit state of each consumer group: 0=closed, 1=open, 2=half-open |
 | `emit.consumer.rate_limit.wait_duration` | Histogram (s) | | Time waiting for a rate limit permit |
 | `emit.consumer.dlq.produced` | Counter | `reason` | Messages forwarded to DLQ |
 | `emit.consumer.dlq.produce_errors` | Counter | `reason` | Failures while forwarding to DLQ |
@@ -141,9 +141,9 @@ Kafka producer and consumer client metrics.
 | `emit.kafka.consume.offset.commits` | Counter | `consumer_group`, `result` | Offset commit operations |
 | `emit.kafka.consume.worker.faults` | Counter | `consumer_group` | Worker fault events |
 | `emit.kafka.consume.dlq.produced` | Counter | `consumer_group`, `source_topic` | Deserialization errors forwarded to DLQ |
-| `emit.kafka.consume.worker.channel_depth` | Gauge | `consumer_group`, `worker_index` | Messages queued in worker channels |
+| `emit.kafka.consume.worker.channel_depth` | Gauge | `consumer_group`, `topic`, `worker_index` | Messages queued in worker channels |
 | `emit.kafka.consume.groups.active` | Gauge | | Active consumer groups |
-| `emit.kafka.consume.worker_pool.size` | Gauge | `consumer_group` | Configured worker count per group |
+| `emit.kafka.consume.worker_pool.size` | Gauge | `consumer_group`, `topic` | Configured worker count per group |
 
 ## Meter: `Emit.Kafka.Broker`
 

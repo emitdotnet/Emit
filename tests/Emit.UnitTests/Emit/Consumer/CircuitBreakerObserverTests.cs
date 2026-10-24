@@ -1,5 +1,6 @@
 namespace Emit.UnitTests.Consumer;
 
+using System.Diagnostics.Metrics;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.Consumer;
@@ -26,7 +27,8 @@ public sealed class CircuitBreakerObserverTests
             pauseDuration ?? TimeSpan.FromSeconds(5),
             tripOnExceptionTypes);
 
-        return new CircuitBreakerObserver<string>(config, mockFlowControl.Object, new EmitMetrics(null, new EmitMetricsEnrichment()), logger);
+        return new CircuitBreakerObserver<string>(
+            config, "orders-declaration", "group-1", "orders", mockFlowControl.Object, new EmitMetrics(null, new EmitMetricsEnrichment()), logger);
     }
 
     /// <summary>
@@ -40,6 +42,26 @@ public sealed class CircuitBreakerObserverTests
             .Callback(() => resumed.TrySetResult())
             .Returns(Task.CompletedTask);
         return resumed.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task GivenOpenCircuit_WhenTheObserverIsDisposed_ThenItsStateIsReportedUntilThen()
+    {
+        // Arrange
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var config = new CircuitBreakerConfig(1, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5), null);
+        var observer = new CircuitBreakerObserver<string>(
+            config, "orders-declaration", groupId, "orders", mockFlowControl.Object, new EmitMetrics(null, new EmitMetricsEnrichment()), logger);
+        await observer.ReportFailureAsync(new InvalidOperationException("test"));
+
+        // Act
+        var whileRunning = ObserveStates(groupId);
+        observer.Dispose();
+        var afterDispose = ObserveStates(groupId);
+
+        // Assert: 1 is open
+        Assert.Equal([("orders", 1)], whileRunning);
+        Assert.Empty(afterDispose);
     }
 
     [Fact]
@@ -337,5 +359,29 @@ public sealed class CircuitBreakerObserverTests
         await observer.ReportFailureAsync(new InvalidOperationException("trip"));
         await halfOpen;
         return observer;
+    }
+
+    /// <summary>
+    /// Reads the circuit breaker state gauge, as topic and state, for the breakers of one group id. Gauges of every
+    /// <see cref="EmitMetrics"/> in the process share the meter name, so the group id keeps other tests out.
+    /// </summary>
+    private static List<(string Topic, int State)> ObserveStates(string groupId)
+    {
+        var states = new List<(string Topic, int State)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == MeterNames.Emit && instrument.Name == "emit.consumer.circuit_breaker.state")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<int>((_, value, tags, _) =>
+        {
+            var all = tags.ToArray();
+            if (all.Any(t => t.Key == "consumer_group" && Equals(t.Value, groupId)))
+                states.Add(((string)all.Single(t => t.Key == "topic").Value!, value));
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+        return states;
     }
 }

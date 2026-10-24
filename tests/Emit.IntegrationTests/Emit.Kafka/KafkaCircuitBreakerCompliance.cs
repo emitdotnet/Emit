@@ -7,6 +7,7 @@ using Emit.IntegrationTests.Integration;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
 using Emit.Kafka.Tests.TestInfrastructure;
+using Emit.Testing;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
@@ -36,6 +37,42 @@ public class KafkaCircuitBreakerCompliance(KafkaContainerFixture fixture)
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
                     group.CircuitBreaker(configureCircuitBreaker);
                     group.AddConsumer<ToggleableConsumer>();
+                });
+            });
+        });
+    }
+
+    /// <inheritdoc />
+    protected override void ConfigureEmitWithTwoTopics(
+        EmitBuilder emit,
+        string groupId,
+        string failingTopic,
+        string healthyTopic,
+        Action<CircuitBreakerBuilder> configureCircuitBreaker)
+    {
+        emit.AddKafka(kafka =>
+        {
+            kafka.ConfigureClient(config => config.BootstrapServers = fixture.BootstrapServers);
+            kafka.AutoProvision();
+            kafka.Topic<string, string>(failingTopic, t =>
+            {
+                t.UseUtf8Serialization();
+                t.Producer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.CircuitBreaker(configureCircuitBreaker);
+                    group.AddConsumer<AlwaysFailingConsumer>();
+                });
+            });
+            kafka.Topic<string, string>(healthyTopic, t =>
+            {
+                t.UseUtf8Serialization();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.CircuitBreaker(configureCircuitBreaker);
+                    group.AddConsumer<SinkConsumer<string>>();
                 });
             });
         });

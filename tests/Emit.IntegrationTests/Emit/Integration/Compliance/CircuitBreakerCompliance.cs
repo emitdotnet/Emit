@@ -1,6 +1,8 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Diagnostics.Metrics;
 using Emit.Abstractions;
+using Emit.Abstractions.Metrics;
 using Emit.Consumer;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration;
@@ -183,6 +185,74 @@ public abstract class CircuitBreakerCompliance
             }
 
             return sink.WriteAsync(context, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Configures the messaging provider with two consumer groups sharing <paramref name="groupId"/>, both applying
+    /// <paramref name="configureCircuitBreaker"/>: one on <paramref name="failingTopic"/>, which has a producer and
+    /// contains <see cref="AlwaysFailingConsumer"/>, and one on <paramref name="healthyTopic"/>, which contains
+    /// <see cref="SinkConsumer{TMessage}"/> of <see cref="string"/>.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="groupId">The consumer group ID both consumer groups use.</param>
+    /// <param name="failingTopic">The topic whose consumer always fails.</param>
+    /// <param name="healthyTopic">The topic whose consumer succeeds.</param>
+    /// <param name="configureCircuitBreaker">Circuit breaker configuration to apply to both consumer groups.</param>
+    protected abstract void ConfigureEmitWithTwoTopics(
+        EmitBuilder emit,
+        string groupId,
+        string failingTopic,
+        string healthyTopic,
+        Action<CircuitBreakerBuilder> configureCircuitBreaker);
+
+    /// <summary>
+    /// Verifies that each consumer group reports its own circuit state, tagged with its group and topic, also when
+    /// two consumer groups share a group id: only the one whose circuit opened reports open.
+    /// </summary>
+    [Fact]
+    public async Task GivenTwoTopicsOnTheSameGroupId_WhenOneCircuitOpens_ThenEachReportsItsOwnState()
+    {
+        // Arrange
+        var groupId = $"test-cb-shared-{Guid.NewGuid():N}";
+        var failingTopic = $"test-cb-failing-{Guid.NewGuid():N}";
+        var healthyTopic = $"test-cb-healthy-{Guid.NewGuid():N}";
+
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(new MessageSink<string>());
+                services.AddEmit(emit => ConfigureEmitWithTwoTopics(emit, groupId, failingTopic, healthyTopic, cb =>
+                    cb.FailureThreshold(1)
+                      .SamplingWindow(TimeSpan.FromSeconds(30))
+                      .PauseDuration(TimeSpan.FromMinutes(5))));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act
+            using var scope = host.Services.CreateScope();
+            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+            await producer.ProduceAsync(new EventMessage<string, string>("k", "fails"));
+
+            // Assert: 1 is open, 0 is closed
+            Dictionary<string, int> states = [];
+            await TestHelpers.WaitUntilAsync(
+                () =>
+                {
+                    states = ObserveCircuitBreakerStates(groupId);
+                    return states.GetValueOrDefault(failingTopic) == 1;
+                },
+                "Expected the failing topic's circuit to report open within the timeout.");
+            Assert.Equal(new Dictionary<string, int> { [failingTopic] = 1, [healthyTopic] = 0 }, states);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
         }
     }
 
@@ -433,4 +503,27 @@ public abstract class CircuitBreakerCompliance
         }
     }
 
+
+    /// <summary>
+    /// Reads the circuit breaker state gauge, by topic, for the consumer groups using <paramref name="groupId"/>.
+    /// </summary>
+    private static Dictionary<string, int> ObserveCircuitBreakerStates(string groupId)
+    {
+        var states = new Dictionary<string, int>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == MeterNames.Emit && instrument.Name == "emit.consumer.circuit_breaker.state")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<int>((_, value, tags, _) =>
+        {
+            var all = tags.ToArray();
+            if (all.Any(t => t.Key == "consumer_group" && Equals(t.Value, groupId)))
+                states[(string)all.Single(t => t.Key == "topic").Value!] = value;
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+        return states;
+    }
 }

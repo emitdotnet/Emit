@@ -62,6 +62,7 @@ public sealed class ConsumerGroupWorkerTests
     {
         return new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),

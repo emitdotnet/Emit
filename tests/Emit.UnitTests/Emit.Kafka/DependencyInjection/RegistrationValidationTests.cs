@@ -66,6 +66,7 @@ public sealed class RegistrationValidationTests
 
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "orders",
             GroupId = "group-1",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -93,6 +94,7 @@ public sealed class RegistrationValidationTests
         // Arrange
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "orders",
             GroupId = "group-1",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -118,6 +120,7 @@ public sealed class RegistrationValidationTests
         // Arrange
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "orders",
             GroupId = "group-1",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -161,6 +164,7 @@ public sealed class RegistrationValidationTests
         // Arrange
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "orders",
             GroupId = "group-1",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
