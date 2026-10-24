@@ -9,3 +9,4 @@
 | `ILeaderElectionObserver.cs` | Observer interface for leader election events (became leader, lost leadership) | Implement leader election monitoring, logging, or custom instrumentation |
 | `IOutboxObserver.cs` | Observer interface for outbox lifecycle events (before/after processing, errors) | Implement outbox monitoring, logging, or custom instrumentation |
 | `IProduceObserver.cs` | Observer interface for producer lifecycle events (before/after produce, errors) | Implement producer monitoring, logging, or custom instrumentation |
+| `IObserver.cs` | Marker interface of the observer contracts, constraining the observer invoker extension | Add a new observer contract |

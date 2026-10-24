@@ -75,13 +75,13 @@ public abstract class ProviderPipelineCompliance
     /// Inbound middleware that increments an <see cref="InvocationCounter"/> when invoked.
     /// </summary>
     public sealed class InboundCounterMiddleware(InvocationCounter counter)
-        : IMiddleware<ConsumeContext<string>>
+        : IMiddleware<ConsumeContext>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext context, Func<Task> next)
         {
             counter.Increment();
-            await next.InvokeAsync(context);
+            await next();
         }
     }
 }

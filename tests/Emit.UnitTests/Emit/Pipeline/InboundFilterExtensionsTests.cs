@@ -4,6 +4,7 @@ using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
 using global::Emit.Pipeline.Modules;
+using global::Emit.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -12,23 +13,23 @@ public sealed class InboundFilterExtensionsTests
     // ── AddConsumerFilter (class-based helper) ──
 
     [Fact]
-    public void GivenPipeline_WhenAddConsumerFilter_ThenAddsDescriptor()
+    public void GivenPipeline_WhenAddConsumerFilter_ThenRegistersTheFilter()
     {
         // Arrange
-        var pipeline = new MessagePipelineBuilder();
+        var pipeline = new MessagePipelineBuilder<ConsumeContext<string>>();
 
         // Act
         pipeline.AddConsumerFilter<string, AcceptAllFilter>();
 
         // Assert
-        Assert.Single(pipeline.Descriptors);
+        Assert.False(pipeline.IsEmpty);
     }
 
     [Fact]
     public async Task GivenClassFilterReturnsTrue_WhenPipelineExecutes_ThenCallsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter<AcceptAllFilter>();
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -45,7 +46,7 @@ public sealed class InboundFilterExtensionsTests
     public async Task GivenClassFilterReturnsFalse_WhenPipelineExecutes_ThenSkipsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter<RejectAllFilter>();
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -64,20 +65,20 @@ public sealed class InboundFilterExtensionsTests
     public void GivenSyncPredicate_WhenFilter_ThenAddsDescriptor()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
 
         // Act
         builder.Filter(ctx => ctx.Message == "pass");
 
         // Assert
-        Assert.Single(builder.InboundPipeline.Descriptors);
+        Assert.False(builder.Pipeline.IsEmpty);
     }
 
     [Fact]
     public async Task GivenSyncPredicateReturnsTrue_WhenPipelineExecutes_ThenCallsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter(_ => true);
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -94,7 +95,7 @@ public sealed class InboundFilterExtensionsTests
     public async Task GivenSyncPredicateReturnsFalse_WhenPipelineExecutes_ThenSkipsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter(_ => false);
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -113,20 +114,20 @@ public sealed class InboundFilterExtensionsTests
     public void GivenAsyncPredicate_WhenFilter_ThenAddsDescriptor()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
 
         // Act
         builder.Filter((_, _) => ValueTask.FromResult(true));
 
         // Assert
-        Assert.Single(builder.InboundPipeline.Descriptors);
+        Assert.False(builder.Pipeline.IsEmpty);
     }
 
     [Fact]
     public async Task GivenAsyncPredicateReturnsTrue_WhenPipelineExecutes_ThenCallsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter((_, _) => ValueTask.FromResult(true));
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -143,7 +144,7 @@ public sealed class InboundFilterExtensionsTests
     public async Task GivenAsyncPredicateReturnsFalse_WhenPipelineExecutes_ThenSkipsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter((_, _) => ValueTask.FromResult(false));
 
         var (context, nextCalled) = BuildAndGetContext(builder);
@@ -162,7 +163,7 @@ public sealed class InboundFilterExtensionsTests
     public async Task GivenMultipleFilters_WhenAllPass_ThenCallsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter(_ => true);
         builder.Filter((_, _) => ValueTask.FromResult(true));
 
@@ -180,7 +181,7 @@ public sealed class InboundFilterExtensionsTests
     public async Task GivenMultipleFilters_WhenOneRejects_ThenSkipsNext()
     {
         // Arrange
-        var builder = new TestInboundBuilder();
+        var builder = new RouteHandlerConfigurator<string>();
         builder.Filter(_ => true);
         builder.Filter(_ => false);
 
@@ -197,7 +198,7 @@ public sealed class InboundFilterExtensionsTests
     // ── Helpers ──
 
     private static (TestConsumeContext<string> Context, StrongBox<bool> NextCalled) BuildAndGetContext(
-        TestInboundBuilder builder)
+        RouteHandlerConfigurator<string> builder)
     {
         var services = new ServiceCollection().BuildServiceProvider();
         var context = new TestConsumeContext<string>
@@ -213,7 +214,7 @@ public sealed class InboundFilterExtensionsTests
     }
 
     private static IMiddlewarePipeline<ConsumeContext<string>> BuildPipeline(
-        TestInboundBuilder builder,
+        RouteHandlerConfigurator<string> builder,
         TestConsumeContext<string> context,
         StrongBox<bool> nextCalled)
     {
@@ -223,40 +224,11 @@ public sealed class InboundFilterExtensionsTests
             return Task.CompletedTask;
         });
 
-        return builder.InboundPipeline.Build<ConsumeContext<string>, string>(
-            context.Services, terminal);
+        return MessagePipelineBuilder.Build<ConsumeContext<string>, string>(
+            context.Services, terminal, builder.Pipeline);
     }
 
     // ── Test types ──
-
-    private sealed class TestInboundBuilder : IInboundConfigurable<string>
-    {
-        public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
-
-        public IInboundConfigurable<string> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-            where TMiddleware : class, IMiddleware<ConsumeContext<string>>
-        {
-            InboundPipeline.Use(typeof(TMiddleware), lifetime);
-            return this;
-        }
-
-        public IInboundConfigurable<string> Filter<TFilter>()
-            where TFilter : class, IConsumerFilter<string>
-        {
-            InboundPipeline.AddConsumerFilter<string, TFilter>();
-            return this;
-        }
-
-        public IInboundConfigurable<string> Filter(
-            Func<ConsumeContext<string>, CancellationToken, ValueTask<bool>> predicate)
-        {
-            ArgumentNullException.ThrowIfNull(predicate);
-            var middleware = new FilterMiddleware<string>();
-            middleware.AddPredicate(predicate);
-            InboundPipeline.Use(_ => middleware, MiddlewareLifetime.Singleton);
-            return this;
-        }
-    }
 
     private sealed class TestConsumeContext<T> : ConsumeContext<T>;
 

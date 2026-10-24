@@ -217,11 +217,9 @@ Applies to the EF Core persistence provider only. Controls how often expired dis
 | `EnableEmitMeter` | `true` | Core pipeline instruments |
 | `EnableOutboxMeter` | `true` | Outbox worker instruments |
 | `EnableLockMeter` | `true` | Distributed lock instruments |
-| `EnableMediatorMeter` | `true` | Mediator instruments |
-| `EnableKafkaMeter` | `true` | Kafka consumer/producer instruments |
-| `EnableKafkaBrokerMeter` | `true` | Broker-level Kafka instruments |
+| `EnableDaemonMeter` | `true` | Daemon instruments |
 
-Call `options.EnrichWithTag("key", "value")` to add a global dimension to all instruments.
+The meters of optional packages are all subscribed to; call `options.DisableMeter(name)` to skip one, such as `KafkaMeterNames.Broker` for the broker-level Kafka instruments or `MediatorMeterNames.Mediator` for the mediator's. Call `options.EnrichWithTag("key", "value")` to add a global dimension to all instruments.
 
 ## Middleware lifetimes
 

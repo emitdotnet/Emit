@@ -19,12 +19,12 @@ public sealed class BatchPerItemAdapterTests
 
         var outerNextInvoked = false;
         MessageBatch<string>? handlerBatch = null;
-        var outerNext = new TestPipeline<ConsumeContext<MessageBatch<string>>>(ctx =>
+        Func<Task> outerNext = () =>
         {
             outerNextInvoked = true;
-            handlerBatch = ctx.Message;
+            handlerBatch = context.Message;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await adapter.InvokeAsync(context, outerNext);
@@ -45,11 +45,11 @@ public sealed class BatchPerItemAdapterTests
         var context = CreateBatchContext(batch);
 
         var outerNextInvoked = false;
-        var outerNext = new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ =>
+        Func<Task> outerNext = () =>
         {
             outerNextInvoked = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await adapter.InvokeAsync(context, outerNext);
@@ -69,11 +69,11 @@ public sealed class BatchPerItemAdapterTests
         var context = CreateBatchContext(batch);
 
         MessageBatch<string>? handlerBatch = null;
-        var outerNext = new TestPipeline<ConsumeContext<MessageBatch<string>>>(ctx =>
+        Func<Task> outerNext = () =>
         {
-            handlerBatch = ctx.Message;
+            handlerBatch = context.Message;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await adapter.InvokeAsync(context, outerNext);
@@ -94,11 +94,11 @@ public sealed class BatchPerItemAdapterTests
         var context = CreateBatchContext(batch);
 
         var outerNextInvoked = false;
-        var outerNext = new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ =>
+        Func<Task> outerNext = () =>
         {
             outerNextInvoked = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act & Assert
         await Assert.ThrowsAsync<TimeoutException>(() => adapter.InvokeAsync(context, outerNext));
@@ -118,7 +118,7 @@ public sealed class BatchPerItemAdapterTests
 
         // Act
         var failure = await Record.ExceptionAsync(() =>
-            adapter.InvokeAsync(context, new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => Task.CompletedTask)));
+            adapter.InvokeAsync(context, () => Task.CompletedTask));
 
         // Assert
         Assert.IsType<TimeoutException>(failure);
@@ -135,7 +135,7 @@ public sealed class BatchPerItemAdapterTests
         var context = CreateBatchContext(batch);
 
         // Act
-        await adapter.InvokeAsync(context, new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => Task.CompletedTask));
+        await adapter.InvokeAsync(context, () => Task.CompletedTask);
 
         // Assert — each per-item context carries its own message
         Assert.Equal(["x", "y", "z"], inner.SeenMessages);
@@ -174,10 +174,10 @@ public sealed class BatchPerItemAdapterTests
     {
         public int InvocationCount { get; private set; }
 
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
             InvocationCount++;
-            return next.InvokeAsync(context);
+            return next();
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class BatchPerItemAdapterTests
     {
         public int InvocationCount { get; private set; }
 
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
             InvocationCount++;
             // intentionally do not call next
@@ -195,17 +195,17 @@ public sealed class BatchPerItemAdapterTests
 
     private sealed class PredicateMiddleware<T>(Func<T, bool> predicate) : IMiddleware<ConsumeContext<T>>
     {
-        public Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+        public Task InvokeAsync(ConsumeContext<T> context, Func<Task> next)
         {
             if (predicate(context.Message))
-                return next.InvokeAsync(context);
+                return next();
             return Task.CompletedTask;
         }
     }
 
     private sealed class ThrowingMiddleware(Exception ex) : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
             throw ex;
         }
@@ -215,10 +215,10 @@ public sealed class BatchPerItemAdapterTests
     {
         public List<T> SeenMessages { get; } = [];
 
-        public Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+        public Task InvokeAsync(ConsumeContext<T> context, Func<Task> next)
         {
             SeenMessages.Add(context.Message);
-            return next.InvokeAsync(context);
+            return next();
         }
     }
 }

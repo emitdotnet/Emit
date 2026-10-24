@@ -36,9 +36,10 @@ public sealed class ConsumerPipelineComposerTests
             Services = services,
             LoggerFactory = NullLoggerFactory.Instance,
             ConsumeObservers = [],
-            GroupPipeline = new MessagePipelineBuilder(),
-            GlobalInboundPipeline = new MessagePipelineBuilder(),
-            ProviderInboundPipeline = new MessagePipelineBuilder(),
+            GroupPipeline = new MessagePipelineBuilder<ConsumeContext<string>>(),
+            GlobalPipeline = new MessagePipelineBuilder<MessageContext>(),
+            GlobalInboundPipeline = new MessagePipelineBuilder<ConsumeContext>(),
+            ProviderInboundPipeline = new MessagePipelineBuilder<ConsumeContext>(),
             ValidationMiddleware = validationMiddleware,
             FilterMiddleware = filterMiddleware,
         };
@@ -125,8 +126,8 @@ public sealed class ConsumerPipelineComposerTests
         services.AddSingleton(mockUow.Object);
         var sp = services.BuildServiceProvider();
 
-        var perConsumer = new MessagePipelineBuilder();
-        perConsumer.Use<ConsumeContext<string>>(
+        var perConsumer = new MessagePipelineBuilder<ConsumeContext<string>>();
+        perConsumer.Use(
             _ => new ThrowAfterNextMiddleware(),
             MiddlewareLifetime.Singleton);
 
@@ -164,19 +165,19 @@ public sealed class ConsumerPipelineComposerTests
 
     private sealed class ThrowAfterNextMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             throw new InvalidOperationException("failed after the handler");
         }
     }
 
     private sealed class OrderTrackingMiddleware(string name, List<string> order) : IMiddleware<ConsumeContext<string>>
     {
-        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
             order.Add($"{name}:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             order.Add($"{name}:after");
         }
     }

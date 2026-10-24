@@ -16,11 +16,11 @@ internal sealed class ProduceObserverMiddleware<TMessage>(
     private readonly IProduceObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(SendContext<TMessage> context, IMiddlewarePipeline<SendContext<TMessage>> next)
+    public async Task InvokeAsync(SendContext<TMessage> context, Func<Task> next)
     {
         if (this.observers is [])
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -38,7 +38,7 @@ internal sealed class ProduceObserverMiddleware<TMessage>(
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (Exception ex)
         {

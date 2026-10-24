@@ -60,7 +60,7 @@ public sealed class ConsumeErrorMiddlewareTests
     {
         // Arrange
         var middleware = CreateMiddleware(evaluatePolicy: null);
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("boom"));
+        Func<Task> next = () => throw new InvalidOperationException("boom");
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -89,7 +89,7 @@ public sealed class ConsumeErrorMiddlewareTests
             deadLetterSink: mockSink.Object);
 
         var context = CreateContext();
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("process error"));
+        Func<Task> next = () => throw new InvalidOperationException("process error");
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -112,7 +112,7 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy: _ => ErrorAction.DeadLetter(),
             deadLetterSink: null);
 
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("process error"));
+        Func<Task> next = () => throw new InvalidOperationException("process error");
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -131,7 +131,7 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy: _ => ErrorAction.Discard(),
             deadLetterSink: mockSink.Object);
 
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("discard me"));
+        Func<Task> next = () => throw new InvalidOperationException("discard me");
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -166,7 +166,7 @@ public sealed class ConsumeErrorMiddlewareTests
             evaluatePolicy: _ => ErrorAction.DeadLetter(),
             deadLetterSink: mockSink.Object);
 
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("process error"));
+        Func<Task> next = () => throw new InvalidOperationException("process error");
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -185,8 +185,7 @@ public sealed class ConsumeErrorMiddlewareTests
 
         var middleware = CreateMiddleware(evaluatePolicy: null);
         var context = CreateContext(cts.Token);
-        var next = new TestPipeline<ConsumeContext<string>>(
-            _ => throw new OperationCanceledException(cts.Token));
+        Func<Task> next = () => throw new OperationCanceledException(cts.Token);
 
         // Act & Assert
         await Assert.ThrowsAsync<OperationCanceledException>(
@@ -199,11 +198,11 @@ public sealed class ConsumeErrorMiddlewareTests
         // Arrange
         var middleware = CreateMiddleware();
         var nextCalled = false;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -293,7 +292,7 @@ public sealed class ConsumeErrorMiddlewareTests
             deadLetterSink: mockSink.Object);
 
         var context = CreateBatchContext(itemCount: 3);
-        var next = new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed"));
+        Func<Task> next = () => throw new InvalidOperationException("batch failed");
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -327,7 +326,7 @@ public sealed class ConsumeErrorMiddlewareTests
             deadLetterSink: mockSink.Object);
 
         var context = CreateBatchContext(itemCount: 2);
-        var next = new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed"));
+        Func<Task> next = () => throw new InvalidOperationException("batch failed");
 
         // Act
         var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, next));
@@ -369,7 +368,7 @@ public sealed class ConsumeErrorMiddlewareTests
             deadLetterSink: mockSink.Object);
 
         var context = CreateBatchContext(itemCount: 5);
-        var next = new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed"));
+        Func<Task> next = () => throw new InvalidOperationException("batch failed");
 
         // Act
         var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, next));
@@ -391,7 +390,7 @@ public sealed class ConsumeErrorMiddlewareTests
         var middleware = CreateMiddleware(_ => ErrorAction.DeadLetter(), sink.Object, new EmitMetrics(null, recorder.Enrichment));
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("failed")));
+        await middleware.InvokeAsync(CreateContext(), () => throw new InvalidOperationException("failed"));
 
         // Assert
         Assert.Equal(1, recorder.Total("emit.consumer.dlq.produced", "reason", "error_policy"));
@@ -413,7 +412,7 @@ public sealed class ConsumeErrorMiddlewareTests
         // Act
         await middleware.InvokeAsync(
             CreateBatchContext(itemCount: 5),
-            new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed")));
+            () => throw new InvalidOperationException("batch failed"));
 
         // Assert
         Assert.Equal(4, recorder.Total("emit.consumer.dlq.produced", "reason", "error_policy"));
@@ -430,7 +429,7 @@ public sealed class ConsumeErrorMiddlewareTests
         // Act
         await middleware.InvokeAsync(
             CreateBatchContext(itemCount: 3),
-            new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => throw new InvalidOperationException("batch failed")));
+            () => throw new InvalidOperationException("batch failed"));
 
         // Assert
         Assert.Equal(3, recorder.Total("emit.consumer.discards"));
@@ -444,7 +443,7 @@ public sealed class ConsumeErrorMiddlewareTests
         var middleware = CreateMiddleware(metrics: new EmitMetrics(null, recorder.Enrichment));
 
         // Act
-        await middleware.InvokeAsync(CreateContext(), new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("failed")));
+        await middleware.InvokeAsync(CreateContext(), () => throw new InvalidOperationException("failed"));
 
         // Assert
         Assert.Equal(1, recorder.Total("emit.consumer.discards"));
@@ -469,7 +468,7 @@ public sealed class ConsumeErrorMiddlewareTests
             deadLetterSink: mockSink.Object);
 
         var context = CreateContext();
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("single error"));
+        Func<Task> next = () => throw new InvalidOperationException("single error");
 
         // Act
         await middleware.InvokeAsync(context, next);

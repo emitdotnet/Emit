@@ -1,8 +1,10 @@
 namespace Emit.Mediator.Tests;
 
+using global::Emit.Abstractions.Metrics;
 using global::Emit.DependencyInjection;
 using global::Emit.Mediator;
 using global::Emit.Mediator.DependencyInjection;
+using global::Emit.Mediator.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -47,6 +49,20 @@ public sealed class MediatorEmitBuilderExtensionsTests
         // Assert
         var descriptor = services.Single(d => d.ServiceType == typeof(MediatorConfiguration));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void GivenValidConfiguration_WhenAddMediator_ThenRegistersItsMeterOnce()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddEmit(emit => emit.AddMediator(m => m.AddHandler<TestHandler>()));
+
+        // Assert
+        var meter = Assert.Single(services, d => d.ServiceType == typeof(PackageMeter));
+        Assert.Equal(new PackageMeter(MediatorMeterNames.Mediator), meter.ImplementationInstance);
     }
 
     [Fact]

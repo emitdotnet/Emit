@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 /// <summary>
 /// Builder for configuring Emit services.
 /// </summary>
-public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
+public sealed class EmitBuilder
 {
     private readonly IServiceCollection services;
 
@@ -31,16 +31,20 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
     public IServiceCollection Services => services;
 
     /// <summary>
-    /// Gets the global inbound middleware pipeline builder. Middleware registered here wraps
-    /// every inbound message regardless of pattern (Kafka, Mediator, Bus).
+    /// Gets the middleware level of every pipeline: every message consumed or produced, and every mediator request.
+    /// It wraps the levels below it.
     /// </summary>
-    public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
+    public IMessagePipelineBuilder<MessageContext> Pipeline => PipelineLevel;
 
     /// <summary>
-    /// Gets the global outbound middleware pipeline builder. Middleware registered here wraps
-    /// every outbound message regardless of pattern (Kafka, Mediator, Bus).
+    /// Gets the global middleware level of every message consumed, whatever its provider.
     /// </summary>
-    public IMessagePipelineBuilder OutboundPipeline { get; } = new MessagePipelineBuilder();
+    public IMessagePipelineBuilder<ConsumeContext> InboundPipeline => InboundLevel;
+
+    /// <summary>
+    /// Gets the global middleware level of every message produced, whatever its provider.
+    /// </summary>
+    public IMessagePipelineBuilder<SendContext> OutboundPipeline => OutboundLevel;
 
     /// <summary>
     /// Gets a value indicating whether outbox mode is enabled.
@@ -57,6 +61,21 @@ public sealed class EmitBuilder : IInboundConfigurable, IOutboundConfigurable
     /// </para>
     /// </remarks>
     internal bool OutboxEnabled => services.Any(d => d.ImplementationInstance is OutboxRegistrationMarker);
+
+    /// <summary>
+    /// The level behind <see cref="Pipeline"/>.
+    /// </summary>
+    internal MessagePipelineBuilder<MessageContext> PipelineLevel { get; } = new();
+
+    /// <summary>
+    /// The level behind <see cref="InboundPipeline"/>.
+    /// </summary>
+    internal MessagePipelineBuilder<ConsumeContext> InboundLevel { get; } = new(typeof(ConsumeContext<>));
+
+    /// <summary>
+    /// The level behind <see cref="OutboundPipeline"/>.
+    /// </summary>
+    internal MessagePipelineBuilder<SendContext> OutboundLevel { get; } = new(typeof(SendContext<>));
 
     /// <summary>
     /// Configures leader election interval options.

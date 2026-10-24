@@ -17,7 +17,7 @@ using Emit.Abstractions.Pipeline;
 /// </para>
 /// <para>
 /// After all items are evaluated, the surviving items replace the batch via
-/// <see cref="MessageContext{T}.WithMessage"/>. When all items drop out, the pipeline short-circuits
+/// <see cref="MessageContext.WithMessage"/>. When all items drop out, the pipeline short-circuits
 /// without invoking the outer <c>next</c>.
 /// </para>
 /// </summary>
@@ -29,7 +29,7 @@ internal sealed class BatchPerItemAdapter<TItem>(
     /// <inheritdoc />
     public async Task InvokeAsync(
         ConsumeContext<MessageBatch<TItem>> context,
-        IMiddlewarePipeline<ConsumeContext<MessageBatch<TItem>>> next)
+        Func<Task> next)
     {
         var inner = innerFactory(context.Services);
         var originalBatch = context.Message;
@@ -40,11 +40,15 @@ internal sealed class BatchPerItemAdapter<TItem>(
         {
             var item = originalBatch[index];
             var itemContext = ConsumeContext<TItem>.FromBatchItem(context, item);
-            var sentinel = new SentinelTerminal<TItem>();
+            var reached = false;
 
             try
             {
-                await inner.InvokeAsync(itemContext, sentinel).ConfigureAwait(false);
+                await inner.InvokeAsync(itemContext, () =>
+                {
+                    reached = true;
+                    return Task.CompletedTask;
+                }).ConfigureAwait(false);
             }
             catch when (droppedCount > 0)
             {
@@ -53,7 +57,7 @@ internal sealed class BatchPerItemAdapter<TItem>(
                 throw;
             }
 
-            if (sentinel.Reached)
+            if (reached)
                 survivors.Add(item);
             else
                 droppedCount++;
@@ -67,20 +71,6 @@ internal sealed class BatchPerItemAdapter<TItem>(
         if (droppedCount > 0)
             context.WithMessage(new MessageBatch<TItem>(survivors));
 
-        await next.InvokeAsync(context).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Per-item terminal that records whether the inner middleware called <c>next</c>.
-    /// </summary>
-    private sealed class SentinelTerminal<T> : IMiddlewarePipeline<ConsumeContext<T>>
-    {
-        public bool Reached { get; private set; }
-
-        public Task InvokeAsync(ConsumeContext<T> context)
-        {
-            Reached = true;
-            return Task.CompletedTask;
-        }
+        await next().ConfigureAwait(false);
     }
 }

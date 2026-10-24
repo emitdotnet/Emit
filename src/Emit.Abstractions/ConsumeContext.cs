@@ -1,12 +1,11 @@
 namespace Emit.Abstractions;
 
 /// <summary>
-/// Post-deserialization consume context. Carries the typed message along with a
-/// reference to the parent <see cref="TransportContext"/>. One consume context is
-/// created per consumer entry during fan-out.
+/// Context of a consumed message, after deserialization: the message along with the
+/// <see cref="TransportContext"/> it arrived in. One consume context is created per consumer entry during
+/// fan-out. Middleware written for <see cref="ConsumeContext"/> runs on every consumer, whatever its message type.
 /// </summary>
-/// <typeparam name="T">The deserialized message type.</typeparam>
-public class ConsumeContext<T> : MessageContext<T>
+public abstract class ConsumeContext : MessageContext
 {
     /// <summary>
     /// The parent transport context that produced this consume context.
@@ -28,6 +27,22 @@ public class ConsumeContext<T> : MessageContext<T>
     /// The number of messages this context carries: the item count of a batch, otherwise one.
     /// </summary>
     public int MessageCount => Message is IBatchMessage batch ? batch.Count : 1;
+}
+
+/// <summary>
+/// Context of a consumed message of type <typeparamref name="T"/>.
+/// </summary>
+/// <typeparam name="T">The deserialized message type.</typeparam>
+public class ConsumeContext<T> : ConsumeContext
+{
+    /// <summary>
+    /// The message being consumed.
+    /// </summary>
+    public new required T Message
+    {
+        get => base.Message is T message ? message : default!;
+        init => base.Message = value;
+    }
 
     /// <summary>
     /// Builds a per-item <see cref="ConsumeContext{T}"/> from a batch context and one of its
@@ -35,14 +50,14 @@ public class ConsumeContext<T> : MessageContext<T>
     /// against the same surface a single-message consumer would see.
     /// <para>
     /// Per-item state (<see cref="MessageContext.MessageId"/>, <see cref="MessageContext.Timestamp"/>,
-    /// <see cref="MessageContext{T}.Message"/>, <see cref="TransportContext"/>, <see cref="MessageContext.SourceAddress"/>)
+    /// <see cref="Message"/>, <see cref="TransportContext"/>, <see cref="MessageContext.SourceAddress"/>)
     /// comes from <paramref name="item"/>. Ambient state (<see cref="MessageContext.CancellationToken"/>,
     /// <see cref="MessageContext.Services"/>, <see cref="MessageContext.DestinationAddress"/>,
-    /// <see cref="RetryAttempt"/>, and the retry decision) comes from <paramref name="batchContext"/>.
+    /// <see cref="ConsumeContext.RetryAttempt"/>, and the retry decision) comes from <paramref name="batchContext"/>.
     /// </para>
     /// <para>
     /// MAINTAINER NOTE: when a new property is added to <see cref="MessageContext"/>,
-    /// <see cref="MessageContext{T}"/>, or <see cref="ConsumeContext{T}"/>, decide whether it is
+    /// <see cref="ConsumeContext"/>, or <see cref="ConsumeContext{T}"/>, decide whether it is
     /// per-item or ambient and copy it here. This is the canonical construction site for
     /// batch-derived consume contexts.
     /// </para>
@@ -66,11 +81,11 @@ public class ConsumeContext<T> : MessageContext<T>
             DestinationAddress = batchContext.DestinationAddress,
             SourceAddress = item.TransportContext.SourceAddress ?? batchContext.SourceAddress,
             WillRetry = batchContext.WillRetry,
-            // MessageContext<T>: per-item
-            Message = item.Message,
-            // ConsumeContext<T>: transport per-item, retry ambient
+            // ConsumeContext: transport per-item, retry ambient
             TransportContext = item.TransportContext,
             RetryAttempt = batchContext.RetryAttempt,
+            // ConsumeContext<T>: per-item
+            Message = item.Message,
         };
     }
 }

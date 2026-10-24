@@ -113,10 +113,10 @@ public abstract class OutboundMiddlewareHeadersCompliance
     /// Outbound middleware that adds, modifies, and removes headers to exercise
     /// the full range of header manipulation in the outbound pipeline.
     /// </summary>
-    public sealed class HeaderManipulationMiddleware : IMiddleware<SendContext<string>>
+    public sealed class HeaderManipulationMiddleware : IMiddleware<SendContext>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(SendContext<string> context, IMiddlewarePipeline<SendContext<string>> next)
+        public async Task InvokeAsync(SendContext context, Func<Task> next)
         {
             var modified = new List<KeyValuePair<string, string>>();
 
@@ -142,7 +142,7 @@ public abstract class OutboundMiddlewareHeadersCompliance
             context.Headers.Clear();
             context.Headers.AddRange(modified);
 
-            await next.InvokeAsync(context);
+            await next();
         }
     }
 }

@@ -31,11 +31,11 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
 
     public async Task InvokeAsync(
         ConsumeContext<TMessage> context,
-        IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+        Func<Task> next)
     {
         if (!MessagingActivity.IsEnabled(EmitActivitySources.Consumer, options))
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -82,7 +82,7 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
 
         if (activity is null)
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -101,6 +101,6 @@ internal sealed class ConsumeTracingMiddleware<TMessage>(
             context.Services);
 
         // A failure is recorded on the span by the error handling inside it, which decides it is final
-        await next.InvokeAsync(context).ConfigureAwait(false);
+        await next().ConfigureAwait(false);
     }
 }

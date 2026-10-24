@@ -4,7 +4,7 @@ using System.Diagnostics.Metrics;
 using Emit.Abstractions.Metrics;
 
 /// <summary>
-/// Instruments for the <c>Emit.Mediator</c> meter — mediator request dispatch metrics.
+/// Instruments for the <c>Emit.Mediator</c> meter: mediator request dispatch metrics.
 /// </summary>
 public sealed class MediatorMetrics
 {
@@ -26,10 +26,10 @@ public sealed class MediatorMetrics
         ArgumentNullException.ThrowIfNull(enrichment);
         this.enrichment = enrichment;
 
-        var meter = meterFactory?.Create(MeterNames.EmitMediator) ?? new Meter(MeterNames.EmitMediator);
+        var meter = meterFactory?.Create(MediatorMeterNames.Mediator) ?? new Meter(MediatorMeterNames.Mediator);
 
         SendDuration = meter.CreateHistogram<double>(
-            "emit.mediator.send.duration", "s", "Full mediator pipeline execution time.");
+            "emit.mediator.send.duration", "s", "Full mediator pipeline execution time.", tags: null, advice: HistogramAdvice.Seconds);
 
         SendCompleted = meter.CreateCounter<long>(
             "emit.mediator.send.completed", "{request}", "Count of completed mediator pipeline executions.");

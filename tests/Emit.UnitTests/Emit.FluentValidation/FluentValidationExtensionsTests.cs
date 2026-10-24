@@ -58,7 +58,6 @@ public sealed class FluentValidationExtensionsTests
     {
         public Type? ConfiguredValidatorType { get; private set; }
 
-        public IMessagePipelineBuilder InboundPipeline { get; } = new global::Emit.Pipeline.MessagePipelineBuilder();
 
         public IConsumerGroupConfigurable<TestMessage> OnError(Action<ErrorPolicyBuilder> configure) => this;
 
@@ -79,6 +78,10 @@ public sealed class FluentValidationExtensionsTests
 
         public IInboundConfigurable<TestMessage> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
             where TMiddleware : class, IMiddleware<ConsumeContext<TestMessage>> => this;
+
+        public IInboundConfigurable<TestMessage> Use(
+            Func<IServiceProvider, IMiddleware<ConsumeContext<TestMessage>>> factory,
+            MiddlewareLifetime lifetime = default) => this;
 
         public IInboundConfigurable<TestMessage> Filter<TFilter>()
             where TFilter : class, IConsumerFilter<TestMessage> => this;

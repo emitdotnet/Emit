@@ -1,7 +1,6 @@
 namespace Emit.Pipeline;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.Models;
 using Emit.Observability;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// <see cref="OutboxEntry.EnqueuedAt"/> after the delegate returns.
 /// Trace context flows through <see cref="OutboxEntry.Headers"/> automatically.
 /// </summary>
-public static class OutboxTerminalBuilder
+internal static class OutboxTerminalBuilder
 {
     /// <summary>
     /// Creates an outbox terminal delegate.

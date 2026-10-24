@@ -43,7 +43,7 @@ public sealed class LockMetrics
         var meter = meterFactory?.Create(MeterNames.EmitLock) ?? new Meter(MeterNames.EmitLock);
 
         AcquireDuration = meter.CreateHistogram<double>(
-            "emit.lock.acquire.duration", "s", "Duration of lock acquisition attempts.");
+            "emit.lock.acquire.duration", "s", "Duration of lock acquisition attempts.", tags: null, advice: HistogramAdvice.Seconds);
 
         AcquireRetries = meter.CreateHistogram<int>(
             "emit.lock.acquire.retries", "{attempt}", "Retry count for lock acquisition.");
@@ -52,7 +52,7 @@ public sealed class LockMetrics
             "emit.lock.renewal.completed", "{renewal}", "Count of lock renewal attempts.");
 
         HeldDuration = meter.CreateHistogram<double>(
-            "emit.lock.held.duration", "s", "Duration locks are held.");
+            "emit.lock.held.duration", "s", "Duration locks are held.", tags: null, advice: HistogramAdvice.Seconds);
     }
 
     internal Histogram<double> AcquireDuration { get; }

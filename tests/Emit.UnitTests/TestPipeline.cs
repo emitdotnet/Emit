@@ -1,7 +1,7 @@
 namespace Emit.UnitTests;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.Pipeline;
+using global::Emit.Pipeline;
 
 /// <summary>
 /// Test helper that wraps a <see cref="Func{TContext, Task}"/> delegate into an

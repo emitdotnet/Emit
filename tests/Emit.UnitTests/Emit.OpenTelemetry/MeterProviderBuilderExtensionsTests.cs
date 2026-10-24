@@ -1,8 +1,10 @@
 namespace Emit.OpenTelemetry.Tests;
 
+using System.Diagnostics.Metrics;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
 using global::Emit.DependencyInjection;
+using global::Emit.Metrics;
 using global::OpenTelemetry;
 using global::OpenTelemetry.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,23 +43,49 @@ public sealed class MeterProviderBuilderExtensionsTests
     }
 
     [Fact]
-    public void GivenDisabledMeters_WhenAddEmitInstrumentation_ThenNoExceptionIsThrown()
+    public void GivenPackageMetersRegistered_WhenOneIsDisabled_ThenOnlyTheOthersAreSubscribed()
     {
-        // Arrange & Act
+        // Arrange: two meters a package registers, recorded on before the metrics are collected
+        var subscribed = $"test.package.{Guid.NewGuid():N}";
+        var disabled = $"test.package.{Guid.NewGuid():N}";
+        var exported = new CapturingExporter();
         using var meterProvider = global::OpenTelemetry.Sdk.CreateMeterProviderBuilder()
-            .AddEmitInstrumentation(opts =>
-            {
-                opts.EnableEmitMeter = false;
-                opts.EnableOutboxMeter = false;
-                opts.EnableLockMeter = false;
-                opts.EnableMediatorMeter = false;
-                opts.EnableKafkaMeter = true;
-                opts.EnableKafkaBrokerMeter = true;
-            })
+            .ConfigureServices(services => services
+                .AddSingleton(new PackageMeter(subscribed))
+                .AddSingleton(new PackageMeter(disabled)))
+            .AddEmitInstrumentation(options => options.DisableMeter(disabled))
+            .AddReader(new BaseExportingMetricReader(exported))
             .Build();
+        using var subscribedMeter = new Meter(subscribed);
+        using var disabledMeter = new Meter(disabled);
+
+        // Act
+        subscribedMeter.CreateCounter<long>("subscribed.count").Add(1);
+        disabledMeter.CreateCounter<long>("disabled.count").Add(1);
+        meterProvider.ForceFlush();
 
         // Assert
-        Assert.NotNull(meterProvider);
+        Assert.Contains("subscribed.count", exported.Names);
+        Assert.DoesNotContain("disabled.count", exported.Names);
+    }
+
+    [Fact]
+    public void GivenEmitDurationHistogram_WhenExported_ThenItUsesTheAdvisedBoundaries()
+    {
+        // Arrange: no view configures Emit's histograms, they advise their own boundaries
+        var exported = new CapturingExporter();
+        using var meterProvider = global::OpenTelemetry.Sdk.CreateMeterProviderBuilder()
+            .AddEmitInstrumentation()
+            .AddReader(new BaseExportingMetricReader(exported))
+            .Build();
+        var metrics = new EmitMetrics(null, new EmitMetricsEnrichment());
+
+        // Act
+        metrics.RecordRateLimitWaitDuration(0.3);
+        meterProvider.ForceFlush();
+
+        // Assert
+        Assert.Equal(HistogramAdvice.Seconds.HistogramBucketBoundaries, exported.Boundaries["emit.consumer.rate_limit.wait_duration"]);
     }
 
     [Fact]
@@ -80,9 +108,6 @@ public sealed class MeterProviderBuilderExtensionsTests
                 opts.EnableEmitMeter = false;
                 opts.EnableOutboxMeter = false;
                 opts.EnableLockMeter = false;
-                opts.EnableMediatorMeter = false;
-                opts.EnableKafkaMeter = false;
-                opts.EnableKafkaBrokerMeter = false;
             })
             .Build();
 
@@ -137,9 +162,6 @@ public sealed class MeterProviderBuilderExtensionsTests
         Assert.True(options.EnableEmitMeter);
         Assert.True(options.EnableOutboxMeter);
         Assert.True(options.EnableLockMeter);
-        Assert.True(options.EnableMediatorMeter);
-        Assert.True(options.EnableKafkaMeter);
-        Assert.True(options.EnableKafkaBrokerMeter);
     }
 
     [Fact]
@@ -153,5 +175,43 @@ public sealed class MeterProviderBuilderExtensionsTests
 
         // Assert
         Assert.Equal(0, tags.Length);
+    }
+
+    /// <summary>
+    /// Captures the names of the exported metrics and the bucket boundaries of the histograms among them.
+    /// </summary>
+    private sealed class CapturingExporter : BaseExporter<Metric>
+    {
+        public HashSet<string> Names { get; } = [];
+
+        public Dictionary<string, List<double>> Boundaries { get; } = [];
+
+        public override ExportResult Export(in Batch<Metric> batch)
+        {
+            foreach (var metric in batch)
+            {
+                Names.Add(metric.Name);
+                if (metric.MetricType != MetricType.Histogram)
+                {
+                    continue;
+                }
+
+                foreach (ref readonly var point in metric.GetMetricPoints())
+                {
+                    var boundaries = new List<double>();
+                    foreach (var bucket in point.GetHistogramBuckets())
+                    {
+                        if (!double.IsPositiveInfinity(bucket.ExplicitBound))
+                        {
+                            boundaries.Add(bucket.ExplicitBound);
+                        }
+                    }
+
+                    Boundaries[metric.Name] = boundaries;
+                }
+            }
+
+            return ExportResult.Success;
+        }
     }
 }

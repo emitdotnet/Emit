@@ -3,7 +3,6 @@ namespace Emit.UnitTests.Consumer;
 using System.Threading.RateLimiting;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,16 +38,16 @@ public sealed class RateLimitMiddlewareTests
             AutoReplenishment = true,
         });
 
-        var middleware = new RateLimitMiddleware<string>(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
+        var middleware = new RateLimitMiddleware(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
         var context = CreateContext();
         var nextCalled = false;
 
         // Act
-        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ =>
+        await middleware.InvokeAsync(context, () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        }));
+        });
 
         // Assert
         Assert.True(nextCalled);
@@ -71,7 +70,7 @@ public sealed class RateLimitMiddlewareTests
         // Exhaust the single available token
         using var exhaustLease = await limiter.AcquireAsync(1);
 
-        var middleware = new RateLimitMiddleware<string>(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
+        var middleware = new RateLimitMiddleware(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
         using var cts = new CancellationTokenSource();
         var context = CreateContext(cts.Token);
 
@@ -80,7 +79,7 @@ public sealed class RateLimitMiddlewareTests
 
         // Act & Assert — TaskCanceledException inherits OperationCanceledException
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
+            middleware.InvokeAsync(context, () => Task.CompletedTask));
     }
 
     // ── Batch rate-limit helpers ──
@@ -121,16 +120,16 @@ public sealed class RateLimitMiddlewareTests
             AutoReplenishment = false,
         });
 
-        var middleware = new RateLimitMiddleware<MessageBatch<string>>(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
+        var middleware = new RateLimitMiddleware(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
         var context = CreateBatchContext(itemCount: 5);
         var nextCalled = false;
 
         // Act
-        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ =>
+        await middleware.InvokeAsync(context, () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        }));
+        });
 
         // Assert — next was called, meaning 5 permits were successfully acquired
         Assert.True(nextCalled);
@@ -150,16 +149,16 @@ public sealed class RateLimitMiddlewareTests
             AutoReplenishment = false,
         });
 
-        var middleware = new RateLimitMiddleware<string>(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
+        var middleware = new RateLimitMiddleware(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
         var context = CreateContext();
         var nextCalled = false;
 
         // Act
-        await middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ =>
+        await middleware.InvokeAsync(context, () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        }));
+        });
 
         // Assert — exactly one permit acquired; next was called
         Assert.True(nextCalled);
@@ -183,12 +182,12 @@ public sealed class RateLimitMiddlewareTests
         // Exhaust all tokens
         using var exhaustLease = await limiter.AcquireAsync(5);
 
-        var middleware = new RateLimitMiddleware<MessageBatch<string>>(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
+        var middleware = new RateLimitMiddleware(limiter, new EmitMetrics(null, new EmitMetricsEnrichment()));
         var context = CreateBatchContext(itemCount: 5);
 
         // Act & Assert — no tokens available; queue=0 means lease cannot be queued → IsAcquired=false
         //                RateLimitMiddleware throws InvalidOperationException when !lease.IsAcquired
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            middleware.InvokeAsync(context, new TestPipeline<ConsumeContext<MessageBatch<string>>>(_ => Task.CompletedTask)));
+            middleware.InvokeAsync(context, () => Task.CompletedTask));
     }
 }

@@ -66,12 +66,12 @@ public sealed class MediatorStreamTests
     {
         public static List<string> Trace { get; set; } = [];
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, Func<Task> next)
         {
             Trace.Add("middleware:enter");
             try
             {
-                await next.InvokeAsync(context);
+                await next();
             }
             finally
             {
@@ -88,20 +88,20 @@ public sealed class MediatorStreamTests
         bool failAfterHandler = false)
     {
         var services = new ServiceCollection();
-        services.AddEmit(emit =>
+        services.AddEmit(emit => emit.AddMediator(mediator =>
         {
             if (trace)
             {
-                emit.InboundPipeline.Use(typeof(TracingMiddleware<>));
+                mediator.Pipeline.Use(typeof(TracingMiddleware<>));
             }
 
             if (failAfterHandler)
             {
-                emit.InboundPipeline.Use(typeof(FailAfterHandlerMiddleware<>));
+                mediator.Pipeline.Use(typeof(FailAfterHandlerMiddleware<>));
             }
 
-            emit.AddMediator(configure);
-        });
+            configure(mediator);
+        }));
 
         var scope = services.BuildServiceProvider().CreateScope();
         return scope.ServiceProvider.GetRequiredService<IMediator>();
@@ -534,18 +534,18 @@ public sealed class MediatorStreamTests
     {
         public static int Invocations;
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, Func<Task> next)
         {
             Interlocked.Increment(ref Invocations);
-            await next.InvokeAsync(context);
+            await next();
         }
     }
 
     private sealed class FailAfterHandlerMiddleware<T> : IMiddleware<MediatorContext<T>>
     {
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, Func<Task> next)
         {
-            await next.InvokeAsync(context);
+            await next();
             throw new InvalidOperationException("Simulated failure after the handler completed");
         }
     }

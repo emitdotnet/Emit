@@ -22,7 +22,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 {
     private readonly List<Type> consumerTypes = [];
     private readonly HashSet<Type> registeredConsumerTypes = [];
-    private readonly Dictionary<Type, IMessagePipelineBuilder> consumerPipelines = new();
+    private readonly Dictionary<Type, MessagePipelineBuilder> consumerPipelines = new();
     private readonly KafkaConsumerOptions consumerConfig = new();
 
     /// <summary>
@@ -150,14 +150,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         set => consumerConfig.AdditionalProperties = value;
     }
 
-    /// <inheritdoc />
-    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
-
     /// <summary>
-    /// Gets the per-consumer-group middleware pipeline builder. Middleware registered here
-    /// wraps only the consumer handlers in this consumer group.
+    /// Gets the per-consumer-group middleware level. Middleware registered here wraps only the consumer handlers in
+    /// this consumer group.
     /// </summary>
-    internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
+    internal MessagePipelineBuilder<ConsumeContext<TValue>> Pipeline { get; } = new();
 
     // ── Worker pool configuration ──
 
@@ -182,7 +179,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     internal IReadOnlyList<Type> ConsumerTypes => consumerTypes;
 
     /// <summary>Per-consumer middleware pipelines keyed by consumer type.</summary>
-    internal IReadOnlyDictionary<Type, IMessagePipelineBuilder> ConsumerPipelines => consumerPipelines;
+    internal IReadOnlyDictionary<Type, MessagePipelineBuilder> ConsumerPipelines => consumerPipelines;
 
     /// <summary>Group-level error policy configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorPolicyBuilder>? GroupErrorPolicyAction { get; private set; }
@@ -221,13 +218,32 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>
     /// Registers a middleware type on this consumer group's inbound pipeline.
     /// </summary>
-    /// <typeparam name="TMiddleware">The middleware type.</typeparam>
+    /// <typeparam name="TMiddleware">
+    /// The middleware type: an <see cref="IMiddleware{TContext}"/> of <see cref="ConsumeContext{T}"/> with the
+    /// group's message type, or of a context it derives from. With a batch consumer, it must run on batches:
+    /// <see cref="ConsumeContext"/> or <see cref="MessageContext"/>.
+    /// </typeparam>
     /// <param name="lifetime">Controls when the middleware instance is created.</param>
     /// <returns>This builder for continued chaining.</returns>
     public KafkaConsumerGroupBuilder<TKey, TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
         where TMiddleware : class, IMiddleware<ConsumeContext<TValue>>
     {
-        Pipeline.Use(typeof(TMiddleware), lifetime);
+        Pipeline.Use<TMiddleware>(lifetime);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a middleware created by a factory on this consumer group's inbound pipeline. Not available with a
+    /// batch consumer, whose middleware must run on batches.
+    /// </summary>
+    /// <param name="factory">Creates the middleware instance.</param>
+    /// <param name="lifetime">Controls when the factory is invoked.</param>
+    /// <returns>This builder for continued chaining.</returns>
+    public KafkaConsumerGroupBuilder<TKey, TValue> Use(
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TValue>>> factory,
+        MiddlewareLifetime lifetime = default)
+    {
+        Pipeline.Use(factory, lifetime);
         return this;
     }
 
@@ -465,7 +481,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
         consumerTypes.Add(type);
 
-        if (handlerBuilder.Pipeline.Descriptors.Count > 0)
+        if (!handlerBuilder.Pipeline.IsEmpty)
         {
             consumerPipelines[type] = handlerBuilder.Pipeline;
         }
@@ -593,6 +609,10 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         Action<ErrorActionBuilder> configureAction) => Validate(validator, configureAction);
 
     IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Use<TMiddleware>(MiddlewareLifetime lifetime) => Use<TMiddleware>(lifetime);
+
+    IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Use(
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TValue>>> factory,
+        MiddlewareLifetime lifetime) => Use(factory, lifetime);
 
     IInboundConfigurable<TValue> IInboundConfigurable<TValue>.Filter<TFilter>() => Filter<TFilter>();
 

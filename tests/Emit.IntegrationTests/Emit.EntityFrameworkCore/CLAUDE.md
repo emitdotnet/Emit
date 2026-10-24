@@ -23,6 +23,8 @@ PostgreSQL integration tests: EF Core compliance implementations and test DbCont
 | `EfCoreProducerRoutingCompliance.cs` | Inherits ProducerRoutingCompliance; proves outbox-by-default and UseDirect() with EF Core + Kafka | Debug or extend EF Core producer routing tests |
 | `EfCoreMediatorTransactionalCompliance.cs` | Inherits MediatorTransactionalCompliance; proves [Transactional] on mediator handlers with EF Core | Debug or extend EF Core mediator transactional tests |
 | `EfCoreProducerOutboxRoutingCompliance.cs` | Inherits ProducerOutboxRoutingCompliance; proves outbox-backed producer routing with EF Core + Kafka | Debug or extend EF Core producer outbox-routing tests |
+| `EfCoreTransactionalRouterCompliance.cs` | Inherits TransactionalRouterCompliance with EF Core (PostgreSQL) | Debug or extend EF Core transactional router tests |
+| `EfCoreUnitOfWorkCallbackCompliance.cs` | Inherits UnitOfWorkCallbackCompliance with EF Core (PostgreSQL) | Debug or extend EF Core unit of work callback tests |
 
 ## Subdirectories
 

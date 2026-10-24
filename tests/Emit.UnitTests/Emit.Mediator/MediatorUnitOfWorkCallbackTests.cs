@@ -207,9 +207,9 @@ public sealed class MediatorUnitOfWorkCallbackTests
 
     internal sealed class ThrowAfterHandlerMiddleware : IMiddleware<MediatorContext<RecordingRequest>>
     {
-        public async Task InvokeAsync(MediatorContext<RecordingRequest> context, IMiddlewarePipeline<MediatorContext<RecordingRequest>> next)
+        public async Task InvokeAsync(MediatorContext<RecordingRequest> context, Func<Task> next)
         {
-            await next.InvokeAsync(context);
+            await next();
             throw new InvalidOperationException("failed after the handler");
         }
     }

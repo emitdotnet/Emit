@@ -480,6 +480,36 @@ public sealed class KafkaServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void GivenBatchConsumerGroupWithMiddlewareForSingleMessages_WhenAddEmit_ThenThrowsNamingTheMiddleware()
+    {
+        // Arrange: the group's middleware runs on the pipeline of its batch consumer
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddEmit(builder =>
+            {
+                builder.AddKafka(kafka =>
+                {
+                    kafka.ConfigureClient(c => c.BootstrapServers = "localhost:9092");
+                    kafka.Topic<string, string>("orders", t =>
+                    {
+                        t.SetUtf8KeyDeserializer();
+                        t.SetUtf8ValueDeserializer();
+                        t.ConsumerGroup("g", group =>
+                        {
+                            group.Use<SingleMessageMiddleware>();
+                            group.AddBatchConsumer<TestBatchConsumer>();
+                        });
+                    });
+                });
+            }));
+
+        Assert.Contains(nameof(SingleMessageMiddleware), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GivenUndecoratedConsumerAndNoPersistenceProvider_WhenAddEmit_ThenDoesNotThrow()
     {
         // Arrange
@@ -530,6 +560,17 @@ public sealed class KafkaServiceCollectionExtensionsTests
             => Task.CompletedTask;
     }
 
+    private sealed class TestBatchConsumer : IBatchConsumer<string>
+    {
+        public Task ConsumeAsync(ConsumeContext<MessageBatch<string>> context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
+
+    private sealed class SingleMessageMiddleware : IMiddleware<ConsumeContext<string>>
+    {
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next) => next();
+    }
+
     private sealed class TestConsumer : IConsumer<string>
     {
         public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
@@ -546,7 +587,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
     {
         // Arrange: the outbox hands a group's entries over without waiting for each send, and an idempotent producer
         // keeps a partition's messages in order with up to five requests in flight
-        var kafka = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafka = new KafkaBuilder(new EmitBuilder(new ServiceCollection()));
         kafka.ConfigureClient(client =>
         {
             client.BootstrapServers = "localhost:9092";
@@ -584,7 +625,7 @@ public sealed class KafkaServiceCollectionExtensionsTests
         // transaction covers a whole batch, so it gets Kafka's default unless the producer sets one, never less than a
         // send, at least a second (the client's minimum) and at most fifteen minutes (the brokers' default maximum).
         // Messages wait no longer to be batched than they may take to be sent, or the producer cannot be created.
-        var kafka = new KafkaBuilder(new ServiceCollection(), new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafka = new KafkaBuilder(new EmitBuilder(new ServiceCollection()));
         kafka.ConfigureClient(client => client.BootstrapServers = "localhost:9092");
         kafka.ConfigureProducer(producer =>
         {

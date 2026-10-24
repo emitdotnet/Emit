@@ -9,15 +9,14 @@ using Emit.Metrics;
 /// <summary>
 /// Inbound middleware that throttles message processing using a shared <see cref="RateLimiter"/>.
 /// Acquires a single permit before allowing the message to proceed through the pipeline.
-/// The rate limiter is shared across all workers in the consumer group.
+/// The rate limiter is shared across all workers in the consumer group. A batch takes one permit per item.
 /// </summary>
-/// <typeparam name="TMessage">The message type.</typeparam>
-public sealed class RateLimitMiddleware<TMessage>(
+internal sealed class RateLimitMiddleware(
     RateLimiter rateLimiter,
-    EmitMetrics emitMetrics) : IMiddleware<ConsumeContext<TMessage>>
+    EmitMetrics emitMetrics) : IMiddleware<ConsumeContext>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext context, Func<Task> next)
     {
         var permitCount = context.MessageCount;
 
@@ -34,6 +33,6 @@ public sealed class RateLimitMiddleware<TMessage>(
                 "Ensure the rate limiter's max permits >= BatchOptions.MaxSize.");
         }
 
-        await next.InvokeAsync(context).ConfigureAwait(false);
+        await next().ConfigureAwait(false);
     }
 }

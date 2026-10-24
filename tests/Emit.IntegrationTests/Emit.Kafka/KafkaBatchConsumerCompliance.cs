@@ -333,6 +333,7 @@ public class KafkaBatchConsumerCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.Use<BatchGroupMiddleware>();
                     group.AddBatchConsumer<BatchContextInspector>(batchConfig);
                 });
             });

@@ -19,3 +19,4 @@ Unit tests for Kafka consumer internals: worker pool, offset management, DLQ pro
 | `RoundRobinStrategyTests.cs` | Unit tests for RoundRobin worker distribution strategy | Debugging RoundRobin strategy test failures |
 | `StartupDiagnosticsLoggerTests.cs` | Unit tests for startup diagnostics log output | Debugging startup diagnostics test failures |
 | `WorkerPoolSupervisorTests.cs` | Unit tests for worker pool supervisor lifecycle and worker management | Debugging worker pool supervisor test failures |
+| `BatchAccumulatorTests.cs` | Batch accumulation: wait for the first message, full and partial batches, cancellation, completed channel | Debugging batch accumulation test failures |

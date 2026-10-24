@@ -16,6 +16,7 @@ using Xunit;
 /// Integration tests for MongoDB-specific behaviour of the outbox repository.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(MongoDbFailPointCollection.Name)]
 public sealed class MongoDbOutboxRepositoryTests : IClassFixture<MongoDbContainerFixture>, IAsyncLifetime
 {
     private readonly string databaseName = $"emit_outbox_repo_{Guid.NewGuid():N}";

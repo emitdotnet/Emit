@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Metrics;
 using Xunit;
 
@@ -39,11 +38,11 @@ public sealed class ConsumeMetricsMiddlewareTests
         var context = CreateContext(testServices, "kafka");
 
         var nextInvoked = false;
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextInvoked = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -101,7 +100,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         var context = CreateContext(testServices, "kafka");
 
         var expectedException = new InvalidOperationException("Test failure");
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => throw expectedException);
+        Func<Task> next = () => throw expectedException;
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
@@ -159,7 +158,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         var testServices = new TestServiceProvider();
         var context = CreateContext(testServices, "kafka");
 
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -205,7 +204,7 @@ public sealed class ConsumeMetricsMiddlewareTests
         var testServices = new TestServiceProvider();
         var context = CreateContext(testServices, "test-provider");
 
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);

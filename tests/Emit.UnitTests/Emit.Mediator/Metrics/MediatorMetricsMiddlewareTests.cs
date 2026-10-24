@@ -4,7 +4,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Mediator;
 using global::Emit.Mediator.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +21,7 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
     {
         listener.InstrumentPublished = (instrument, listenerInstance) =>
         {
-            if (instrument.Meter.Name == MeterNames.EmitMediator)
+            if (instrument.Meter.Name == MediatorMeterNames.Mediator)
             {
                 listenerInstance.EnableMeasurementEvents(instrument);
             }
@@ -63,11 +62,11 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var context = new TestMediatorContext(new TestRequest("test"));
         var invoked = false;
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ =>
+        Func<Task> next = () =>
         {
             invoked = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -98,7 +97,7 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var context = new TestMediatorContext(new TestRequest("test"));
         var expectedException = new InvalidOperationException("Handler failed");
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => throw expectedException);
+        Func<Task> next = () => throw expectedException;
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -127,7 +126,7 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
         var context = new TestMediatorContext(new TestRequest("test"));
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -151,7 +150,7 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
         var context = new TestMediatorContext(new TestRequest("test"));
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => throw new InvalidOperationException());
+        Func<Task> next = () => throw new InvalidOperationException();
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -180,7 +179,7 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var middleware = new MediatorMetricsMiddleware<TestRequest>(mediatorMetrics);
         var context = new TestMediatorContext(new TestRequest("test"));
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -210,8 +209,8 @@ public sealed class MediatorMetricsMiddlewareTests : IDisposable
         var context1 = new TestMediatorContext(new TestRequest("test"));
         var context2 = new AnotherMediatorContext(new AnotherRequest());
 
-        IMiddlewarePipeline<MediatorContext<TestRequest>> next1 = new TestPipeline<MediatorContext<TestRequest>>(_ => Task.CompletedTask);
-        IMiddlewarePipeline<MediatorContext<AnotherRequest>> next2 = new TestPipeline<MediatorContext<AnotherRequest>>(_ => Task.CompletedTask);
+        Func<Task> next1 = () => Task.CompletedTask;
+        Func<Task> next2 = () => Task.CompletedTask;
 
         // Act
         await middleware1.InvokeAsync(context1, next1);

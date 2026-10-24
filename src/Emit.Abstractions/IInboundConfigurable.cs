@@ -3,24 +3,33 @@ namespace Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 
 /// <summary>
-/// Implemented by leaf builders that configure inbound (consumer/handler) pipelines for a known
-/// message type. Provides compile-time safe middleware registration where the constraint ensures
-/// the middleware implements <see cref="IMiddleware{TContext}"/> for <see cref="ConsumeContext{T}"/>.
+/// Implemented by builders that configure the consumer pipelines of a known message type: consumer groups,
+/// consumers and routes.
 /// </summary>
 /// <typeparam name="TMessage">The message type processed by this builder's pipeline.</typeparam>
-public interface IInboundConfigurable<TMessage> : IInboundConfigurable
+public interface IInboundConfigurable<TMessage>
 {
     /// <summary>
     /// Registers a middleware type on this inbound pipeline.
     /// </summary>
     /// <typeparam name="TMiddleware">
-    /// The middleware type. Must implement <see cref="IMiddleware{TContext}"/>
-    /// for <see cref="ConsumeContext{T}"/> with the builder's message type.
+    /// The middleware type: an <see cref="IMiddleware{TContext}"/> of <see cref="ConsumeContext{T}"/> with the
+    /// builder's message type, or of a context it derives from.
     /// </typeparam>
     /// <param name="lifetime">Controls when the middleware instance is created.</param>
     /// <returns>This builder for chaining.</returns>
     IInboundConfigurable<TMessage> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
         where TMiddleware : class, IMiddleware<ConsumeContext<TMessage>>;
+
+    /// <summary>
+    /// Registers a middleware created by a factory on this inbound pipeline.
+    /// </summary>
+    /// <param name="factory">Creates the middleware instance.</param>
+    /// <param name="lifetime">Controls when the factory is invoked.</param>
+    /// <returns>This builder for chaining.</returns>
+    IInboundConfigurable<TMessage> Use(
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TMessage>>> factory,
+        MiddlewareLifetime lifetime = default);
 
     /// <summary>
     /// Registers a consumer filter that determines whether each message should continue

@@ -4,7 +4,6 @@ using System.Diagnostics.Metrics;
 using System.Reflection;
 using Emit.Abstractions;
 using Emit.Abstractions.Metrics;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.Mediator.Metrics;
 using Emit.Mediator.Observability;
@@ -52,14 +51,14 @@ public static class MediatorEmitBuilderExtensions
         services.TryAddSingleton(sp => new MediatorMetrics(
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));
+        services.AddSingleton(new PackageMeter(MediatorMeterNames.Mediator));
+
+        // Built-in middleware, composed around every request's pipeline by BuildDispatcher
+        services.TryAddSingleton(typeof(MediatorTracingMiddleware<>));
+        services.TryAddSingleton(typeof(MediatorMetricsMiddleware<>));
+        services.TryAddSingleton(typeof(MediatorObserverMiddleware<>));
 
         var mediatorBuilder = new MediatorBuilder();
-
-        // Auto-insert tracing middleware as outermost, then metrics and observer middleware
-        mediatorBuilder.InboundPipeline.Use(typeof(MediatorTracingMiddleware<>));
-        mediatorBuilder.InboundPipeline.Use(typeof(MediatorMetricsMiddleware<>));
-        mediatorBuilder.InboundPipeline.Use(typeof(MediatorObserverMiddleware<>));
-
         configure(mediatorBuilder);
 
         // Register observer types from builder
@@ -80,11 +79,11 @@ public static class MediatorEmitBuilderExtensions
         }
 
         // Register mediator middleware with appropriate lifetimes
-        mediatorBuilder.InboundPipeline.RegisterServices(services);
+        mediatorBuilder.PipelineLevel.RegisterServices(services);
 
         // Build the invoker map at registration time — stores IMiddlewarePipeline<TRequest> as object
         var invokerMap = new Dictionary<Type, object>();
-        var handlerPipelineMap = new Dictionary<Type, IMessagePipelineBuilder>();
+        var handlerPipelineMap = new Dictionary<Type, MessagePipelineBuilder>();
         foreach (var registration in mediatorBuilder.Registrations.Values)
         {
             var invokerType = registration switch
@@ -107,8 +106,8 @@ public static class MediatorEmitBuilderExtensions
         }
 
         // Capture pipeline references for the closure
-        var globalInbound = builder.InboundPipeline;
-        var mediatorInbound = mediatorBuilder.InboundPipeline;
+        var globalPipeline = builder.PipelineLevel;
+        var mediatorPipeline = mediatorBuilder.PipelineLevel;
 
         // Factory-built singleton — typed pipelines composed when IServiceProvider available.
         // Each request type gets a typed dispatch delegate that creates MediatorContext<TRequest>
@@ -128,7 +127,7 @@ public static class MediatorEmitBuilderExtensions
                 var genericMethod = BuildDispatcherMethod.MakeGenericMethod(requestType);
                 var dispatch = (MediatorDispatch)genericMethod.Invoke(
                     null,
-                    [sp, invoker, mediatorInbound, globalInbound, handlerPipeline, registration.HandlerType])!;
+                    [sp, invoker, globalPipeline, mediatorPipeline, handlerPipeline, registration.HandlerType])!;
 
                 dispatchers[requestType] = dispatch;
             }
@@ -149,25 +148,32 @@ public static class MediatorEmitBuilderExtensions
         BuildDispatcher<TRequest>(
             IServiceProvider sp,
             object invoker,
-            IMessagePipelineBuilder mediatorInbound,
-            IMessagePipelineBuilder globalInbound,
-            IMessagePipelineBuilder? handlerPipeline,
+            MessagePipelineBuilder globalPipeline,
+            MessagePipelineBuilder mediatorPipeline,
+            MessagePipelineBuilder? handlerPipeline,
             Type handlerType)
     {
         IMiddlewarePipeline<MediatorContext<TRequest>> terminal = (IMiddlewarePipeline<MediatorContext<TRequest>>)invoker;
 
         // The handler's own middleware runs inside its unit of work, so nothing it does can fail
         // after the commit.
-        if (handlerPipeline is not null)
-            terminal = handlerPipeline.Build<MediatorContext<TRequest>, TRequest>(sp, terminal);
+        terminal = MessagePipelineBuilder.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, handlerPipeline);
 
         var unitOfWorkMw = new UnitOfWorkMiddleware<MediatorContext<TRequest>>(
             handlerType,
             sp.GetRequiredService<ILogger<UnitOfWorkMiddleware<MediatorContext<TRequest>>>>());
         terminal = new MiddlewarePipeline<MediatorContext<TRequest>>(unitOfWorkMw, terminal);
 
-        // Pipeline layering: global → mediator → unit of work → per-handler → terminal
-        var pipeline = mediatorInbound.Build<MediatorContext<TRequest>, TRequest>(sp, terminal, globalInbound);
+        // Pipeline layering: tracing → metrics → observers → every pipeline → mediator → unit of work → per-handler
+        // → terminal
+        var pipeline = MessagePipelineBuilder.Build<MediatorContext<TRequest>, TRequest>(
+            sp, terminal, globalPipeline, mediatorPipeline);
+        pipeline = new MiddlewarePipeline<MediatorContext<TRequest>>(
+            sp.GetRequiredService<MediatorObserverMiddleware<TRequest>>(), pipeline);
+        pipeline = new MiddlewarePipeline<MediatorContext<TRequest>>(
+            sp.GetRequiredService<MediatorMetricsMiddleware<TRequest>>(), pipeline);
+        pipeline = new MiddlewarePipeline<MediatorContext<TRequest>>(
+            sp.GetRequiredService<MediatorTracingMiddleware<TRequest>>(), pipeline);
 
         return (request, services, timeProvider, ct, configureFeatures) =>
         {

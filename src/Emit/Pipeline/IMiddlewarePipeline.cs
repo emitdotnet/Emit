@@ -1,12 +1,13 @@
-namespace Emit.Abstractions.Pipeline;
+namespace Emit.Pipeline;
+
+using Emit.Abstractions;
 
 /// <summary>
-/// A compiled middleware pipeline that processes a context of type <typeparamref name="TContext"/>.
-/// Replaces <c>MessageDelegate&lt;TContext&gt;</c> as the fundamental pipeline abstraction.
+/// A composed pipeline that processes a context of type <typeparamref name="TContext"/>.
 /// Call <see cref="InvokeAsync"/> to execute the pipeline.
 /// </summary>
 /// <typeparam name="TContext">The pipeline context type.</typeparam>
-public interface IMiddlewarePipeline<in TContext> where TContext : MessageContext
+internal interface IMiddlewarePipeline<in TContext> where TContext : MessageContext
 {
     /// <summary>
     /// Executes the pipeline for the given context.

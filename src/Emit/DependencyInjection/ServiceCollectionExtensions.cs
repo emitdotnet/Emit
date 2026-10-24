@@ -99,22 +99,18 @@ public static class ServiceCollectionExtensions
         services.AddOptions<Tracing.EmitTracingOptions>().ValidateOnStart();
         services.AddSingleton<Tracing.ActivityEnricherInvoker>();
 
-        // Auto-insert tracing middleware first (outermost), then metrics, then observers
-        builder.OutboundPipeline.Use(typeof(Tracing.ProduceTracingMiddleware<>));
-        builder.OutboundPipeline.Use(typeof(ProduceMetricsMiddleware<>));
-        builder.OutboundPipeline.Use(typeof(ProduceObserverMiddleware<>));
-
-        // Consume-specific middleware (tracing, metrics, observers) are created directly
-        // by ConsumerPipelineComposer with baked consumer identity — not in the global
-        // InboundPipeline — because they implement IMiddleware<ConsumeContext<T>> which
-        // is incompatible with the mediator's MediatorContext<T> pipeline.
+        // Built-in produce middleware, composed around every producer pipeline by ProducerPipelineComposer
+        services.TryAddSingleton(typeof(Tracing.ProduceTracingMiddleware<>));
+        services.TryAddSingleton(typeof(ProduceMetricsMiddleware<>));
+        services.TryAddSingleton(typeof(ProduceObserverMiddleware<>));
 
         configure(builder);
         builder.Validate();
 
         // Register global middleware types with appropriate lifetimes
-        builder.InboundPipeline.RegisterServices(services);
-        builder.OutboundPipeline.RegisterServices(services);
+        builder.PipelineLevel.RegisterServices(services);
+        builder.InboundLevel.RegisterServices(services);
+        builder.OutboundLevel.RegisterServices(services);
 
         // Register outbox observer invoker (zero overhead when no observers registered)
         services.AddSingleton<OutboxObserverInvoker>();

@@ -61,7 +61,7 @@ public sealed class MessageRouterBuilder<TMessage, TRouteKey>
         {
             RouteKey = key,
             ConsumerType = typeof(TConsumer),
-            Pipeline = configurator.Pipeline.Descriptors.Count > 0 ? configurator.Pipeline : null,
+            Pipeline = !configurator.Pipeline.IsEmpty ? configurator.Pipeline : null,
         });
 
         return this;

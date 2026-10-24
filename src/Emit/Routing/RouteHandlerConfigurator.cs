@@ -12,19 +12,25 @@ using Emit.Pipeline.Modules;
 /// </summary>
 internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<TMessage>
 {
-    /// <inheritdoc />
-    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
-
     /// <summary>
-    /// Gets the per-route middleware pipeline builder.
+    /// Gets the per-route middleware level.
     /// </summary>
-    internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
+    internal MessagePipelineBuilder<ConsumeContext<TMessage>> Pipeline { get; } = new();
 
     /// <inheritdoc />
     public IInboundConfigurable<TMessage> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
         where TMiddleware : class, IMiddleware<ConsumeContext<TMessage>>
     {
-        Pipeline.Use(typeof(TMiddleware), lifetime);
+        Pipeline.Use<TMiddleware>(lifetime);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IInboundConfigurable<TMessage> Use(
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TMessage>>> factory,
+        MiddlewareLifetime lifetime = default)
+    {
+        Pipeline.Use(factory, lifetime);
         return this;
     }
 

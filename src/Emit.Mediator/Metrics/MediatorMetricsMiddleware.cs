@@ -14,14 +14,14 @@ internal sealed class MediatorMetricsMiddleware<TMessage>(
     private static readonly string RequestTypeName = typeof(TMessage).Name;
 
     /// <inheritdoc />
-    public async Task InvokeAsync(MediatorContext<TMessage> context, IMiddlewarePipeline<MediatorContext<TMessage>> next)
+    public async Task InvokeAsync(MediatorContext<TMessage> context, Func<Task> next)
     {
         metrics.RecordSendActiveIncrement();
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
             metrics.RecordSendCompleted(elapsed, RequestTypeName, MediatorMetrics.ResultSuccess);

@@ -49,17 +49,18 @@ public sealed class KafkaMetrics
         ArgumentNullException.ThrowIfNull(enrichment);
         this.enrichment = enrichment;
 
-        var meter = meterFactory?.Create(MeterNames.EmitKafka) ?? new Meter(MeterNames.EmitKafka);
+        var meter = meterFactory?.Create(KafkaMeterNames.Kafka) ?? new Meter(KafkaMeterNames.Kafka);
 
         // Producer
         ProduceDuration = meter.CreateHistogram<double>(
-            "emit.kafka.produce.duration", "s", "Kafka broker round-trip time for produce operations.");
+            "emit.kafka.produce.duration", "s", "Kafka broker round-trip time for produce operations.", tags: null, advice: HistogramAdvice.Seconds);
 
         ProduceMessages = meter.CreateCounter<long>(
             "emit.kafka.produce.messages", "{message}", "Count of Kafka produce operations.");
 
         ProduceMessageSize = meter.CreateHistogram<int>(
-            "emit.kafka.produce.message_size", "By", "Message size distribution (key + value bytes).");
+            "emit.kafka.produce.message_size", "By", "Message size distribution (key + value bytes).", tags: null,
+            advice: HistogramAdvice.Bytes);
 
         // Consumer
         ConsumeMessages = meter.CreateCounter<long>(
@@ -69,7 +70,7 @@ public sealed class KafkaMetrics
             "emit.kafka.consume.deserialization.errors", "{error}", "Count of deserialization exceptions.");
 
         DeserializationDuration = meter.CreateHistogram<double>(
-            "emit.kafka.consume.deserialization.duration", "s", "Deserializer execution time.");
+            "emit.kafka.consume.deserialization.duration", "s", "Deserializer execution time.", tags: null, advice: HistogramAdvice.Seconds);
 
         PartitionEvents = meter.CreateCounter<long>(
             "emit.kafka.consume.partition.events", "{event}", "Count of partition rebalance events.");

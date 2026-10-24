@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Composes a fully-layered consume middleware pipeline for a single consumer or router entry.
 /// Pipeline order (innermost → outermost):
-/// handler → per-entry → unit of work → validation → filter → retry → group/provider/global → metrics → observers → error → tracing.
+/// handler → per-entry → unit of work → validation → filter → retry → rate limit → group/provider/global inbound/every pipeline → metrics → observers → error → tracing.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
 internal sealed class ConsumerPipelineComposer<TValue>
@@ -38,19 +38,24 @@ internal sealed class ConsumerPipelineComposer<TValue>
     public required IReadOnlyList<IConsumeObserver> ConsumeObservers { get; init; }
 
     /// <summary>
-    /// Gets the consumer group pipeline builder applied around all entries in the group.
+    /// Gets the consumer group middleware level applied around all entries in the group.
     /// </summary>
-    public required IMessagePipelineBuilder GroupPipeline { get; init; }
+    public required MessagePipelineBuilder GroupPipeline { get; init; }
 
     /// <summary>
-    /// Gets the global inbound pipeline builder applied outermost across all providers and groups.
+    /// Gets the middleware level of every pipeline, applied outermost.
     /// </summary>
-    public required IMessagePipelineBuilder GlobalInboundPipeline { get; init; }
+    public required MessagePipelineBuilder GlobalPipeline { get; init; }
 
     /// <summary>
-    /// Gets the provider-level inbound pipeline builder applied between the global and group pipelines.
+    /// Gets the global inbound middleware level applied across all providers and groups.
     /// </summary>
-    public required IMessagePipelineBuilder ProviderInboundPipeline { get; init; }
+    public required MessagePipelineBuilder GlobalInboundPipeline { get; init; }
+
+    /// <summary>
+    /// Gets the provider-level inbound middleware level applied between the global and group levels.
+    /// </summary>
+    public required MessagePipelineBuilder ProviderInboundPipeline { get; init; }
 
     /// <summary>
     /// Gets the consumer group's <see cref="ValidationMiddleware{TValue}"/> as inbound middleware.
@@ -69,6 +74,12 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// is retried like a handler.
     /// </summary>
     public IMiddleware<ConsumeContext<TValue>>? FilterMiddleware { get; init; }
+
+    /// <summary>
+    /// Gets the consumer group's rate limiting middleware, if configured. It runs outside each attempt, so a message
+    /// takes its permits once however many times it is retried.
+    /// </summary>
+    public RateLimitMiddleware? RateLimitMiddleware { get; init; }
 
     /// <summary>
     /// Gets the optional retry policy: the group error policy evaluator, before retry actions are
@@ -110,7 +121,7 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// </returns>
     public ConsumerPipelineEntry<TValue> Compose(
         IMiddlewarePipeline<ConsumeContext<TValue>> terminal,
-        IMessagePipelineBuilder? perEntryPipeline,
+        MessagePipelineBuilder? perEntryPipeline,
         string identifier,
         ConsumerKind kind,
         Type? consumerType)
@@ -120,8 +131,7 @@ internal sealed class ConsumerPipelineComposer<TValue>
         // 1. terminal = handler/router (already provided)
 
         // 2. Per-entry middleware
-        if (perEntryPipeline is not null)
-            terminal = perEntryPipeline.Build<ConsumeContext<TValue>, TValue>(Services, terminal);
+        terminal = MessagePipelineBuilder.Build<ConsumeContext<TValue>, TValue>(Services, terminal, perEntryPipeline);
 
         // 2.5. Unit of work (wraps the handler and its own middleware, directly inside retry, so
         // nothing within an attempt can fail after the commit). Routers have none here: each route
@@ -162,9 +172,15 @@ internal sealed class ConsumerPipelineComposer<TValue>
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(retryMw, terminal);
         }
 
-        // 5. Group → Provider → Global user middleware
-        var pipeline = GroupPipeline.Build<ConsumeContext<TValue>, TValue>(
-            Services, terminal, GlobalInboundPipeline, ProviderInboundPipeline);
+        // 4.5. RateLimitMiddleware (outside retry, so a retried message is not counted again)
+        if (RateLimitMiddleware is not null)
+        {
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(RateLimitMiddleware, terminal);
+        }
+
+        // 5. User middleware: every pipeline → global inbound → provider → group
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<TValue>, TValue>(
+            Services, terminal, GlobalPipeline, GlobalInboundPipeline, ProviderInboundPipeline, GroupPipeline);
 
         // 6. ConsumeMetricsMiddleware (baked identity)
         {

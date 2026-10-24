@@ -36,6 +36,10 @@ Kafka integration tests: compliance implementations proving Kafka provider corre
 | `KafkaDlqProduceFailureTests.cs` | Kafka-specific: behavior when DLQ produce itself fails | Debug or extend DLQ produce failure handling |
 | `KafkaOutboxFencingTests.cs` | Kafka-specific: a later run of the outbox daemon fences an earlier one, whose messages never become visible | Debug or extend outbox fencing |
 | `KafkaOrderedDeliveryTests.cs` | Kafka-specific: per-key ordering with ByKeyHash distribution | Debug or extend ordering guarantees |
+| `KafkaBatchFilterCompliance.cs` | Inherits BatchFilterCompliance | Debug or extend batch filter tests |
+| `KafkaBatchOrderedDeliveryTests.cs` | Kafka-specific: per-key order and complete delivery across partitions and workers with batch consumers | Debug or extend batch ordering guarantees |
+| `KafkaFluentValidationTests.cs` | Kafka-specific: FluentValidation with discard and dead-letter actions | Debug or extend FluentValidation tests |
+| `KafkaSkipNullPayloadsTests.cs` | Kafka-specific: `SkipNullPayloads()` drops tombstones before the handler without dead-lettering them | Debug or extend null payload skipping |
 
 ## Subdirectories
 

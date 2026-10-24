@@ -6,7 +6,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
-| `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation (a rejected item validated once when the validator throws on a later one), retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
+| `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, group middleware running once per batch, validation (a rejected item validated once when the validator throws on a later one), retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
 | `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior, exact failure counts with and without retries, state reported per consumer group and topic | Add circuit breaker tests or debug circuit breaker issues |
 | `ConsumerFlowControlCompliance.cs` | Pausing a named consumer group declaration: through rebalances and an open circuit, waiting for messages being handled, resuming in order, before start and after stop, batch groups, from a handler, polling with a full queue | Add flow control tests or debug pause and resume |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
@@ -18,7 +18,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ExternalMessageCompliance.cs` | Consuming messages produced outside Emit (raw Kafka messages): delivered, metrics recorded | Debug external message ingestion or verify raw message support |
 | `FanOutCompliance.cs` | Multiple consumer groups independently consuming the same topic | Add fan-out tests or debug independent consumer group behavior |
 | `FilterCompliance.cs` | Consumer filter predicate evaluation, a filter that throws retried by the error policy | Add filter tests or debug filter skipping behavior |
-| `GlobalPipelineCompliance.cs` | Global middleware execution order and context propagation | Add global pipeline tests or debug cross-cutting middleware |
+| `GlobalPipelineCompliance.cs` | The global middleware levels each running on their pipelines only: every pipeline (consumer, producer, mediator request), every message consumed, every message produced | Add global pipeline tests or debug cross-cutting middleware |
 | `LeaderElectionCompliance.cs` | Leader election persistence contract: lease acquisition, renewal and takeover by recorded heartbeat, heartbeats that do not claim the lease, resign, services sharing a database, conditional registration removal, and deregistration | Add leader election tests or debug leadership transitions |
 | `DatabaseLeaderElectionCompliance.cs` | Leader election contract that needs a real database: a heartbeat stalled on a lock leaves no registration when it times out | Add leader election tests that depend on database locking |
 | `ServiceCoordinationCompliance.cs` | Real hosts: services sharing a database each elect a leader and run their own daemons (issue #85 scenario), daemon observers registered through DI hear about them, a node that shuts down hands its daemon and leadership to another node of its service once its observers heard the daemon stop, and daemons registered with `AddDaemon` spread when a node joins and fail over when a node loses the database, never acting on two nodes at once | Debug daemon coordination end to end |
@@ -46,3 +46,6 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ProducerRoutingCompliance.cs` | Producer routing: outbox-by-default, UseDirect() opt-out, mixed behavior | Add producer routing tests or debug outbox/direct routing |
 | `MediatorTransactionalCompliance.cs` | [Transactional] on mediator handlers: transaction present/absent, commit, rollback, response integrity, registration order, both handler shapes | Add mediator [Transactional] tests or debug the attribute on IRequestHandler |
 | `ProducerOutboxRoutingCompliance.cs` | Producer routes through the outbox: a rolled-back transaction delivers nothing, regardless of registration order | Add producer outbox-routing tests or debug direct-versus-outbox routing |
+| `BatchFilterCompliance.cs` | Consumer filters on batch consumers: filtered items dropped from the batch, the rest delivered | Add batch filter tests |
+| `TransactionalRouterCompliance.cs` | [Transactional] on routed handlers: each route gets its own usable unit of work | Add transactional router tests |
+| `UnitOfWorkCallbackCompliance.cs` | OnSucceeded and OnFailed callbacks run once at the end of the unit of work, against a real database and broker | Add unit of work callback tests |

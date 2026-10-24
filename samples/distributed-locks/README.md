@@ -31,6 +31,8 @@ To simulate lock contention, open a second terminal and start another instance o
 Urls=http://localhost:5002 dotnet run --project InventorySnapshot.MongoDB
 ```
 
+The MongoDB variant stores each product under its SKU. If you ran it before products were keyed this way, drop the `inventory_snapshot` database first (or `docker compose down -v`).
+
 ## What to watch for
 
 **In the console**, you'll see the two workers interleaved:

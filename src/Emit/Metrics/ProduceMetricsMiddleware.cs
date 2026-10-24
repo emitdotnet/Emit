@@ -13,14 +13,14 @@ internal sealed class ProduceMetricsMiddleware<TMessage>(
     EmitMetrics metrics) : IMiddleware<SendContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(SendContext<TMessage> context, IMiddlewarePipeline<SendContext<TMessage>> next)
+    public async Task InvokeAsync(SendContext<TMessage> context, Func<Task> next)
     {
         var provider = EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "unknown";
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
             metrics.RecordProduceCompleted(elapsed, provider, EmitMetrics.ResultSuccess);

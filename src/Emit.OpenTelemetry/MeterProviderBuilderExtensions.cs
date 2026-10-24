@@ -10,16 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class MeterProviderBuilderExtensions
 {
-    // The default OTel SDK histogram boundaries [0, 5, 10, 25, 50, ...] are sized for
-    // milliseconds. Emit records all duration instruments in seconds, so without custom
-    // boundaries every observation lands in the le=5 bucket and histogram_quantile
-    // interpolates nonsense values (e.g. p95 = 4.75 s for a sub-millisecond operation).
-    private static readonly double[] SecondBuckets =
-        [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
-
-    private static readonly double[] ByteBuckets =
-        [256, 1_024, 4_096, 16_384, 65_536, 524_288, 1_048_576];
-
     /// <summary>
     /// Adds Emit instrumentation to the OpenTelemetry metrics pipeline.
     /// Subscribes to all enabled Emit meters and configures static tag enrichment.
@@ -58,27 +48,24 @@ public static class MeterProviderBuilderExtensions
             meters.Add(MeterNames.EmitDaemon);
         }
 
-        if (options.EnableMediatorMeter)
-        {
-            meters.Add(MeterNames.EmitMediator);
-        }
-
-        if (options.EnableKafkaMeter)
-        {
-            meters.Add(MeterNames.EmitKafka);
-        }
-
-        if (options.EnableKafkaBrokerMeter)
-        {
-            meters.Add(MeterNames.EmitKafkaBroker);
-        }
-
         if (meters.Count > 0)
         {
             builder.AddMeter([.. meters]);
         }
 
-        RegisterHistogramViews(builder);
+        // The meters of the optional packages in use, which register them; every builder OpenTelemetry creates
+        // configures itself from the service provider this way
+        (builder as IDeferredMeterProviderBuilder)?.Configure((services, meterProvider) =>
+        {
+            string[] packageMeters =
+            [
+                .. services.GetServices<PackageMeter>().Select(m => m.Name).Where(name => !options.IsDisabled(name)),
+            ];
+            if (packageMeters.Length > 0)
+            {
+                meterProvider.AddMeter(packageMeters);
+            }
+        });
 
         var tags = options.GetTags();
 
@@ -96,36 +83,5 @@ public static class MeterProviderBuilderExtensions
         });
 
         return builder;
-    }
-
-    private static void RegisterHistogramViews(MeterProviderBuilder builder)
-    {
-        var seconds = new ExplicitBucketHistogramConfiguration { Boundaries = SecondBuckets };
-        var bytes = new ExplicitBucketHistogramConfiguration { Boundaries = ByteBuckets };
-
-        // Pipeline
-        builder.AddView("emit.pipeline.produce.duration", seconds);
-        builder.AddView("emit.pipeline.consume.duration", seconds);
-
-        // Consumer
-        builder.AddView("emit.consumer.retry.duration", seconds);
-        builder.AddView("emit.consumer.circuit_breaker.open_duration", seconds);
-        builder.AddView("emit.consumer.rate_limit.wait_duration", seconds);
-
-        // Outbox
-        builder.AddView("emit.outbox.processing.duration", seconds);
-        builder.AddView("emit.outbox.critical_time", seconds);
-
-        // Lock
-        builder.AddView("emit.lock.acquire.duration", seconds);
-        builder.AddView("emit.lock.held.duration", seconds);
-
-        // Mediator
-        builder.AddView("emit.mediator.send.duration", seconds);
-
-        // Kafka
-        builder.AddView("emit.kafka.produce.duration", seconds);
-        builder.AddView("emit.kafka.consume.deserialization.duration", seconds);
-        builder.AddView("emit.kafka.produce.message_size", bytes);
     }
 }

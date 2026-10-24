@@ -1,6 +1,5 @@
 namespace Emit.UnitTests.Pipeline;
 
-using System.Linq;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.Pipeline;
@@ -10,453 +9,298 @@ using Xunit;
 public sealed class MessagePipelineBuilderTests
 {
     [Fact]
-    public void GivenNewBuilder_WhenUseCalledMultipleTimes_ThenMiddlewareTypesCollected()
+    public async Task GivenLevelsOfBaseContexts_WhenBuilt_ThenTheirMiddlewareRunsOnThePipelineOutermostLevelFirst()
     {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
+        // Arrange: middleware of every pipeline, of every consumer, and of consumers of string, each on its level,
+        // singleton, factory and scoped alike
+        var log = new List<string>();
+        var services = new ServiceCollection().AddSingleton(log);
+        var everyPipeline = new MessagePipelineBuilder<MessageContext>();
+        everyPipeline.Use<RecordingMessageMiddleware>().Use(_ => new RecordingMiddleware("second", log));
+        var everyConsumer = new MessagePipelineBuilder<ConsumeContext>(typeof(ConsumeContext<>));
+        everyConsumer.Use<RecordingConsumeMiddleware>();
+        var stringConsumers = new MessagePipelineBuilder<ConsumeContext<string>>();
+        stringConsumers.Use<RecordingStringMiddleware>(MiddlewareLifetime.Scoped);
+        foreach (var level in new MessagePipelineBuilder[] { everyPipeline, everyConsumer, stringConsumers })
+        {
+            level.RegisterServices(services);
+        }
 
-        // Act
-        builder.Use(typeof(MiddlewareA)).Use(typeof(MiddlewareB));
-
-        // Assert
-        Assert.Equal([typeof(MiddlewareA), typeof(MiddlewareB)], builder.Descriptors.Select(d => d.MiddlewareType).ToList());
-    }
-
-    [Fact]
-    public void GivenUse_WhenCalled_ThenReturnsSameBuilderForChaining()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-
-        // Act
-        var result = builder.Use(typeof(MiddlewareA));
-
-        // Assert
-        Assert.Same(builder, result);
-    }
-
-    [Fact]
-    public void GivenMiddlewareTypes_WhenRegisterServices_ThenRegisteredAsSingletons()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use(typeof(MiddlewareA)).Use(typeof(MiddlewareB));
-        var services = new ServiceCollection();
-
-        // Act
-        builder.RegisterServices(services);
-
-        // Assert
-        Assert.Contains(services, d => d.ServiceType == typeof(MiddlewareA) && d.Lifetime == ServiceLifetime.Singleton);
-        Assert.Contains(services, d => d.ServiceType == typeof(MiddlewareB) && d.Lifetime == ServiceLifetime.Singleton);
-    }
-
-    [Fact]
-    public void GivenRegisterServices_WhenCalledTwice_ThenDoesNotDuplicate()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use(typeof(MiddlewareA));
-        var services = new ServiceCollection();
-
-        // Act
-        builder.RegisterServices(services);
-        builder.RegisterServices(services);
-
-        // Assert
-        Assert.Single(services, d => d.ServiceType == typeof(MiddlewareA));
-    }
-
-    [Fact]
-    public async Task GivenNoMiddleware_WhenBuild_ThenTerminalInvoked()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        var provider = new ServiceCollection().BuildServiceProvider();
-        var invoked = false;
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { invoked = true; return Task.CompletedTask; });
-
-        // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        await pipeline.InvokeAsync(CreateContext(provider));
-
-        // Assert
-        Assert.True(invoked);
-    }
-
-    [Fact]
-    public async Task GivenMiddleware_WhenBuild_ThenMiddlewareWrapsTerminal()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use(typeof(MiddlewareA));
-        var services = new ServiceCollection();
-        builder.RegisterServices(services);
         var provider = services.BuildServiceProvider();
-
-        var order = new List<string>();
-        MiddlewareA.Order = order;
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(
+            provider,
+            Terminal(log),
+            everyPipeline,
+            null,
+            everyConsumer,
+            stringConsumers);
 
         // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
         await pipeline.InvokeAsync(CreateContext(provider));
 
         // Assert
-        Assert.Equal(["A:before", "terminal", "A:after"], order);
+        Assert.Equal(["message", "second", "consume", "string", "terminal"], log);
     }
 
     [Fact]
-    public async Task GivenParentLayers_WhenBuild_ThenFlattensOutermostFirst()
+    public async Task GivenGenericDefinition_WhenBuilt_ThenItIsClosedWithTheMessageTypeOfThePipeline()
     {
         // Arrange
-        var globalBuilder = new MessagePipelineBuilder();
-        globalBuilder.Use(typeof(MiddlewareA));
-
-        var patternBuilder = new MessagePipelineBuilder();
-        patternBuilder.Use(typeof(MiddlewareB));
-
-        var groupBuilder = new MessagePipelineBuilder();
-
-        var services = new ServiceCollection();
-        globalBuilder.RegisterServices(services);
-        patternBuilder.RegisterServices(services);
+        var log = new List<string>();
+        var services = new ServiceCollection().AddSingleton(log);
+        var level = new MessagePipelineBuilder<ConsumeContext>(typeof(ConsumeContext<>));
+        level.Use(typeof(RecordingGenericMiddleware<>));
+        level.RegisterServices(services);
         var provider = services.BuildServiceProvider();
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(provider, Terminal(log), level);
 
-        var order = new List<string>();
-        MiddlewareA.Order = order;
-        MiddlewareB.Order = order;
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
-
-        // Act — groupBuilder.Build with globalBuilder and patternBuilder as parents
-        var pipeline = groupBuilder.Build<TestInboundContext, string>(provider, terminal, globalBuilder, patternBuilder);
+        // Act
         await pipeline.InvokeAsync(CreateContext(provider));
 
-        // Assert — global outermost, pattern inner, then terminal
-        Assert.Equal(["A:before", "B:before", "terminal", "B:after", "A:after"], order);
-    }
-
-    [Fact]
-    public async Task GivenAllThreeLayers_WhenBuild_ThenOrderIsGlobalPatternGroup()
-    {
-        // Arrange
-        var globalBuilder = new MessagePipelineBuilder();
-        globalBuilder.Use(typeof(MiddlewareA));
-
-        var patternBuilder = new MessagePipelineBuilder();
-        patternBuilder.Use(typeof(MiddlewareB));
-
-        var groupBuilder = new MessagePipelineBuilder();
-        groupBuilder.Use(typeof(MiddlewareC));
-
-        var services = new ServiceCollection();
-        globalBuilder.RegisterServices(services);
-        patternBuilder.RegisterServices(services);
-        groupBuilder.RegisterServices(services);
-        var provider = services.BuildServiceProvider();
-
-        var order = new List<string>();
-        MiddlewareA.Order = order;
-        MiddlewareB.Order = order;
-        MiddlewareC.Order = order;
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
-
-        // Act
-        var pipeline = groupBuilder.Build<TestInboundContext, string>(provider, terminal, globalBuilder, patternBuilder);
-        await pipeline.InvokeAsync(CreateContext(provider));
-
-        // Assert — global → pattern → group → terminal
-        Assert.Equal(["A:before", "B:before", "C:before", "terminal", "C:after", "B:after", "A:after"], order);
-    }
-
-    [Fact]
-    public void GivenUseWithLifetime_WhenCalled_ThenDescriptorHasCorrectLifetime()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-
-        // Act
-        builder.Use(typeof(MiddlewareA), MiddlewareLifetime.Scoped);
-
         // Assert
-        var descriptor = Assert.Single(builder.Descriptors);
-        Assert.Equal(typeof(MiddlewareA), descriptor.MiddlewareType);
-        Assert.Equal(MiddlewareLifetime.Scoped, descriptor.Lifetime);
+        Assert.Equal([nameof(String), "terminal"], log);
     }
 
-    [Fact]
-    public void GivenUseWithLifetime_WhenCalled_ThenReturnsSameBuilderForChaining()
+    [Theory]
+    [InlineData(typeof(RecordingConsumeMiddleware))]
+    [InlineData(typeof(RecordingGenericSendMiddleware<>))]
+    [InlineData(typeof(TwoParameterMiddleware<,>))]
+    [InlineData(typeof(GenericOuter<>.NestedMiddleware))]
+    public void GivenTypeThatIsNotAGenericDefinitionOfThisLevel_WhenUsed_ThenItIsRejected(Type middlewareType)
     {
         // Arrange
-        var builder = new MessagePipelineBuilder();
-
-        // Act
-        var result = builder.Use(typeof(MiddlewareA), MiddlewareLifetime.Scoped);
-
-        // Assert
-        Assert.Same(builder, result);
-    }
-
-    [Fact]
-    public void GivenUseWithFactory_WhenCalled_ThenDescriptorHasFactory()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        Func<IServiceProvider, IMiddleware<TestInboundContext>> factory = _ => new MiddlewareA();
-
-        // Act
-        builder.Use(factory);
-
-        // Assert
-        var descriptor = Assert.Single(builder.Descriptors);
-        Assert.Null(descriptor.MiddlewareType);
-        Assert.Same(factory, descriptor.Factory);
-        Assert.Equal(MiddlewareLifetime.Singleton, descriptor.Lifetime);
-    }
-
-    [Fact]
-    public void GivenUseWithFactory_WhenNullFactory_ThenThrowsArgumentNullException()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
+        var level = new MessagePipelineBuilder<ConsumeContext>(typeof(ConsumeContext<>));
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(
-            () => builder.Use((Func<IServiceProvider, IMiddleware<TestInboundContext>>)null!));
+        Assert.Throws<ArgumentException>(() => level.Use(middlewareType));
+        Assert.True(level.IsEmpty);
     }
 
     [Fact]
-    public void GivenUseWithFactory_WhenCalled_ThenReturnsSameBuilderForChaining()
+    public async Task GivenScopedMiddleware_WhenTwoMessagesFlow_ThenEachResolvesItsOwnFromItsScope()
     {
         // Arrange
-        var builder = new MessagePipelineBuilder();
+        var instances = new List<ScopedMiddleware>();
+        var services = new ServiceCollection().AddSingleton(instances);
+        var level = new MessagePipelineBuilder<ConsumeContext<string>>();
+        level.Use<ScopedMiddleware>(MiddlewareLifetime.Scoped);
+        level.RegisterServices(services);
+        var provider = services.BuildServiceProvider();
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(
+            provider, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask), level);
 
         // Act
-        var result = builder.Use<TestInboundContext>(_ => new MiddlewareA());
-
-        // Assert
-        Assert.Same(builder, result);
-    }
-
-    [Fact]
-    public void GivenScopedType_WhenRegisterServices_ThenRegisteredAsScoped()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use(typeof(MiddlewareA), MiddlewareLifetime.Scoped);
-        var services = new ServiceCollection();
-
-        // Act
-        builder.RegisterServices(services);
-
-        // Assert
-        Assert.Contains(services, d => d.ServiceType == typeof(MiddlewareA) && d.Lifetime == ServiceLifetime.Scoped);
-    }
-
-    [Fact]
-    public void GivenFactoryMiddleware_WhenRegisterServices_ThenNothingRegistered()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use<TestInboundContext>(_ => new MiddlewareA());
-        var services = new ServiceCollection();
-
-        // Act
-        builder.RegisterServices(services);
-
-        // Assert
-        Assert.Empty(services);
-    }
-
-    [Fact]
-    public async Task GivenSingletonFactory_WhenBuild_ThenFactoryCalledOnceAtBuildTime()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        var callCount = 0;
-        builder.Use<TestInboundContext>(_ =>
+        using (var first = provider.CreateScope())
+        using (var second = provider.CreateScope())
         {
-            callCount++;
-            return new PassthroughMiddleware();
+            await pipeline.InvokeAsync(CreateContext(first.ServiceProvider));
+            await pipeline.InvokeAsync(CreateContext(second.ServiceProvider));
+        }
+
+        // Assert
+        Assert.Equal(2, instances.Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData(MiddlewareLifetime.Singleton, 1)]
+    [InlineData(MiddlewareLifetime.Scoped, 2)]
+    public async Task GivenFactory_WhenTwoMessagesFlow_ThenItIsInvokedOnceAtBuildOrOncePerMessage(
+        MiddlewareLifetime lifetime,
+        int expectedCalls)
+    {
+        // Arrange
+        var calls = 0;
+        var level = new MessagePipelineBuilder<ConsumeContext<string>>();
+        level.Use(
+            _ =>
+            {
+                calls++;
+                return new ShortCircuitMiddleware();
+            },
+            lifetime);
+        var provider = new ServiceCollection().BuildServiceProvider();
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(
+            provider, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask), level);
+
+        // Act
+        await pipeline.InvokeAsync(CreateContext(provider));
+        await pipeline.InvokeAsync(CreateContext(provider));
+
+        // Assert
+        Assert.Equal(expectedCalls, calls);
+    }
+
+    [Fact]
+    public void GivenTypesAndAFactory_WhenServicesAreRegisteredTwice_ThenEachTypeIsRegisteredOnceWithItsLifetime()
+    {
+        // Arrange
+        var level = new MessagePipelineBuilder<ConsumeContext>(typeof(ConsumeContext<>));
+        level.Use<RecordingConsumeMiddleware>()
+            .Use(typeof(RecordingGenericMiddleware<>), MiddlewareLifetime.Scoped)
+            .Use(_ => new ShortCircuitMiddleware());
+        var services = new ServiceCollection();
+
+        // Act
+        level.RegisterServices(services);
+        level.RegisterServices(services);
+
+        // Assert: the factory creates its middleware itself, so nothing is registered for it
+        Assert.Equal(
+            [
+                (typeof(RecordingConsumeMiddleware), ServiceLifetime.Singleton),
+                (typeof(RecordingGenericMiddleware<>), ServiceLifetime.Scoped),
+            ],
+            services.Select(d => (d.ServiceType, d.Lifetime)));
+    }
+
+    [Fact]
+    public void GivenNullFactoryOrType_WhenUsed_ThenItIsRejected()
+    {
+        // Arrange
+        var level = new MessagePipelineBuilder<ConsumeContext>(typeof(ConsumeContext<>));
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => level.Use((Func<IServiceProvider, IMiddleware<ConsumeContext>>)null!));
+        Assert.Throws<ArgumentNullException>(() => level.Use((Type)null!));
+        Assert.True(level.IsEmpty);
+    }
+
+    [Fact]
+    public async Task GivenMiddlewareThatSkipsNext_WhenInvoked_ThenTheRestOfThePipelineDoesNotRun()
+    {
+        // Arrange
+        var log = new List<string>();
+        var level = new MessagePipelineBuilder<ConsumeContext<string>>();
+        level.Use(_ => new ShortCircuitMiddleware()).Use(_ => new RecordingMiddleware("inner", log));
+        var provider = new ServiceCollection().BuildServiceProvider();
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(provider, Terminal(log), level);
+
+        // Act
+        await pipeline.InvokeAsync(CreateContext(provider));
+
+        // Assert
+        Assert.Empty(log);
+    }
+
+    [Fact]
+    public void GivenGroupLevelOfMiddlewareForEveryConsumer_WhenEnsuredToRunOnBatches_ThenItIsAccepted()
+    {
+        // Arrange
+        var level = new MessagePipelineBuilder<ConsumeContext<string>>();
+        level.Use<RecordingConsumeMiddleware>().Use<RecordingMessageMiddleware>();
+
+        // Act
+        var exception = Record.Exception(level.EnsureRunsOn<ConsumeContext<MessageBatch<string>>>);
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GivenGroupLevelOfMiddlewareForSingleMessages_WhenEnsuredToRunOnBatches_ThenItIsRejected(bool factory)
+    {
+        // Arrange: a middleware typed for single messages, or a factory, whose middleware cannot be checked
+        var level = new MessagePipelineBuilder<ConsumeContext<string>>();
+        if (factory)
+        {
+            level.Use(_ => new RecordingConsumeMiddleware(new List<string>()));
+        }
+        else
+        {
+            level.Use<RecordingStringMiddleware>();
+        }
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(level.EnsureRunsOn<ConsumeContext<MessageBatch<string>>>);
+    }
+
+    private static IMiddlewarePipeline<ConsumeContext<string>> Terminal(List<string> log) =>
+        new TestPipeline<ConsumeContext<string>>(_ =>
+        {
+            log.Add("terminal");
+            return Task.CompletedTask;
         });
 
-        var provider = new ServiceCollection().BuildServiceProvider();
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
-
-        // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        Assert.Equal(1, callCount); // Factory called at build time
-
-        await pipeline.InvokeAsync(CreateContext(provider));
-        await pipeline.InvokeAsync(CreateContext(provider));
-
-        // Assert — factory was only called once
-        Assert.Equal(1, callCount);
-    }
-
-    [Fact]
-    public async Task GivenScopedType_WhenBuild_ThenResolvedPerInvocationFromContextServices()
+    private static ConsumeContext<string> CreateContext(IServiceProvider services) => new()
     {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        builder.Use(typeof(ScopedMiddleware), MiddlewareLifetime.Scoped);
-
-        var services = new ServiceCollection();
-        builder.RegisterServices(services);
-        var provider = services.BuildServiceProvider();
-
-        var instances = new List<ScopedMiddleware>();
-        ScopedMiddleware.OnInvoke = mw => instances.Add(mw);
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
-
-        // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-
-        using var scope1 = provider.CreateScope();
-        await pipeline.InvokeAsync(CreateContext(scope1.ServiceProvider));
-
-        using var scope2 = provider.CreateScope();
-        await pipeline.InvokeAsync(CreateContext(scope2.ServiceProvider));
-
-        // Assert — different scopes produce different instances
-        Assert.Equal(2, instances.Count);
-        Assert.NotSame(instances[0], instances[1]);
-    }
-
-    [Fact]
-    public async Task GivenScopedFactory_WhenBuild_ThenFactoryCalledPerInvocation()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        var callCount = 0;
-        builder.Use<TestInboundContext>(_ =>
-        {
-            callCount++;
-            return new PassthroughMiddleware();
-        }, MiddlewareLifetime.Scoped);
-
-        var provider = new ServiceCollection().BuildServiceProvider();
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => Task.CompletedTask);
-
-        // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        Assert.Equal(0, callCount); // Not called at build time
-
-        await pipeline.InvokeAsync(CreateContext(provider));
-        await pipeline.InvokeAsync(CreateContext(provider));
-
-        // Assert — factory called once per invocation
-        Assert.Equal(2, callCount);
-    }
-
-    [Fact]
-    public async Task GivenMixedLifetimes_WhenBuild_ThenCorrectExecutionOrder()
-    {
-        // Arrange
-        var builder = new MessagePipelineBuilder();
-        var order = new List<string>();
-
-        // Singleton type
-        builder.Use(typeof(MiddlewareA));
-
-        // Scoped factory
-        builder.Use<TestInboundContext>(_ => new OrderTrackingMiddleware("scoped-factory", order), MiddlewareLifetime.Scoped);
-
-        // Singleton factory
-        builder.Use<TestInboundContext>(_ => new OrderTrackingMiddleware("singleton-factory", order));
-
-        var services = new ServiceCollection();
-        builder.RegisterServices(services);
-        var provider = services.BuildServiceProvider();
-
-        MiddlewareA.Order = order;
-        IMiddlewarePipeline<TestInboundContext> terminal = new TestPipeline<TestInboundContext>(_ => { order.Add("terminal"); return Task.CompletedTask; });
-
-        // Act
-        var pipeline = builder.Build<TestInboundContext, string>(provider, terminal);
-        await pipeline.InvokeAsync(CreateContext(provider));
-
-        // Assert — all three middlewares wrap the terminal in registration order
-        Assert.Equal(
-            ["A:before", "scoped-factory:before", "singleton-factory:before", "terminal", "singleton-factory:after", "scoped-factory:after", "A:after"],
-            order);
-    }
-
-    private static TestInboundContext CreateContext(IServiceProvider services) => new()
-    {
-        MessageId = Guid.NewGuid().ToString(),
+        MessageId = "test",
         Timestamp = DateTimeOffset.UtcNow,
         CancellationToken = CancellationToken.None,
+        Message = "hello",
         Services = services,
-        Message = "test",
         TransportContext = TestTransportContext.Create(services),
     };
 
-    private sealed class TestInboundContext : ConsumeContext<string>;
-
-    private sealed class PassthroughMiddleware : IMiddleware<TestInboundContext>
+    private class RecordingMiddleware(string name, List<string> log) : IMiddleware<MessageContext>
     {
-        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next) => next.InvokeAsync(context);
-    }
-
-    private sealed class ScopedMiddleware : IMiddleware<TestInboundContext>
-    {
-        [ThreadStatic]
-        internal static Action<ScopedMiddleware>? OnInvoke;
-
-        public Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
+        public Task InvokeAsync(MessageContext context, Func<Task> next)
         {
-            OnInvoke?.Invoke(this);
-            return next.InvokeAsync(context);
+            log.Add(name);
+            return next();
         }
     }
 
-    private sealed class OrderTrackingMiddleware(string name, List<string> order) : IMiddleware<TestInboundContext>
+    private sealed class RecordingMessageMiddleware(List<string> log) : RecordingMiddleware("message", log);
+
+    private sealed class RecordingConsumeMiddleware(List<string> log) : IMiddleware<ConsumeContext>
     {
-        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
+        public Task InvokeAsync(ConsumeContext context, Func<Task> next)
         {
-            order.Add($"{name}:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
-            order.Add($"{name}:after");
+            log.Add("consume");
+            return next();
         }
     }
 
-    private sealed class MiddlewareA : IMiddleware<TestInboundContext>
+    private sealed class RecordingStringMiddleware(List<string> log) : IMiddleware<ConsumeContext<string>>
     {
-        [ThreadStatic]
-        internal static List<string>? Order;
-
-        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
-            Order?.Add("A:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
-            Order?.Add("A:after");
+            log.Add("string");
+            return next();
         }
     }
 
-    private sealed class MiddlewareB : IMiddleware<TestInboundContext>
+    private sealed class RecordingGenericMiddleware<T>(List<string> log) : IMiddleware<ConsumeContext<T>>
     {
-        [ThreadStatic]
-        internal static List<string>? Order;
-
-        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
+        public Task InvokeAsync(ConsumeContext<T> context, Func<Task> next)
         {
-            Order?.Add("B:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
-            Order?.Add("B:after");
+            log.Add(typeof(T).Name);
+            return next();
         }
     }
 
-    private sealed class MiddlewareC : IMiddleware<TestInboundContext>
+    private sealed class RecordingGenericSendMiddleware<T> : IMiddleware<SendContext<T>>
     {
-        [ThreadStatic]
-        internal static List<string>? Order;
+        public Task InvokeAsync(SendContext<T> context, Func<Task> next) => next();
+    }
 
-        public async Task InvokeAsync(TestInboundContext context, IMiddlewarePipeline<TestInboundContext> next)
+    private sealed class TwoParameterMiddleware<T1, T2> : IMiddleware<ConsumeContext<T1>>
+    {
+        public Task InvokeAsync(ConsumeContext<T1> context, Func<Task> next) => next();
+    }
+
+    private static class GenericOuter<T>
+    {
+        // Generic through its parent, so its name has no arity marker
+        public sealed class NestedMiddleware : IMiddleware<SendContext<T>>
         {
-            Order?.Add("C:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
-            Order?.Add("C:after");
+            public Task InvokeAsync(SendContext<T> context, Func<Task> next) => next();
         }
+    }
+
+    private sealed class ScopedMiddleware(List<ScopedMiddleware> instances) : IMiddleware<ConsumeContext<string>>
+    {
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
+        {
+            instances.Add(this);
+            return next();
+        }
+    }
+
+    private sealed class ShortCircuitMiddleware : IMiddleware<MessageContext>
+    {
+        public Task InvokeAsync(MessageContext context, Func<Task> next) => Task.CompletedTask;
     }
 }

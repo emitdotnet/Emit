@@ -1,7 +1,7 @@
 namespace Emit.Kafka.Tests;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.Pipeline;
+using global::Emit.Pipeline;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -82,10 +82,7 @@ public sealed class KafkaPipelineProducerTests
 
         // Assert
         Assert.NotNull(capturedContext);
-        var payload = capturedContext.TryGetPayload<KafkaProducePayload>();
-        Assert.NotNull(payload);
-        Assert.Equal("order-key", payload.Key);
-        Assert.False(payload.IsTombstone);
+        Assert.Equal("order-key", capturedContext.TryGetPayload<KafkaMessageKey<string>>()?.Key);
         Assert.Equal(destination, capturedContext.DestinationAddress);
         Assert.Equal("orders", EmitEndpointAddress.GetEntityName(capturedContext.DestinationAddress));
     }
@@ -108,10 +105,7 @@ public sealed class KafkaPipelineProducerTests
         // Assert
         Assert.NotNull(capturedContext);
         Assert.Null(capturedContext.Message);
-        var payload = capturedContext.TryGetPayload<KafkaProducePayload>();
-        Assert.NotNull(payload);
-        Assert.Equal("order-key", payload.Key);
-        Assert.True(payload.IsTombstone);
+        Assert.Equal("order-key", capturedContext.TryGetPayload<KafkaMessageKey<string>>()?.Key);
         Assert.Equal(new KeyValuePair<string, string>("reason", "deleted"), capturedContext.Headers[0]);
     }
 

@@ -1,7 +1,6 @@
 namespace Emit.UnitTests.Pipeline;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.Pipeline;
 using Xunit;
 
 public sealed class FeatureCollectionTests

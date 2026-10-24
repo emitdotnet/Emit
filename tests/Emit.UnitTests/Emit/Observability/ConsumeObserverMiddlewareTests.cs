@@ -2,7 +2,6 @@ namespace Emit.UnitTests.Observability;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Observability;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Observability;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -20,11 +19,11 @@ public class ConsumeObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -55,11 +54,11 @@ public class ConsumeObserverMiddlewareTests
             NullLogger<ConsumeObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -80,7 +79,7 @@ public class ConsumeObserverMiddlewareTests
             NullLogger<ConsumeObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(_ => throw expectedException);
+        Func<Task> next = () => throw expectedException;
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -110,11 +109,11 @@ public class ConsumeObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<ConsumeContext<string>> next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);

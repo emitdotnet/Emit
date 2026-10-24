@@ -32,13 +32,13 @@ public sealed class OutboxMetrics
             "emit.outbox.enqueued", "{entry}", "Count of entries enqueued into the outbox.");
 
         ProcessingDuration = meter.CreateHistogram<double>(
-            "emit.outbox.processing.duration", "s", "Duration of outbox entry processing.");
+            "emit.outbox.processing.duration", "s", "Duration of outbox entry processing.", tags: null, advice: HistogramAdvice.Seconds);
 
         ProcessingCompleted = meter.CreateCounter<long>(
             "emit.outbox.processing.completed", "{entry}", "Count of entries that completed processing.");
 
         CriticalTime = meter.CreateHistogram<double>(
-            "emit.outbox.critical_time", "s", "End-to-end latency from enqueue to processed.");
+            "emit.outbox.critical_time", "s", "End-to-end latency from enqueue to processed.", tags: null, advice: HistogramAdvice.Seconds);
 
         PollCycles = meter.CreateCounter<long>(
             "emit.outbox.worker.poll_cycles", "{cycle}", "Count of worker poll cycles.");

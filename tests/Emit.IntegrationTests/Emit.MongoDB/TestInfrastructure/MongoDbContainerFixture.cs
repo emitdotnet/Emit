@@ -10,7 +10,8 @@ using Xunit;
 /// </summary>
 /// <remarks>
 /// The container uses a single-node replica set to support transactions, and enables test commands so
-/// tests can stall chosen commands with the <c>failCommand</c> fail point.
+/// tests can stall chosen commands with the <c>failCommand</c> fail point. Test classes that configure it join
+/// <see cref="MongoDbFailPointCollection"/>.
 /// </remarks>
 public sealed class MongoDbContainerFixture : IAsyncLifetime
 {

@@ -1,7 +1,6 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Kafka.DependencyInjection;
 using Moq;
 using Xunit;

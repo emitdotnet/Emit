@@ -126,23 +126,22 @@ kafka.Topic<string, PizzaOrdered>("pizzas", topic =>
 });
 ```
 
-The middleware receives `SendContext<PizzaOrdered>` and calls `next.InvokeAsync(context)` to continue the pipeline. This is the Leaf level of the [pipeline model](../../concepts/pipeline-model/).
+The middleware is written for `SendContext<PizzaOrdered>`, or for a context it derives from such as `SendContext`, and calls `next()` to continue the pipeline. This is the Leaf level of the [pipeline model](../../concepts/pipeline-model/).
 
 ## Accessing the message key in middleware
 
-The Kafka key is available via the `KafkaTransportContext<TKey>` payload on the send context:
+The Kafka key is available via the `KafkaMessageKey<TKey>` payload on the send context:
 
 ```csharp
-public class LoggingMiddleware<T>(ILogger<LoggingMiddleware<T>> logger)
-    : IMiddleware<SendContext<T>>
+public class LoggingMiddleware(ILogger<LoggingMiddleware> logger) : IMiddleware<SendContext>
 {
-    public Task InvokeAsync(SendContext<T> context, IMiddlewarePipeline<SendContext<T>> next)
+    public Task InvokeAsync(SendContext context, Func<Task> next)
     {
-        if (context.TryGetPayload<KafkaTransportContext<string>>() is { } kafka)
+        if (context.TryGetPayload<KafkaMessageKey<string>>() is { } key)
         {
-            logger.LogDebug("Producing with key {Key}", kafka.Key);
+            logger.LogDebug("Producing with key {Key}", key.Key);
         }
-        return next.InvokeAsync(context);
+        return next();
     }
 }
 ```

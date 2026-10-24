@@ -115,7 +115,7 @@ group.AddBatchConsumer<ScanBatchConsumer>(batch =>
 
 ## Middleware behavior
 
-All group-level middleware works with batch consumers. Several behave differently because the pipeline message is a `MessageBatch<T>` rather than a single `T`.
+All group-level features work with batch consumers. Several behave differently because the pipeline message is a `MessageBatch<T>` rather than a single `T`. Middleware you register on the group with `Use` must run on batches: implement `IMiddleware<ConsumeContext>` (or `IMiddleware<MessageContext>`), where `context.Message` is the `MessageBatch<T>`. Middleware written for single messages is rejected when the group is registered.
 
 ### Validation
 

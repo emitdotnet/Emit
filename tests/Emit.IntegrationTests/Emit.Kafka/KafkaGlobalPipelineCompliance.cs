@@ -1,6 +1,5 @@
 namespace Emit.Kafka.Tests;
 
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration.Compliance;
 using Emit.Kafka.DependencyInjection;
@@ -12,36 +11,8 @@ using ConfluentKafka = Confluent.Kafka;
 public class KafkaGlobalPipelineCompliance(KafkaContainerFixture fixture)
     : GlobalPipelineCompliance, IClassFixture<KafkaContainerFixture>
 {
-    protected override void ConfigureWithInboundMiddleware(EmitBuilder emit, string topic, string groupId)
+    protected override void ConfigureProvider(EmitBuilder emit, string topic, string groupId)
     {
-        emit.InboundPipeline.Use<InboundCounterMiddleware>(MiddlewareLifetime.Singleton);
-
-        emit.AddKafka(kafka =>
-        {
-            kafka.ConfigureClient(config =>
-            {
-                config.BootstrapServers = fixture.BootstrapServers;
-            });
-            kafka.AutoProvision();
-
-            kafka.Topic<string, string>(topic, t =>
-            {
-                t.UseUtf8Serialization();
-
-                t.Producer();
-                t.ConsumerGroup(groupId, group =>
-                {
-                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.AddConsumer<SinkConsumer<string>>();
-                });
-            });
-        });
-    }
-
-    protected override void ConfigureWithOutboundMiddleware(EmitBuilder emit, string topic, string groupId)
-    {
-        emit.OutboundPipeline.Use<OutboundCounterMiddleware>(MiddlewareLifetime.Singleton);
-
         emit.AddKafka(kafka =>
         {
             kafka.ConfigureClient(config =>

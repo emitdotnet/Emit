@@ -8,6 +8,9 @@ Consolidated unit tests for all Emit projects using xUnit, Moq, and Given-When-T
 | ---- | ---- | ------------ |
 | `Emit.UnitTests.csproj` | Test project file with xUnit and Moq dependencies | Configure test dependencies |
 | `MeasurementRecorder.cs` | Records the counter measurements one test makes on a meter, kept apart from other tests by a tag unique to the recorder | Assert what a component records in metrics |
+| `GlobalUsings.cs` | Global using of the test helper namespace | Add a namespace every test file needs |
+| `TestPipeline.cs` | Wraps a delegate into a pipeline, for terminals in unit tests | Give a unit test a pipeline terminal |
+| `TestTransportContext.cs` | Minimal TransportContext for unit tests without a real transport | Build a consume context in a unit test |
 
 ## Subdirectories
 

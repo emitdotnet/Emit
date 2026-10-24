@@ -1,7 +1,6 @@
 namespace Emit.Mediator.Tests;
 
 using global::Emit.Abstractions;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

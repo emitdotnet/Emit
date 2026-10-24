@@ -2,7 +2,6 @@ namespace Emit.UnitTests.Observability;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.Observability;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Observability;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -20,11 +19,11 @@ public class ProduceObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -55,11 +54,11 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -80,7 +79,7 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -107,11 +106,11 @@ public class ProduceObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -132,7 +131,7 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => throw expectedException);
+        Func<Task> next = () => throw expectedException;
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -161,7 +160,7 @@ public class ProduceObserverMiddlewareTests
             NullLogger<ProduceObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<SendContext<string>> next = new TestPipeline<SendContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);

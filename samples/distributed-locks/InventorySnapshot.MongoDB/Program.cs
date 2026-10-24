@@ -9,10 +9,15 @@ using InventorySnapshot.MongoDB.Repositories;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using global::MongoDB.Bson;
+using global::MongoDB.Bson.Serialization;
 using global::MongoDB.Bson.Serialization.Conventions;
+using global::MongoDB.Bson.Serialization.Serializers;
 using global::MongoDB.Driver;
 
 ConventionRegistry.Register("camelCase", new ConventionPack { new CamelCaseElementNameConvention() }, _ => true);
+// Guids are stored as the standard UUID representation, as Emit stores its own
+BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
 
 var builder = WebApplication.CreateBuilder(args);
 

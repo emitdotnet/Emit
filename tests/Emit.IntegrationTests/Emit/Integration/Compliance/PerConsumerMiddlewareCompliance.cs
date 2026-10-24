@@ -105,10 +105,10 @@ public abstract class PerConsumerMiddlewareCompliance
         : IMiddleware<ConsumeContext<string>>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public async Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
         {
             counter.Increment();
-            await next.InvokeAsync(context);
+            await next();
         }
     }
 }

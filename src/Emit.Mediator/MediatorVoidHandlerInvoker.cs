@@ -1,6 +1,6 @@
 namespace Emit.Mediator;
 
-using Emit.Abstractions.Pipeline;
+using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>

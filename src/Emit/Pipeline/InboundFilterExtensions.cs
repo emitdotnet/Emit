@@ -22,7 +22,7 @@ public static class InboundFilterExtensions
     /// <typeparam name="TMessage">The message type.</typeparam>
     /// <typeparam name="TFilter">The filter type.</typeparam>
     /// <param name="pipeline">The pipeline builder to add the filter to.</param>
-    public static void AddConsumerFilter<TMessage, TFilter>(this IMessagePipelineBuilder pipeline)
+    public static void AddConsumerFilter<TMessage, TFilter>(this IMessagePipelineBuilder<ConsumeContext<TMessage>> pipeline)
         where TFilter : class, IConsumerFilter<TMessage>
     {
         ArgumentNullException.ThrowIfNull(pipeline);
