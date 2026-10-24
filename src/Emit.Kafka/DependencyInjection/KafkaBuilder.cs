@@ -549,6 +549,9 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
             {
                 cbObserver = new CircuitBreakerObserver<TValue>(
                     config.CircuitBreakerConfig,
+                    name,
+                    groupId,
+                    topicName,
                     flowControl.CircuitBreaker,
                     sp.GetRequiredService<EmitMetrics>(),
                     loggerFactory.CreateLogger<CircuitBreakerObserver<TValue>>());
@@ -559,6 +562,7 @@ public sealed class KafkaBuilder : IInboundConfigurable, IOutboundConfigurable
 
             var registration = new ConsumerGroupRegistration<TKey, TValue>
             {
+                Name = name,
                 TopicName = topicName,
                 GroupId = groupId,
                 DestinationAddress = config.DestinationAddress,

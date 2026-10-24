@@ -56,7 +56,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         StartupDiagnosticsLogger.Log(registration, deadLetterSink, logger);
 
         kafkaMetrics.RegisterConsumerGroup(
+            registration.Name,
             registration.GroupId,
+            registration.TopicName,
             registration.WorkerCount,
             () =>
             {
@@ -107,7 +109,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
 
             supervisor = null;
 
-            kafkaMetrics.DeregisterConsumerGroup(registration.GroupId);
+            kafkaMetrics.DeregisterConsumerGroup(registration.Name);
 
             // Dispose circuit breaker observer to cancel any pending half-open transition
             // before closing the consumer. This prevents ObjectDisposedException from

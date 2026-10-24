@@ -1,5 +1,6 @@
 namespace Emit.Metrics;
 
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Emit.Abstractions.Metrics;
 
@@ -11,7 +12,7 @@ public sealed class EmitMetrics
 {
     private readonly EmitMetricsEnrichment enrichment;
 
-    private Func<int>? circuitBreakerStateCallback;
+    private readonly ConcurrentDictionary<string, CircuitBreakerGaugeState> circuitBreakerRegistry = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EmitMetrics"/> class.
@@ -66,7 +67,7 @@ public sealed class EmitMetrics
             "emit.consumer.circuit_breaker.open_duration", "s", "Duration from circuit opened to half-open.");
 
         meter.CreateObservableGauge(
-            "emit.consumer.circuit_breaker.state", ObserveCircuitBreakerState, description: "Current circuit breaker state (0=closed, 1=open, 2=half_open).");
+            "emit.consumer.circuit_breaker.state", ObserveCircuitBreakerStates, description: "Current circuit breaker state (0=closed, 1=open, 2=half_open).");
 
         // Rate limiting
         RateLimitWaitDuration = meter.CreateHistogram<double>(
@@ -175,21 +176,28 @@ public sealed class EmitMetrics
 
     // ── Circuit breaker recording methods ──
 
-    internal void RecordStateTransition(string toState)
+    internal void RecordStateTransition(string consumerGroup, string topic, string toState)
     {
-        var tags = enrichment.CreateTags([new("to_state", toState)]);
+        var tags = enrichment.CreateTags([new("consumer_group", consumerGroup), new("topic", topic), new("to_state", toState)]);
         StateTransitions.Add(1, tags);
     }
 
-    internal void RecordCircuitBreakerOpenDuration(double seconds)
+    internal void RecordCircuitBreakerOpenDuration(string consumerGroup, string topic, double seconds)
     {
-        var tags = enrichment.CreateTags();
+        var tags = enrichment.CreateTags([new("consumer_group", consumerGroup), new("topic", topic)]);
         CircuitBreakerOpenDuration.Record(seconds, tags);
     }
 
-    internal void RegisterCircuitBreakerStateCallback(Func<int> callback)
+    // ── Circuit breaker gauge registry ──
+
+    internal void RegisterCircuitBreaker(string name, string consumerGroup, string topic, Func<int> getState)
     {
-        Volatile.Write(ref circuitBreakerStateCallback, callback);
+        circuitBreakerRegistry[name] = new CircuitBreakerGaugeState(consumerGroup, topic, getState);
+    }
+
+    internal void DeregisterCircuitBreaker(string name)
+    {
+        circuitBreakerRegistry.TryRemove(name, out _);
     }
 
     // ── Rate limiting recording methods ──
@@ -217,10 +225,14 @@ public sealed class EmitMetrics
         DlqProduceErrors.Add(1, tags);
     }
 
-    private Measurement<int> ObserveCircuitBreakerState()
+    private IEnumerable<Measurement<int>> ObserveCircuitBreakerStates()
     {
-        var value = Volatile.Read(ref circuitBreakerStateCallback)?.Invoke() ?? 0;
-        var tags = enrichment.CreateTags();
-        return new Measurement<int>(value, tags);
+        foreach (var (_, state) in circuitBreakerRegistry)
+        {
+            var tags = enrichment.CreateTags([new("consumer_group", state.ConsumerGroup), new("topic", state.Topic)]);
+            yield return new Measurement<int>(state.GetState(), tags);
+        }
     }
+
+    private sealed record CircuitBreakerGaugeState(string ConsumerGroup, string Topic, Func<int> GetState);
 }

@@ -145,7 +145,7 @@ public sealed class KafkaMetricsTests : IDisposable
         var depths = new int[] { 10, 25, 0 };
 
         // Act
-        metrics.RegisterConsumerGroup("group1", 3, () => depths);
+        metrics.RegisterConsumerGroup("declaration-1", "group1", "orders", 3, () => depths);
         listener.RecordObservableInstruments();
 
         // Assert — filter by specific consumer group to avoid leaking from other test meter instances
@@ -158,31 +158,32 @@ public sealed class KafkaMetricsTests : IDisposable
         var worker0 = channelDepthMeasurements.Single(m => m.tags.Any(t => t.Key == "worker_index" && Equals(t.Value, 0)));
         Assert.Equal(10, worker0.value);
         Assert.Contains(worker0.tags, tag => tag.Key == "consumer_group" && Equals(tag.Value, "group1"));
+        Assert.Contains(worker0.tags, tag => tag.Key == "topic" && Equals(tag.Value, "orders"));
         Assert.Contains(worker0.tags, tag => tag.Key == "region" && Equals(tag.Value, "us-east"));
     }
 
     [Fact]
-    public void GivenConsumerGroupDeregistered_WhenObserveChannelDepths_ThenDoesNotEmitMeasurementsForDeregisteredGroup()
+    public void GivenTwoDeclarationsOnTheSameGroupId_WhenOneIsDeregistered_ThenTheOtherStillReportsItsChannelDepths()
     {
-        // Arrange
+        // Arrange: the same group id consuming two topics is two consumer group declarations
         var enrichment = new EmitMetricsEnrichment();
         var metrics = new KafkaMetrics(null, enrichment);
+        var groupId = $"group-{Guid.NewGuid():N}";
 
-        metrics.RegisterConsumerGroup("group1", 2, () => [5, 10]);
-        metrics.RegisterConsumerGroup("group2", 2, () => [15, 20]);
+        metrics.RegisterConsumerGroup("orders-declaration", groupId, "orders", 2, () => [5, 10]);
+        metrics.RegisterConsumerGroup("payments-declaration", groupId, "payments", 2, () => [15, 20]);
 
         // Act
-        metrics.DeregisterConsumerGroup("group1");
+        metrics.DeregisterConsumerGroup("orders-declaration");
         listener.RecordObservableInstruments();
 
-        // Assert — filter by consumer groups from this test only
+        // Assert: filter by the group id of this test only
         var channelDepthMeasurements = gaugeMeasurements.Where(m =>
             m.tags.Any(t => t.Key == "worker_index") &&
-            (m.tags.Any(t => t.Key == "consumer_group" && Equals(t.Value, "group1")) ||
-             m.tags.Any(t => t.Key == "consumer_group" && Equals(t.Value, "group2")))).ToList();
+            m.tags.Any(t => t.Key == "consumer_group" && Equals(t.Value, groupId))).ToList();
 
-        Assert.Equal(2, channelDepthMeasurements.Count);
+        Assert.Equal([15, 20], channelDepthMeasurements.Select(m => m.value).Order());
         Assert.All(channelDepthMeasurements, m =>
-            Assert.Contains(m.tags, tag => tag.Key == "consumer_group" && Equals(tag.Value, "group2")));
+            Assert.Contains(m.tags, tag => tag.Key == "topic" && Equals(tag.Value, "payments")));
     }
 }

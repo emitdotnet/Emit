@@ -164,24 +164,24 @@ public sealed class KafkaMetrics
 
     // ── Consumer group gauge registry ──
 
-    internal void RegisterConsumerGroup(string groupId, int workerCount, Func<int[]> getChannelDepths)
+    internal void RegisterConsumerGroup(string name, string groupId, string topic, int workerCount, Func<int[]> getChannelDepths)
     {
-        consumerGroupRegistry[groupId] = new ConsumerGroupGaugeState(workerCount, getChannelDepths);
+        consumerGroupRegistry[name] = new ConsumerGroupGaugeState(groupId, topic, workerCount, getChannelDepths);
     }
 
-    internal void DeregisterConsumerGroup(string groupId)
+    internal void DeregisterConsumerGroup(string name)
     {
-        consumerGroupRegistry.TryRemove(groupId, out _);
+        consumerGroupRegistry.TryRemove(name, out _);
     }
 
     private IEnumerable<Measurement<int>> ObserveChannelDepths()
     {
-        foreach (var (groupId, state) in consumerGroupRegistry)
+        foreach (var (_, state) in consumerGroupRegistry)
         {
             var depths = state.GetChannelDepths();
             for (var i = 0; i < depths.Length; i++)
             {
-                var tags = enrichment.CreateTags([new("consumer_group", groupId), new("worker_index", i)]);
+                var tags = enrichment.CreateTags([new("consumer_group", state.GroupId), new("topic", state.Topic), new("worker_index", i)]);
                 yield return new Measurement<int>(depths[i], tags);
             }
         }
@@ -189,12 +189,12 @@ public sealed class KafkaMetrics
 
     private IEnumerable<Measurement<int>> ObserveWorkerPoolSizes()
     {
-        foreach (var (groupId, state) in consumerGroupRegistry)
+        foreach (var (_, state) in consumerGroupRegistry)
         {
-            var tags = enrichment.CreateTags([new("consumer_group", groupId)]);
+            var tags = enrichment.CreateTags([new("consumer_group", state.GroupId), new("topic", state.Topic)]);
             yield return new Measurement<int>(state.WorkerCount, tags);
         }
     }
 
-    private sealed record ConsumerGroupGaugeState(int WorkerCount, Func<int[]> GetChannelDepths);
+    private sealed record ConsumerGroupGaugeState(string GroupId, string Topic, int WorkerCount, Func<int[]> GetChannelDepths);
 }

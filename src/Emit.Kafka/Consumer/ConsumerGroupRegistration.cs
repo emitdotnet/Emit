@@ -16,6 +16,9 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
 {
     // ── Topic identity ──
 
+    /// <summary>The name of the consumer group declaration, unique among the declarations.</summary>
+    public required string Name { get; init; }
+
     /// <summary>The Kafka topic name to subscribe to.</summary>
     public required string TopicName { get; init; }
 

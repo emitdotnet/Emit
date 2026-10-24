@@ -414,6 +414,7 @@ public sealed class ConsumerWorkerTests
         TransportContext? capturedTransport = null;
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -690,6 +691,7 @@ public sealed class ConsumerWorkerTests
         var failingKeyDeserializer = new FailOnFirstCallDeserializer();
         var registration = new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -896,6 +898,7 @@ public sealed class ConsumerWorkerTests
     {
         return new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -930,6 +933,7 @@ public sealed class ConsumerWorkerTests
     {
         return new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
@@ -954,6 +958,7 @@ public sealed class ConsumerWorkerTests
         var types = consumerTypes ?? [typeof(TestConsumer)];
         return new ConsumerGroupRegistration<string, string>
         {
+            Name = "test-declaration",
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),

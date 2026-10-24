@@ -267,7 +267,7 @@ public sealed class EmitMetricsTests
     }
 
     [Fact]
-    public void GivenStateTransition_WhenRecording_ThenMeasurementHasCorrectInstrumentNameAndTags()
+    public void GivenStateTransition_WhenRecording_ThenMeasurementIsTaggedWithStateGroupAndTopic()
     {
         // Arrange
         var enrichment = new EmitMetricsEnrichment();
@@ -287,81 +287,104 @@ public sealed class EmitMetricsTests
         listener.Start();
 
         // Act
-        metrics.RecordStateTransition("open");
+        metrics.RecordStateTransition("group-1", "orders", "open");
 
         // Assert
         Assert.Single(captured);
         Assert.Equal("emit.consumer.circuit_breaker.state_transitions", captured[0].Name);
         Assert.Equal(1L, captured[0].Value);
         Assert.Contains(captured[0].Tags, t => t.Key == "to_state" && t.Value?.ToString() == "open");
+        Assert.Contains(captured[0].Tags, t => t.Key == "consumer_group" && Equals(t.Value, "group-1"));
+        Assert.Contains(captured[0].Tags, t => t.Key == "topic" && Equals(t.Value, "orders"));
 
         listener.Dispose();
     }
 
     [Fact]
-    public void GivenCircuitBreakerStateCallback_WhenRegistered_ThenGaugeReportsCallbackValue()
+    public void GivenTwoCircuitBreakersOnTheSameGroupId_WhenObserved_ThenEachReportsItsOwnStateTaggedWithItsTopic()
     {
-        // Arrange
-        var enrichment = new EmitMetricsEnrichment();
-        var callbackInvoked = false;
-        var capturedValue = 0;
-        var metrics = new EmitMetrics(null, enrichment);
+        // Arrange: the same group id consuming two topics is two consumer group declarations, each with a breaker
+        var metrics = new EmitMetrics(null, new EmitMetricsEnrichment());
+        var groupId = $"group-{Guid.NewGuid():N}";
+        metrics.RegisterCircuitBreaker($"orders-{groupId}", groupId, "orders", () => 1);
+        metrics.RegisterCircuitBreaker($"payments-{groupId}", groupId, "payments", () => 0);
 
         // Act
-        metrics.RegisterCircuitBreakerStateCallback(() =>
-        {
-            callbackInvoked = true;
-            return 1; // Open state
-        });
-
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, listener) =>
-        {
-            if (instrument.Meter.Name == MeterNames.Emit && instrument.Name == "emit.consumer.circuit_breaker.state")
-                listener.EnableMeasurementEvents(instrument);
-        };
-
-        listener.SetMeasurementEventCallback<int>((instrument, value, tags, state) =>
-        {
-            if (instrument.Name == "emit.consumer.circuit_breaker.state")
-                capturedValue = value;
-        });
-
-        listener.Start();
-        listener.RecordObservableInstruments();
+        var states = ObserveCircuitBreakerStates(groupId);
 
         // Assert
-        Assert.True(callbackInvoked);
-        Assert.Equal(1, capturedValue);
+        Assert.Equal(2, states.Count);
+        Assert.Equal(1, states["orders"]);
+        Assert.Equal(0, states["payments"]);
     }
 
     [Fact]
-    public void GivenNoCircuitBreakerStateCallback_WhenObserved_ThenGaugeReportsZero()
+    public void GivenCircuitBreakerDeregistered_WhenObserved_ThenOnlyTheOtherIsReported()
     {
         // Arrange
-        var enrichment = new EmitMetricsEnrichment();
-        var capturedValue = -1;
-        var metrics = new EmitMetrics(null, enrichment);
+        var metrics = new EmitMetrics(null, new EmitMetricsEnrichment());
+        var groupId = $"group-{Guid.NewGuid():N}";
+        metrics.RegisterCircuitBreaker($"orders-{groupId}", groupId, "orders", () => 1);
+        metrics.RegisterCircuitBreaker($"payments-{groupId}", groupId, "payments", () => 2);
 
         // Act
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, listener) =>
-        {
-            if (instrument.Meter.Name == MeterNames.Emit && instrument.Name == "emit.consumer.circuit_breaker.state")
-                listener.EnableMeasurementEvents(instrument);
-        };
-
-        listener.SetMeasurementEventCallback<int>((instrument, value, tags, state) =>
-        {
-            if (instrument.Name == "emit.consumer.circuit_breaker.state")
-                capturedValue = value;
-        });
-
-        listener.Start();
-        listener.RecordObservableInstruments();
+        metrics.DeregisterCircuitBreaker($"orders-{groupId}");
+        var states = ObserveCircuitBreakerStates(groupId);
 
         // Assert
-        Assert.Equal(0, capturedValue);
+        Assert.Equal(2, Assert.Single(states, s => s.Key == "payments").Value);
+        Assert.Single(states);
+    }
+
+    [Fact]
+    public void GivenOpenDuration_WhenRecording_ThenMeasurementIsTaggedWithGroupAndTopic()
+    {
+        // Arrange
+        var metrics = new EmitMetrics(null, new EmitMetricsEnrichment());
+        using var listener = new MeterListener();
+        var captured = new List<(string Name, double Value, KeyValuePair<string, object?>[] Tags)>();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == MeterNames.Emit)
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+            captured.Add((instrument.Name, value, tags.ToArray())));
+        listener.Start();
+
+        // Act
+        metrics.RecordCircuitBreakerOpenDuration("group-1", "orders", 5);
+
+        // Assert
+        var measurement = Assert.Single(captured);
+        Assert.Equal("emit.consumer.circuit_breaker.open_duration", measurement.Name);
+        Assert.Equal(5, measurement.Value);
+        Assert.Contains(measurement.Tags, t => t.Key == "consumer_group" && Equals(t.Value, "group-1"));
+        Assert.Contains(measurement.Tags, t => t.Key == "topic" && Equals(t.Value, "orders"));
+    }
+
+    /// <summary>
+    /// Reads the circuit breaker state gauge, by topic, for the breakers of one group id. Gauges of every
+    /// <see cref="EmitMetrics"/> in the process share the meter name, so the group id keeps other tests out.
+    /// </summary>
+    private static Dictionary<string, int> ObserveCircuitBreakerStates(string groupId)
+    {
+        var states = new Dictionary<string, int>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == MeterNames.Emit && instrument.Name == "emit.consumer.circuit_breaker.state")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<int>((_, value, tags, _) =>
+        {
+            var all = tags.ToArray();
+            if (all.Any(t => t.Key == "consumer_group" && Equals(t.Value, groupId)))
+                states.Add((string)all.Single(t => t.Key == "topic").Value!, value);
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+        return states;
     }
 
     [Fact]

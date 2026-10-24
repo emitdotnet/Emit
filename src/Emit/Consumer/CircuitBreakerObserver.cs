@@ -47,6 +47,9 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
     private static readonly TimeSpan ResumeRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly CircuitBreakerConfig config;
+    private readonly string name;
+    private readonly string consumerGroup;
+    private readonly string topic;
     private readonly IConsumerFlowControl flowControl;
     private readonly EmitMetrics emitMetrics;
     private readonly ILogger logger;
@@ -61,20 +64,34 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
     private bool disposed;
 
     /// <summary>
-    /// Creates a new circuit breaker observer.
+    /// Creates a new circuit breaker observer for one consumer group declaration, and reports its state until it is
+    /// disposed.
     /// </summary>
+    /// <param name="config">The circuit breaker settings.</param>
+    /// <param name="name">The name of the consumer group declaration, unique among the declarations.</param>
+    /// <param name="consumerGroup">The consumer group the declaration consumes with, as reported in metrics.</param>
+    /// <param name="topic">The topic the declaration consumes, as reported in metrics.</param>
+    /// <param name="flowControl">Pauses and resumes the consumer group declaration.</param>
+    /// <param name="emitMetrics">The metrics the circuit breaker reports to.</param>
+    /// <param name="logger">The logger.</param>
     public CircuitBreakerObserver(
         CircuitBreakerConfig config,
+        string name,
+        string consumerGroup,
+        string topic,
         IConsumerFlowControl flowControl,
         EmitMetrics emitMetrics,
         ILogger logger)
     {
         this.config = config;
+        this.name = name;
+        this.consumerGroup = consumerGroup;
+        this.topic = topic;
         this.flowControl = flowControl;
         this.emitMetrics = emitMetrics;
         this.logger = logger;
 
-        emitMetrics.RegisterCircuitBreakerStateCallback(() => Volatile.Read(ref state));
+        emitMetrics.RegisterCircuitBreaker(name, consumerGroup, topic, () => Volatile.Read(ref state));
     }
 
     /// <inheritdoc />
@@ -125,7 +142,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
             {
                 state = StateClosed;
                 failureTimestamps.Clear();
-                emitMetrics.RecordStateTransition("closed");
+                emitMetrics.RecordStateTransition(consumerGroup, topic, "closed");
                 logger.LogInformation("Circuit breaker closed — consumer group fully resumed");
                 SignalStateChanged();
             }
@@ -197,7 +214,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         halfOpenCts = cts;
         _ = ScheduleHalfOpenAsync(cts.Token);
 
-        emitMetrics.RecordStateTransition("open");
+        emitMetrics.RecordStateTransition(consumerGroup, topic, "open");
         logger.LogWarning(
             "Circuit breaker opened — pausing consumer group. Pause duration: {PauseDuration}",
             config.PauseDuration);
@@ -233,10 +250,10 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
                 if (openedTicks > 0)
                 {
                     emitMetrics.RecordCircuitBreakerOpenDuration(
-                        Stopwatch.GetElapsedTime(openedTicks).TotalSeconds);
+                        consumerGroup, topic, Stopwatch.GetElapsedTime(openedTicks).TotalSeconds);
                 }
 
-                emitMetrics.RecordStateTransition("half_open");
+                emitMetrics.RecordStateTransition(consumerGroup, topic, "half_open");
                 logger.LogInformation("Circuit breaker half-open — resuming consumer group for probe message");
 
                 await ResumeWithRetryAsync(ct).ConfigureAwait(false);
@@ -284,7 +301,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         state = StateClosed;
         failureTimestamps.Clear();
         SignalStateChanged();
-        emitMetrics.RecordStateTransition("closed");
+        emitMetrics.RecordStateTransition(consumerGroup, topic, "closed");
         logger.LogCritical(
             "All resume attempts failed — forcing circuit breaker to closed state to prevent permanent pause");
     }
@@ -399,6 +416,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
         }
 
         disposed = true;
+        emitMetrics.DeregisterCircuitBreaker(name);
         CancelHalfOpenTransition();
         gate.Dispose();
     }
