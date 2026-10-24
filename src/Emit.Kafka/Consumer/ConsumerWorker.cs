@@ -39,6 +39,8 @@ internal sealed class ConsumerWorker<TKey, TValue>
     private readonly ILogger logger;
     private readonly KafkaConsumerFlowControl? flowControl;
     private readonly string deserializationAction;
+    private TaskCompletionSource? room;
+    private volatile bool completed;
 
     /// <summary>
     /// The human-readable identifier for this worker, used in log messages.
@@ -54,6 +56,17 @@ internal sealed class ConsumerWorker<TKey, TValue>
     /// Current number of messages queued in the worker's bounded channel.
     /// </summary>
     internal int ChannelCount => channel.Reader.Count;
+
+    /// <summary>
+    /// Gets whether the poll loop can write a message to the queue without waiting.
+    /// </summary>
+    internal bool HasRoom => channel.Reader.Count < registration.BufferSize;
+
+    /// <summary>
+    /// Whether the queue is down to half its size, or the worker stopped: room to hand over messages again without
+    /// pausing their partition at once.
+    /// </summary>
+    private bool IsDrained => completed || channel.Reader.Count <= registration.BufferSize / 2;
 
     /// <summary>
     /// Creates a new consumer worker with a bounded channel.
@@ -100,6 +113,20 @@ internal sealed class ConsumerWorker<TKey, TValue>
     }
 
     /// <summary>
+    /// Returns a task completed once the queue is down to half its size, or the worker stopped. A partition paused
+    /// because the queue was full is resumed then, so each fetch hands over several messages.
+    /// </summary>
+    internal Task WaitForRoomAsync()
+    {
+        var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var current = Interlocked.CompareExchange(ref room, waiter, null) ?? waiter;
+
+        // The queue may have drained before the waiter was there to be signaled
+        SignalRoom();
+        return current.Task;
+    }
+
+    /// <summary>
     /// Main processing loop.
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -121,6 +148,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             {
                 while (reader.TryRead(out var raw))
                 {
+                    SignalRoom();
                     cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
@@ -186,12 +214,22 @@ internal sealed class ConsumerWorker<TKey, TValue>
     public void Complete()
     {
         channel.Writer.TryComplete();
+        completed = true;
+        SignalRoom();
+    }
+
+    private void SignalRoom()
+    {
+        if (Volatile.Read(ref room) is not null && IsDrained)
+        {
+            Interlocked.Exchange(ref room, null)?.TrySetResult();
+        }
     }
 
     private async Task RunBatchAsync(CancellationToken cancellationToken)
     {
         var reader = channel.Reader;
-        var accumulator = new BatchAccumulator(batchConfig!.MaxSize, batchConfig.Timeout, reader);
+        var accumulator = new BatchAccumulator(batchConfig!.MaxSize, batchConfig.Timeout, reader, SignalRoom);
 
         logger.LogDebug("{WorkerId} started in batch mode, idle", id);
         try

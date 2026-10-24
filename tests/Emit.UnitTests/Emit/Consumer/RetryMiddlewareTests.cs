@@ -313,4 +313,50 @@ public sealed class RetryMiddlewareTests
         Assert.Equal(1, calls);
         Assert.False(willRetry);
     }
+
+    [Fact]
+    public async Task GivenRetryHeldByTheCircuitBreaker_WhenItWaits_ThenItSpendsNoAttemptUntilItRuns()
+    {
+        // Arrange: the circuit holds the second attempt until released
+        var heldAtGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gateCalls = 0;
+        var breaker = new Mock<ICircuitBreakerNotifier>();
+        breaker
+            .Setup(b => b.BeginAttemptAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                if (Interlocked.Increment(ref gateCalls) == 2)
+                {
+                    heldAtGate.TrySetResult();
+                    await release.Task;
+                }
+
+                return Mock.Of<IAsyncDisposable>();
+            });
+        var middleware = new RetryMiddleware<string>(
+            _ => ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter()),
+            Metrics,
+            NodeIdentity.Object,
+            NullLogger<RetryMiddleware<string>>.Instance,
+            breaker.Object);
+        var context = CreateContext(new ServiceCollection().BuildServiceProvider());
+        List<int> attempts = [];
+        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        {
+            attempts.Add(ctx.RetryAttempt);
+            return attempts.Count == 1 ? throw new InvalidOperationException("first attempt fails") : Task.CompletedTask;
+        });
+
+        // Act
+        var run = middleware.InvokeAsync(context, next);
+        await heldAtGate.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var attemptWhileHeld = context.RetryAttempt;
+        release.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal(0, attemptWhileHeld);
+        Assert.Equal([0, 1], attempts);
+    }
 }

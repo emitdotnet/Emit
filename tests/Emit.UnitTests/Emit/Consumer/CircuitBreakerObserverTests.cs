@@ -190,4 +190,152 @@ public sealed class CircuitBreakerObserverTests
         // Assert — no pause calls
         mockFlowControl.Verify(f => f.PauseAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task GivenThresholdOfThree_WhenFailuresAreReported_ThenTheCircuitOpensOnExactlyTheThird()
+    {
+        // Arrange
+        using var observer = CreateObserver(failureThreshold: 3);
+
+        // Act
+        await observer.ReportFailureAsync(new Exception("1"));
+        await observer.ReportFailureAsync(new Exception("2"));
+        var pausedAfterTwo = mockFlowControl.Invocations.Any(i => i.Method.Name == nameof(IConsumerFlowControl.PauseAsync));
+        await observer.ReportFailureAsync(new Exception("3"));
+
+        // Assert
+        Assert.False(pausedAfterTwo);
+        mockFlowControl.Verify(f => f.PauseAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenClosedCircuit_WhenAnAttemptBegins_ThenItRunsAtOnce()
+    {
+        // Arrange
+        using var observer = CreateObserver();
+
+        // Act
+        var attempt = observer.BeginAttemptAsync(CancellationToken.None);
+
+        // Assert
+        Assert.True(attempt.IsCompletedSuccessfully);
+        await (await attempt).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GivenOpenCircuit_WhenAnAttemptBegins_ThenItWaitsUntilTheCircuitGoesHalfOpen()
+    {
+        // Arrange
+        using var observer = CreateObserver(failureThreshold: 1, pauseDuration: TimeSpan.FromMilliseconds(500));
+        var halfOpen = HalfOpenAsync();
+        await observer.ReportFailureAsync(new Exception("trip"));
+
+        // Act
+        var attempt = observer.BeginAttemptAsync(CancellationToken.None).AsTask();
+        var ranWhileOpen = attempt.IsCompleted;
+        await halfOpen;
+
+        // Assert
+        Assert.False(ranWhileOpen);
+        await (await attempt.WaitAsync(TimeSpan.FromSeconds(30))).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GivenHalfOpenCircuit_WhenTwoAttemptsBegin_ThenOnlyTheProbeRunsAndTheOtherRunsOnceTheProbeSucceeds()
+    {
+        // Arrange
+        using var observer = await HalfOpenObserverAsync();
+
+        // Act
+        var probe = await observer.BeginAttemptAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+        var second = observer.BeginAttemptAsync(CancellationToken.None).AsTask();
+        var secondRanWithProbe = second.IsCompleted;
+        await observer.ReportSuccessAsync();
+        await probe.DisposeAsync();
+
+        // Assert
+        Assert.False(secondRanWithProbe);
+        await (await second.WaitAsync(TimeSpan.FromSeconds(30))).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GivenHalfOpenCircuit_WhenTheProbeFails_ThenTheCircuitReopensAndTheOtherAttemptKeepsWaiting()
+    {
+        // Arrange: once it reopens, the circuit stays open for three seconds, longer than the check below takes
+        using var observer = await HalfOpenObserverAsync(pause: TimeSpan.FromSeconds(3));
+
+        // Act
+        var probe = await observer.BeginAttemptAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+        var second = observer.BeginAttemptAsync(CancellationToken.None).AsTask();
+        await observer.ReportFailureAsync(new Exception("probe failed"));
+        await probe.DisposeAsync();
+
+        // Assert
+        Assert.False(second.IsCompleted);
+    }
+
+    [Fact]
+    public async Task GivenHalfOpenCircuit_WhenTheProbeFailsWithAnExceptionTheCircuitIgnores_ThenTheNextAttemptBecomesTheProbe()
+    {
+        // Arrange: only InvalidOperationException trips the circuit
+        using var observer = await HalfOpenObserverAsync(tripOn: [typeof(InvalidOperationException)]);
+
+        // Act
+        var probe = await observer.BeginAttemptAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+        var second = observer.BeginAttemptAsync(CancellationToken.None).AsTask();
+        await observer.ReportFailureAsync(new ArgumentException("ignored"));
+        await probe.DisposeAsync();
+
+        // Assert
+        await (await second.WaitAsync(TimeSpan.FromSeconds(30))).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GivenOpenCircuit_WhenShutdownCancelsAWaitingAttempt_ThenTheWaitEnds()
+    {
+        // Arrange
+        using var observer = CreateObserver(failureThreshold: 1, pauseDuration: TimeSpan.FromMinutes(1));
+        await observer.ReportFailureAsync(new Exception("trip"));
+        using var shutdown = new CancellationTokenSource();
+        var attempt = observer.BeginAttemptAsync(shutdown.Token).AsTask();
+
+        // Act
+        await shutdown.CancelAsync();
+
+        // Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => attempt.WaitAsync(TimeSpan.FromSeconds(30)));
+    }
+
+    [Fact]
+    public async Task GivenStoppedConsumer_WhenAWorkerThatOutlivedTheStopReportsAndRetries_ThenOnlyTheShutdownSurfaces()
+    {
+        // Arrange: the observer is disposed once the consumer stopped, after the shutdown was requested
+        var observer = CreateObserver(failureThreshold: 1);
+        using var shutdown = new CancellationTokenSource();
+        await shutdown.CancelAsync();
+        observer.Dispose();
+
+        // Act
+        await observer.ReportFailureAsync(new Exception("late failure"));
+        await observer.ReportSuccessAsync();
+        var attempt = observer.BeginAttemptAsync(shutdown.Token).AsTask();
+
+        // Assert: a shutdown is never a failure the error policy acts on
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => attempt);
+    }
+
+    /// <summary>
+    /// Returns an observer whose circuit opened on one failure and has gone half-open.
+    /// </summary>
+    private async Task<CircuitBreakerObserver<string>> HalfOpenObserverAsync(TimeSpan? pause = null, Type[]? tripOn = null)
+    {
+        var halfOpen = HalfOpenAsync();
+        var observer = CreateObserver(
+            failureThreshold: 1,
+            pauseDuration: pause ?? TimeSpan.FromMilliseconds(300),
+            tripOnExceptionTypes: tripOn);
+        await observer.ReportFailureAsync(new InvalidOperationException("trip"));
+        await halfOpen;
+        return observer;
+    }
 }

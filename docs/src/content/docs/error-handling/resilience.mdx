@@ -7,7 +7,7 @@ Beyond retry policies, Emit provides two resilience mechanisms at the consumer g
 
 ## Circuit breaker
 
-A circuit breaker tracks failures in a sliding window. When failures exceed the threshold, it opens and the consumer group pauses entirely until the pause duration elapses.
+A circuit breaker tracks failed handler attempts in a sliding window. When they exceed the threshold, it opens: the consumer group pauses and every message waits, retries included, until the pause duration elapses.
 
 ```csharp
 topic.ConsumerGroup("order-processor", group =>
@@ -25,7 +25,7 @@ topic.ConsumerGroup("order-processor", group =>
 
 | Option | Description |
 |---|---|
-| `FailureThreshold` | Number of failures in the sampling window before the circuit opens |
+| `FailureThreshold` | Number of failed attempts in the sampling window before the circuit opens |
 | `SamplingWindow` | Rolling window of time in which failures are counted |
 | `PauseDuration` | How long the consumer group is paused after the circuit opens |
 
@@ -40,9 +40,15 @@ cb.TripOn<TimeoutException>();
 
 Only the listed exception types increment the failure counter. Other exceptions pass through to the error policy without affecting the circuit.
 
+### Counting with retries
+
+Every failed attempt counts once, retries included. With `Retry(3)`, a message failing all 4 attempts counts 4 failures.
+
+To keep messages from being dead-lettered during an outage, give the retry policy more retries than `FailureThreshold`. The circuit then opens while the message still has retries left, and its next attempt waits for the circuit instead of spending them.
+
 ### States
 
-The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open** and the consumer group is paused at the broker level; no new messages are fetched. After `PauseDuration` elapses, the circuit enters **Half-open** and allows one probe message through. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
+The circuit starts **Closed** (normal operation). When the failure threshold is exceeded, it moves to **Open**: the consumer group is paused, no new messages are fetched, and messages already fetched or waiting for a retry are held. The consumer keeps polling while paused, so it stays in the group however long the pause lasts. After `PauseDuration` elapses, the circuit enters **Half-open** and lets one attempt through at a time as the probe. If the probe succeeds, the circuit closes again. If it fails, the circuit reopens for another `PauseDuration`.
 
 The circuit and your application pause the group independently, through [flow control](../../kafka/consumers/#flow-control): the group stays paused while either holds it. A half-open circuit lets its probe through only once your application has resumed the group.
 
@@ -76,4 +82,4 @@ When a permit cannot be acquired immediately, the consumer waits. Wait duration 
 
 ## Ordering
 
-When both are configured, the circuit breaker evaluates first. A tripped circuit short-circuits before the rate limiter or error policy are reached. The full order is: circuit breaker, rate limiter, error policy, consumer.
+When both are configured, the rate limiter throttles messages and the circuit breaker holds attempts. An open circuit holds each attempt before the handler runs, and the error policy only acts once an attempt has failed and no retry is left.

@@ -62,6 +62,12 @@ public abstract class ConsumerFlowControlCompliance
         /// <summary>Gets the consumer the declaration registers.</summary>
         public GroupConsumer Consumer { get; init; } = GroupConsumer.Sink;
 
+        /// <summary>Gets the number of messages each worker queues, or <c>null</c> for the default.</summary>
+        public int? BufferSize { get; init; }
+
+        /// <summary>Gets the longest time between two polls before the broker removes the consumer, if set.</summary>
+        public TimeSpan? MaxPollInterval { get; init; }
+
         /// <summary>Gets the circuit breaker of the declaration, if any.</summary>
         public Action<CircuitBreakerBuilder>? CircuitBreaker { get; init; }
     }
@@ -256,6 +262,48 @@ public abstract class ConsumerFlowControlCompliance
             Assert.False(completedWhileHandled);
             await pause.WaitAsync(ReceiveTimeout);
             Assert.Contains(sink.ReceivedMessages, m => m.Message == "handled");
+        }
+        finally
+        {
+            gate.Open();
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GivenFullQueueAndAHandlerHeldLongerThanThePollInterval_WhenTheGroupIsPaused_ThenItIsNeverRebalancedAndEveryMessageIsHandledInOrder()
+    {
+        // Arrange: one queued message per worker and a ten-second poll interval. The first message is held in its
+        // handler, the second fills the queue, and the third waits to be handed over
+        var group = NewGroup() with { Consumer = GroupConsumer.Gated, BufferSize = 1, MaxPollInterval = TimeSpan.FromSeconds(10) };
+        var sink = new MessageSink<string>();
+        var gate = new Gate();
+        var assignments = new AssignmentTracker();
+        using var host = BuildHost([group], sink, services =>
+        {
+            services.AddSingleton(gate);
+            TrackAssignments(services, assignments);
+        });
+        await host.StartAsync();
+        try
+        {
+            string[] produced = ["m-1", "m-2", "m-3"];
+            await ProduceAsync(host, group, produced);
+            await gate.Entered.WaitAsync(ReceiveTimeout);
+            var flowControl = FlowControlOf(host, group);
+
+            // Act: the pause outlasts the poll interval while the handler stays held
+            var pause = flowControl.PauseAsync(CancellationToken.None);
+            await Task.Delay(TimeSpan.FromSeconds(14));
+            gate.Open();
+            await pause.WaitAsync(ReceiveTimeout);
+            await flowControl.ResumeAsync(CancellationToken.None);
+
+            // Assert: a consumer that missed its poll interval only learns it lost its partitions on its next poll,
+            // so partitions taken are checked once every message was handled
+            await WaitForMessagesAsync(sink, produced);
+            Assert.Equal(produced, sink.ReceivedMessages.Select(m => m.Message));
+            Assert.Equal(0, assignments.TakenCount);
         }
         finally
         {
@@ -530,6 +578,11 @@ public abstract class ConsumerFlowControlCompliance
         /// <summary>Gets the number of partitions currently assigned.</summary>
         public int Count => assigned.Count;
 
+        /// <summary>Gets how many times partitions were taken from the host.</summary>
+        public int TakenCount => Volatile.Read(ref takenCount);
+
+        private int takenCount;
+
         /// <summary>Records partitions assigned to the host.</summary>
         public void Assigned(string topic, IEnumerable<int> partitions)
         {
@@ -542,6 +595,7 @@ public abstract class ConsumerFlowControlCompliance
         /// <summary>Records partitions taken from the host.</summary>
         public void Taken(string topic, IEnumerable<int> partitions)
         {
+            Interlocked.Increment(ref takenCount);
             foreach (var partition in partitions)
             {
                 assigned.TryRemove((topic, partition), out _);

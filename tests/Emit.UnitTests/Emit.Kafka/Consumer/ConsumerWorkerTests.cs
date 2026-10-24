@@ -45,6 +45,41 @@ public sealed class ConsumerWorkerTests
     }
 
     [Fact]
+    public async Task GivenFullQueue_WhenTheWorkerTakesHalfOfIt_ThenItHasRoom()
+    {
+        // Arrange: four queued messages, each held in the handler until released
+        var consumer = new GatedConsumer();
+        var worker = CreateWorker(
+            registration: CreateRegistration(bufferSize: 4, consumerTypes: [typeof(GatedConsumer)]),
+            scopeFactory: CreateScopeFactory(typeof(GatedConsumer), consumer));
+        for (var offset = 0; offset < 4; offset++)
+        {
+            Assert.True(worker.Writer.TryWrite(CreateConsumeResult(offset: offset)));
+        }
+
+        var room = worker.WaitForRoomAsync();
+        using var cts = new CancellationTokenSource();
+        var run = Task.Run(() => worker.RunAsync(cts.Token));
+        try
+        {
+            // Act: the worker takes one message, then a second
+            await consumer.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+            var roomWithThreeQueued = room.IsCompleted;
+            consumer.Release.Release();
+            await consumer.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+            // Assert
+            Assert.False(roomWithThreeQueued);
+            await room.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        finally
+        {
+            cts.Cancel();
+            await run;
+        }
+    }
+
+    [Fact]
     public void GivenNewWorker_WhenCreated_ThenWriterIsNotNull()
     {
         // Arrange
@@ -1024,6 +1059,19 @@ public sealed class ConsumerWorkerTests
         {
             CapturedContext = context;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class GatedConsumer : IConsumer<string>
+    {
+        public SemaphoreSlim Entered { get; } = new(0);
+
+        public SemaphoreSlim Release { get; } = new(0);
+
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        {
+            Entered.Release();
+            await Release.WaitAsync(cancellationToken);
         }
     }
 

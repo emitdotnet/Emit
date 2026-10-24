@@ -36,7 +36,6 @@ Kafka integration tests: compliance implementations proving Kafka provider corre
 | `KafkaDlqProduceFailureTests.cs` | Kafka-specific: behavior when DLQ produce itself fails | Debug or extend DLQ produce failure handling |
 | `KafkaOutboxFencingTests.cs` | Kafka-specific: a later run of the outbox daemon fences an earlier one, whose messages never become visible | Debug or extend outbox fencing |
 | `KafkaOrderedDeliveryTests.cs` | Kafka-specific: per-key ordering with ByKeyHash distribution | Debug or extend ordering guarantees |
-| `KafkaRetryDiscardCompliance.cs` | Kafka-specific: retry exhaustion resulting in discard (no DLQ) | Debug or extend retry-to-discard behavior |
 | `KafkaValidationThrowsCompliance.cs` | Kafka-specific: validator that throws (transient error path) triggers retry | Debug or extend validation transient error behavior |
 
 ## Subdirectories

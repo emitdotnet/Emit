@@ -39,14 +39,14 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 
 | Layer | What it does | Always present? |
 |---|---|---|
-| **Error handling** | Catches exceptions, evaluates the error policy (dead-letter, discard), notifies the circuit breaker | Yes |
+| **Error handling** | Catches exceptions, evaluates the error policy (dead-letter, discard) | Yes |
 | **Observers** | Invokes registered `IConsumeObserver` callbacks | Yes |
 | **Tracing** | Creates an `emit.consume` activity with consumer identity tags | Yes |
 | **Metrics** | Records duration and success/failure counters | Yes |
 | **User middleware** | Your custom middleware, composed Global to Provider to Group | Only if registered |
 | **Filters** | Runs consumer filters; a message a filter rejects stops here | Only if configured |
 | **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
-| **Retry** | Re-executes the unit of work on failure, as the matching error policy clause decides | Only if the error policy retries |
+| **Retry** | Runs each attempt of the unit of work: re-executes it on failure, as the matching error policy clause decides, and holds it while the circuit breaker is open, reporting its outcome | Only if the error policy retries or a circuit breaker is configured |
 | **Unit of work** | Opens a transaction when the handler class carries `[Transactional]`, and runs the callbacks registered with `OnSucceeded` and `OnFailed` once the outcome is final. See [Unit of Work](../unit-of-work/) | Yes |
 | **Per-consumer middleware** | Middleware registered on `AddConsumer` or per-route | Only if registered |
 | **Handler** | Your `IConsumer<T>.ConsumeAsync()` | Yes |

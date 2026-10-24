@@ -7,8 +7,8 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `BatchConsumerCompliance.cs` | Batch consumer: full batch, partial batch timeout, validation, retry, rate limiting, circuit breaker, distribution | Add batch consumer tests or debug batch consuming behavior |
-| `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior | Add circuit breaker tests or debug circuit breaker issues |
-| `ConsumerFlowControlCompliance.cs` | Pausing a named consumer group declaration: through rebalances and an open circuit, waiting for messages being handled, resuming in order, before start and after stop, batch groups, from a handler | Add flow control tests or debug pause and resume |
+| `CircuitBreakerCompliance.cs` | Circuit breaker open/close/reset behavior, exact failure counts with and without retries | Add circuit breaker tests or debug circuit breaker issues |
+| `ConsumerFlowControlCompliance.cs` | Pausing a named consumer group declaration: through rebalances and an open circuit, waiting for messages being handled, resuming in order, before start and after stop, batch groups, from a handler, polling with a full queue | Add flow control tests or debug pause and resume |
 | `ConsumeObserverCompliance.cs` | IConsumeObserver lifecycle event delivery | Add consume observer tests or debug observer invocation |
 | `ConsumerObserverCompliance.cs` | IConsumerObserver lifecycle event delivery | Add consumer observer tests or debug observer invocation |
 | `DaemonAssignmentCompliance.cs` | Daemon assignment persistence per service: compare-and-swap writes, release, and generations that never repeat | Add daemon tests or debug distributed daemon behavior |
@@ -33,7 +33,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ProduceObserverCompliance.cs` | IProduceObserver lifecycle event delivery | Add produce observer tests or debug produce observer invocation |
 | `ProviderPipelineCompliance.cs` | Provider-level pipeline middleware execution and context propagation | Add provider pipeline tests or debug provider middleware |
 | `RateLimiterCompliance.cs` | Consumer rate limiting enforcement | Add rate limiter tests or debug rate limiting behavior |
-| `RetryCompliance.cs` | Retry policy: attempt count, backoff, and success after failure | Add retry tests or debug retry sequencing |
+| `RetryCompliance.cs` | Retry policy: attempt count, backoff, success after failure, and retries outlasting the poll interval on a full queue without a rebalance | Add retry tests or debug retry sequencing |
 | `RoutingCompliance.cs` | Content-based router: route key matching and handler dispatch | Add routing tests or debug router dispatch |
 | `ValidationCompliance.cs` | Message validation: pass, fail (discard), and transient error (retry) | Add validation tests or debug validation outcomes |
 | `WorkerDistributionCompliance.cs` | ByKeyHash and RoundRobin distribution strategy correctness | Add distribution tests or debug worker assignment |

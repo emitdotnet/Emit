@@ -174,6 +174,18 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                     continue;
                 }
 
+                // The poll loop never waits for room in a worker queue, so the consumer stays in the group however
+                // long the handlers take: the message's partition is paused until the queue has room, and the next
+                // fetch on resume starts from it. The poll loop is the queue's only writer, so the room it saw
+                // is still there when it writes
+                var worker = workers[strategy.SelectWorker(result.Message.Key, result.Partition.Value)];
+                if (!worker.HasRoom)
+                {
+                    PauseUntilRoom(worker, result.TopicPartition);
+                    consumer.Seek(result.TopicPartitionOffset);
+                    continue;
+                }
+
                 // A message fetched before the group was paused, or from a partition assigned during the pause,
                 // is not handed over: its partition is paused, and the next fetch on resume starts from it
                 if (!flowControl.TryBeginHandling(result.TopicPartition))
@@ -182,15 +194,15 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                     continue;
                 }
 
-                kafkaMetrics.RecordConsumeMessage(registration.GroupId, result.Topic, result.Partition.Value);
-
                 try
                 {
                     offsetManager.Enqueue(result.Topic, result.Partition.Value, result.Offset.Value);
+                    if (!worker.Writer.TryWrite(result))
+                    {
+                        throw new ChannelClosedException();
+                    }
 
-                    var workerIndex = strategy.SelectWorker(
-                        result.Message.Key, result.Partition.Value);
-                    await workers[workerIndex].Writer.WriteAsync(result, cancellationToken).ConfigureAwait(false);
+                    kafkaMetrics.RecordConsumeMessage(registration.GroupId, result.Topic, result.Partition.Value);
                 }
                 catch
                 {
@@ -213,6 +225,16 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                 break;
             }
         }
+    }
+
+    private void PauseUntilRoom(ConsumerWorker<TKey, TValue> worker, ConfluentKafka.TopicPartition partition)
+    {
+        flowControl.PauseForFullQueue(partition);
+        _ = worker.WaitForRoomAsync().ContinueWith(
+            _ => flowControl.ResumeAfterFullQueue(partition),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private async Task HandlePoolFaultAsync(CancellationToken cancellationToken)

@@ -14,13 +14,16 @@ using Microsoft.Extensions.Logging;
 /// Each failure is evaluated against the error policy: the clause matching the exception decides
 /// whether another attempt runs and with which backoff. Creates an Activity per retry attempt.
 /// When no further attempt runs, rethrows the last exception for <c>ConsumeErrorMiddleware</c>.
+/// With a circuit breaker, each attempt waits until the circuit lets it run, and its outcome is reported to the
+/// circuit breaker as soon as it ends. Without a retry policy, the message gets a single attempt.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class RetryMiddleware<TMessage>(
-    Func<Exception, ErrorAction> evaluatePolicy,
+    Func<Exception, ErrorAction>? evaluatePolicy,
     EmitMetrics emitMetrics,
     INodeIdentity nodeIdentity,
-    ILogger<RetryMiddleware<TMessage>> logger) : IMiddleware<ConsumeContext<TMessage>>
+    ILogger<RetryMiddleware<TMessage>> logger,
+    ICircuitBreakerNotifier? circuitBreakerNotifier = null) : IMiddleware<ConsumeContext<TMessage>>
 {
     private static readonly ActivitySource ConsumerActivitySource = EmitActivitySources.Consumer;
 
@@ -31,14 +34,57 @@ internal sealed class RetryMiddleware<TMessage>(
         // as final is exactly one that will not be retried.
         context.WillRetry = exception => GetRetryAction(exception, context) is not null;
 
+        var attempt = await BeginAttemptAsync(context).ConfigureAwait(false);
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await RunAttemptAsync(context, next, attempt).ConfigureAwait(false);
         }
         catch (Exception firstException) when (GetRetryAction(firstException, context) is not null)
         {
             await ExecuteRetryAsync(firstException, context, next).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Waits until the circuit breaker, if any, lets an attempt run.
+    /// </summary>
+    private async ValueTask<IAsyncDisposable?> BeginAttemptAsync(ConsumeContext<TMessage> context) =>
+        circuitBreakerNotifier is null
+            ? null
+            : await circuitBreakerNotifier.BeginAttemptAsync(context.CancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Runs one attempt and, with a circuit breaker, reports its outcome before the attempt ends: a failure is
+    /// reported before any backoff or error action.
+    /// </summary>
+    private async Task RunAttemptAsync(
+        ConsumeContext<TMessage> context,
+        IMiddlewarePipeline<ConsumeContext<TMessage>> next,
+        IAsyncDisposable? attempt)
+    {
+        if (circuitBreakerNotifier is null || attempt is null)
+        {
+            await next.InvokeAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        await using var _ = attempt.ConfigureAwait(false);
+        try
+        {
+            await next.InvokeAsync(context).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+        {
+            // A shutdown is not a failure of the attempt
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await circuitBreakerNotifier.ReportFailureAsync(exception).ConfigureAwait(false);
+            throw;
+        }
+
+        await circuitBreakerNotifier.ReportSuccessAsync().ConfigureAwait(false);
     }
 
     private ErrorAction.RetryAction? GetRetryAction(Exception exception, ConsumeContext<TMessage> context)
@@ -49,7 +95,7 @@ internal sealed class RetryMiddleware<TMessage>(
             return null;
         }
 
-        return evaluatePolicy(exception) is ErrorAction.RetryAction retry && context.RetryAttempt < retry.MaxAttempts
+        return evaluatePolicy?.Invoke(exception) is ErrorAction.RetryAction retry && context.RetryAttempt < retry.MaxAttempts
             ? retry
             : null;
     }
@@ -74,6 +120,9 @@ internal sealed class RetryMiddleware<TMessage>(
                 await Task.Delay(delay, context.CancellationToken).ConfigureAwait(false);
             }
 
+            // Waiting for the circuit breaker does not spend an attempt: the next one only starts once it may run
+            var attempt = await BeginAttemptAsync(context).ConfigureAwait(false);
+
             // Set retry attempt on context for downstream middleware
             context.RetryAttempt++;
 
@@ -93,7 +142,7 @@ internal sealed class RetryMiddleware<TMessage>(
 
             try
             {
-                await next.InvokeAsync(context).ConfigureAwait(false);
+                await RunAttemptAsync(context, next, attempt).ConfigureAwait(false);
 
                 logger.LogDebug(
                     "Retry {Attempt}/{MaxAttempts} succeeded for message {MessageId}",

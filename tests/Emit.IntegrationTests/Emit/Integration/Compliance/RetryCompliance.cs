@@ -214,6 +214,112 @@ public abstract class RetryCompliance
     }
 
     /// <summary>
+    /// Configures the messaging provider with a <c>string, string</c> topic whose consumer group queues one
+    /// message per worker, uses <paramref name="maxPollInterval"/>, and retries
+    /// <see cref="RetryUntilRecoveredConsumer"/> every 200 milliseconds up to 1000 times.
+    /// </summary>
+    /// <param name="emit">The Emit builder to configure.</param>
+    /// <param name="topic">The topic name to register.</param>
+    /// <param name="groupId">The consumer group ID.</param>
+    /// <param name="maxPollInterval">The longest time between two polls before the broker removes the consumer.</param>
+    protected abstract void ConfigureWithLongRetries(
+        EmitBuilder emit,
+        string topic,
+        string groupId,
+        TimeSpan maxPollInterval);
+
+    /// <summary>
+    /// Registers what reports the partitions taken from the host's consumer, revoked or lost, to
+    /// <paramref name="rebalances"/>.
+    /// </summary>
+    /// <param name="services">The host's services.</param>
+    /// <param name="rebalances">The counter to report to.</param>
+    protected abstract void TrackPartitionsTaken(IServiceCollection services, InvocationCounter rebalances);
+
+    [Fact]
+    public async Task GivenFullQueue_WhenAMessageIsRetriedLongerThanThePollInterval_ThenTheConsumerIsNeverRebalancedAndEveryMessageIsHandledInOrder()
+    {
+        // Arrange: one queued message per worker and a ten-second poll interval. The first message is retried, the
+        // second fills the queue, and the rest arrive while it is full
+        var topic = $"test-retry-poll-{Guid.NewGuid():N}";
+        var sink = new MessageSink<string>();
+        var recovery = new Recovery();
+        var rebalances = new InvocationCounter();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(sink);
+                services.AddSingleton(recovery);
+                TrackPartitionsTaken(services, rebalances);
+                services.AddEmit(emit => ConfigureWithLongRetries(emit, topic, $"group-{Guid.NewGuid():N}", TimeSpan.FromSeconds(10)));
+            })
+            .Build();
+        await host.StartAsync();
+        try
+        {
+            string[] produced = ["m-1", "m-2", "m-3", "m-4", "m-5"];
+            using (var scope = host.Services.CreateScope())
+            {
+                var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+                foreach (var value in produced)
+                {
+                    await producer.ProduceAsync(new EventMessage<string, string>("key", value));
+                }
+            }
+
+            // Act: the retries outlast the poll interval
+            await TestHelpers.WaitUntilAsync(() => recovery.Failures.Count > 0, "The first message was not handled", TimeSpan.FromSeconds(60));
+            await Task.Delay(TimeSpan.FromSeconds(14));
+            recovery.Recovered = true;
+
+            // Assert: a consumer that missed its poll interval only learns it lost its partitions on its next poll,
+            // so partitions taken are checked once every message was handled
+            await TestHelpers.WaitUntilAsync(
+                () => produced.All(value => sink.ReceivedMessages.Any(m => m.Message == value)),
+                "Not every message was handled",
+                TimeSpan.FromSeconds(60));
+            Assert.Equal(produced, sink.ReceivedMessages.Select(m => m.Message));
+            Assert.Equal(0, rebalances.Count);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    /// <summary>
+    /// Whether the dependency <see cref="RetryUntilRecoveredConsumer"/> calls has recovered, and the calls that
+    /// failed before.
+    /// </summary>
+    public sealed class Recovery
+    {
+        /// <summary>Gets or sets whether the dependency has recovered.</summary>
+        public volatile bool Recovered;
+
+        /// <summary>Gets the calls that failed before the dependency recovered.</summary>
+        public InvocationCounter Failures { get; } = new();
+    }
+
+    /// <summary>
+    /// Consumer that fails until the <see cref="Recovery"/> says the dependency recovered, then writes the message
+    /// to the <see cref="MessageSink{T}"/>.
+    /// </summary>
+    public sealed class RetryUntilRecoveredConsumer(Recovery recovery, MessageSink<string> sink) : IConsumer<string>
+    {
+        /// <inheritdoc />
+        public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        {
+            if (!recovery.Recovered)
+            {
+                recovery.Failures.Increment();
+                throw new InvalidOperationException("Dependency unavailable.");
+            }
+
+            return sink.WriteAsync(context, cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// Consumer that fails for the first <see cref="FailuresBeforeSuccess"/> attempts,
     /// then succeeds and writes the message to the <see cref="MessageSink{T}"/>.
     /// </summary>

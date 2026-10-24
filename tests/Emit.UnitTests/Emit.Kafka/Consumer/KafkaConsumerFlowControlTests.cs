@@ -285,4 +285,73 @@ public sealed class KafkaConsumerFlowControlTests
         // Assert
         await pause.WaitAsync(TimeSpan.FromSeconds(30));
     }
+
+    [Fact]
+    public void GivenPartitionPausedForAFullQueue_WhenTheQueueHasRoom_ThenItIsResumed()
+    {
+        // Arrange
+        sut.OnPartitionsAssigned([Partition0, Partition1]);
+        sut.PauseForFullQueue(Partition0);
+
+        // Act
+        sut.ResumeAfterFullQueue(Partition0);
+
+        // Assert
+        mockConsumer.Verify(c => c.Pause(It.Is<IEnumerable<ConfluentKafka.TopicPartition>>(p => p.SequenceEqual(new[] { Partition0 }))), Times.Once);
+        mockConsumer.Verify(c => c.Resume(It.Is<IEnumerable<ConfluentKafka.TopicPartition>>(p => p.SequenceEqual(new[] { Partition0 }))), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenPartitionPausedForAFullQueue_WhenTheGroupIsPausedAndResumed_ThenItStaysPausedUntilTheQueueHasRoom()
+    {
+        // Arrange
+        sut.OnPartitionsAssigned([Partition0, Partition1]);
+        sut.PauseForFullQueue(Partition0);
+        await sut.Application.PauseAsync(CancellationToken.None);
+        mockConsumer.Invocations.Clear();
+
+        // Act
+        await sut.Application.ResumeAsync(CancellationToken.None);
+        var resumedWithTheGroup = mockConsumer.Invocations.ToList();
+        sut.ResumeAfterFullQueue(Partition0);
+
+        // Assert
+        var resume = Assert.Single(resumedWithTheGroup);
+        Assert.Equal([Partition1], (IEnumerable<ConfluentKafka.TopicPartition>)resume.Arguments[0]);
+        mockConsumer.Verify(c => c.Resume(It.Is<IEnumerable<ConfluentKafka.TopicPartition>>(p => p.SequenceEqual(new[] { Partition0 }))), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenGroupPaused_WhenAFullQueueHasRoom_ThenItsPartitionStaysPausedUntilTheGroupResumes()
+    {
+        // Arrange
+        sut.OnPartitionsAssigned([Partition0]);
+        sut.PauseForFullQueue(Partition0);
+        await sut.CircuitBreaker.PauseAsync(CancellationToken.None);
+        mockConsumer.Invocations.Clear();
+
+        // Act
+        sut.ResumeAfterFullQueue(Partition0);
+        var touchedWhilePaused = mockConsumer.Invocations.Count;
+        await sut.CircuitBreaker.ResumeAsync(CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0, touchedWhilePaused);
+        mockConsumer.Verify(c => c.Resume(It.Is<IEnumerable<ConfluentKafka.TopicPartition>>(p => p.SequenceEqual(new[] { Partition0 }))), Times.Once);
+    }
+
+    [Fact]
+    public void GivenPartitionRevokedWhilePausedForAFullQueue_WhenTheQueueHasRoom_ThenItIsNotResumed()
+    {
+        // Arrange
+        sut.OnPartitionsAssigned([Partition0]);
+        sut.PauseForFullQueue(Partition0);
+        sut.OnPartitionsRevoked([Partition0]);
+
+        // Act
+        sut.ResumeAfterFullQueue(Partition0);
+
+        // Assert
+        mockConsumer.Verify(c => c.Resume(It.IsAny<IEnumerable<ConfluentKafka.TopicPartition>>()), Times.Never);
+    }
 }

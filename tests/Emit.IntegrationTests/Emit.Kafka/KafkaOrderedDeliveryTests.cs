@@ -28,10 +28,20 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
     private static readonly string[] Keys = ["apple", "banana", "cherry", "date"];
     private const int PartitionCount = 3;
     private const int WorkerCount = 4;
-    private const int MessagesPerKey = 15;
+    private const int MessagesPerKey = 25;
 
-    [Fact]
-    public async Task GivenMultipleKeysAndPartitions_WhenAllMessagesProduced_ThenAllArrivedInKeyOrderWithOffsetCommit()
+    /// <summary>
+    /// With the default queue size and a fast handler, and with one queued message per worker and a slow handler:
+    /// then nearly every message finds its worker's queue full, so its partition is paused, the poll loop seeks
+    /// back to it and polls on, and the partition resumes once the queue has room. No message may be skipped,
+    /// handled twice or handled out of order through any of that.
+    /// </summary>
+    [Theory]
+    [InlineData(32, 0)]
+    [InlineData(1, 2)]
+    public async Task GivenMultipleKeysAndPartitions_WhenAllMessagesProduced_ThenAllArrivedInKeyOrderWithOffsetCommit(
+        int bufferSize,
+        int handlerDelayMilliseconds)
     {
         // Arrange — unique topic and group to isolate this test from others sharing the broker.
         var topic = $"test-ordered-{Guid.NewGuid():N}";
@@ -44,6 +54,7 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
             .ConfigureServices(services =>
             {
                 services.AddSingleton(sink);
+                services.AddSingleton(new HandlerDelay(TimeSpan.FromMilliseconds(handlerDelayMilliseconds)));
                 services.AddSingleton<IKafkaConsumerObserver>(commitAwaiter);
                 services.AddEmit(emit =>
                 {
@@ -67,7 +78,8 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
                                 group.CommitInterval = TimeSpan.FromSeconds(2);
                                 group.WorkerCount = WorkerCount;
                                 group.WorkerDistribution = WorkerDistribution.ByKeyHash;
-                                group.AddConsumer<SinkConsumer<string>>();
+                                group.BufferSize = bufferSize;
+                                group.AddConsumer<DelayedSinkConsumer>();
                             });
                         });
                     });
@@ -138,6 +150,9 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
             // event containing our topic arrives; no Task.Delay required.
             var commit = await commitAwaiter.WaitAsync(TimeSpan.FromSeconds(30));
             Assert.Contains(commit.Offsets, o => o.Topic == topic);
+
+            // Assert: nothing was handled twice, including after the last message
+            Assert.Equal(totalMessages, sink.ReceivedMessages.Count);
         }
         finally
         {
@@ -146,4 +161,24 @@ public class KafkaOrderedDeliveryTests(KafkaContainerFixture fixture)
         }
     }
 
+    /// <summary>
+    /// How long <see cref="DelayedSinkConsumer"/> takes to handle a message.
+    /// </summary>
+    private sealed record HandlerDelay(TimeSpan Value);
+
+    /// <summary>
+    /// Consumer that takes <see cref="HandlerDelay"/> to handle each message, then writes it to the sink.
+    /// </summary>
+    private sealed class DelayedSinkConsumer(MessageSink<string> sink, HandlerDelay delay) : IConsumer<string>
+    {
+        public async Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken)
+        {
+            if (delay.Value > TimeSpan.Zero)
+            {
+                await Task.Delay(delay.Value, cancellationToken);
+            }
+
+            await sink.WriteAsync(context, cancellationToken);
+        }
+    }
 }

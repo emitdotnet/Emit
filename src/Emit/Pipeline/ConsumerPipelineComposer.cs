@@ -133,14 +133,16 @@ internal sealed class ConsumerPipelineComposer<TValue>
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(unitOfWorkMw, terminal);
         }
 
-        // 3. RetryMiddleware (if configured)
-        if (RetryPolicy is not null)
+        // 3. RetryMiddleware: with a retry policy, or a circuit breaker that holds and counts each attempt, which
+        // is a single one without a retry policy
+        if (RetryPolicy is not null || CircuitBreakerNotifier is not null)
         {
             var retryMw = new RetryMiddleware<TValue>(
                 RetryPolicy,
                 Services.GetRequiredService<EmitMetrics>(),
                 Services.GetRequiredService<INodeIdentity>(),
-                LoggerFactory.CreateLogger<RetryMiddleware<TValue>>());
+                LoggerFactory.CreateLogger<RetryMiddleware<TValue>>(),
+                CircuitBreakerNotifier);
             terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(retryMw, terminal);
         }
 
@@ -196,8 +198,7 @@ internal sealed class ConsumerPipelineComposer<TValue>
                 Services.GetRequiredService<INodeIdentity>(),
                 LoggerFactory.CreateLogger<ConsumeErrorMiddleware<TValue>>(),
                 identifier,
-                consumerType,
-                CircuitBreakerNotifier);
+                consumerType);
             pipeline = new MiddlewarePipeline<ConsumeContext<TValue>>(errorMw, pipeline);
         }
 
