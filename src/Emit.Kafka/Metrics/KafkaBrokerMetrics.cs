@@ -33,7 +33,7 @@ public sealed class KafkaBrokerMetrics
         ArgumentNullException.ThrowIfNull(enrichment);
         this.enrichment = enrichment;
 
-        var meter = meterFactory?.Create(MeterNames.EmitKafkaBroker) ?? new Meter(MeterNames.EmitKafkaBroker);
+        var meter = meterFactory?.Create(KafkaMeterNames.Broker) ?? new Meter(KafkaMeterNames.Broker);
 
         // L. Broker Health — Essential
 

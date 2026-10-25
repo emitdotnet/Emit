@@ -8,7 +8,9 @@ using global::Emit.DependencyInjection;
 using global::Emit.Kafka;
 using global::Emit.Kafka.Consumer;
 using global::Emit.Kafka.DependencyInjection;
+using global::Emit.Pipeline;
 using global::Emit.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
@@ -29,14 +31,51 @@ public sealed class KafkaConsumerGroupBuilderTests
         public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class TestMiddleware : IMiddleware<ConsumeContext<string>>
+    private sealed class TestMiddleware(List<string> log) : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) => next.InvokeAsync(context);
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
+        {
+            log.Add(nameof(TestMiddleware));
+            return next();
+        }
     }
 
-    private sealed class AnotherTestMiddleware : IMiddleware<ConsumeContext<string>>
+    private sealed class AnotherTestMiddleware(List<string> log) : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) => next.InvokeAsync(context);
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next)
+        {
+            log.Add(nameof(AnotherTestMiddleware));
+            return next();
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="messages"/> messages through the middleware of <paramref name="level"/> and returns the
+    /// middleware that ran, in order.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> RunAsync(MessagePipelineBuilder level, int messages = 1)
+    {
+        var log = new List<string>();
+        var services = new ServiceCollection().AddSingleton(log);
+        level.RegisterServices(services);
+        var provider = services.BuildServiceProvider();
+        var pipeline = MessagePipelineBuilder.Build<ConsumeContext<string>, string>(
+            provider, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask), level);
+
+        for (var i = 0; i < messages; i++)
+        {
+            await pipeline.InvokeAsync(new ConsumeContext<string>
+            {
+                MessageId = "test",
+                Timestamp = DateTimeOffset.UtcNow,
+                CancellationToken = CancellationToken.None,
+                Message = "hello",
+                Services = provider,
+                TransportContext = TestTransportContext.Create(provider),
+            });
+        }
+
+        return log;
     }
 
     [Fact]
@@ -179,7 +218,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void GivenAddConsumerWithConfigure_WhenMiddlewareRegistered_ThenConsumerPipelineStored()
+    public async Task GivenAddConsumerWithConfigure_WhenMiddlewareRegistered_ThenConsumerPipelineStored()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
@@ -188,8 +227,38 @@ public sealed class KafkaConsumerGroupBuilderTests
         builder.AddConsumer<TestConsumerA>(c => c.Use<TestMiddleware>());
 
         // Assert
-        Assert.True(builder.ConsumerPipelines.ContainsKey(typeof(TestConsumerA)));
-        Assert.Single(builder.ConsumerPipelines[typeof(TestConsumerA)].Descriptors);
+        Assert.Equal([nameof(TestMiddleware)], await RunAsync(builder.ConsumerPipelines[typeof(TestConsumerA)]));
+    }
+
+    [Fact]
+    public async Task GivenMiddlewareFactories_WhenRegisteredOnTheGroupAndAConsumer_ThenEachRunsOnItsOwnLevelWithItsLifetime()
+    {
+        // Arrange: a singleton factory runs once when the pipeline is built, a scoped one once per message
+        var builder = new KafkaConsumerGroupBuilder<string, string>();
+        var groupFactoryCalls = 0;
+        var consumerFactoryCalls = 0;
+
+        // Act
+        builder.Use(sp =>
+        {
+            groupFactoryCalls++;
+            return new TestMiddleware(sp.GetRequiredService<List<string>>());
+        });
+        builder.AddConsumer<TestConsumerA>(c => c.Use(
+            sp =>
+            {
+                consumerFactoryCalls++;
+                return new AnotherTestMiddleware(sp.GetRequiredService<List<string>>());
+            },
+            MiddlewareLifetime.Scoped));
+        var group = await RunAsync(builder.Pipeline, messages: 2);
+        var consumer = await RunAsync(builder.ConsumerPipelines[typeof(TestConsumerA)], messages: 2);
+
+        // Assert
+        Assert.Equal([nameof(TestMiddleware), nameof(TestMiddleware)], group);
+        Assert.Equal([nameof(AnotherTestMiddleware), nameof(AnotherTestMiddleware)], consumer);
+        Assert.Equal(1, groupFactoryCalls);
+        Assert.Equal(2, consumerFactoryCalls);
     }
 
     [Fact]
@@ -239,7 +308,7 @@ public sealed class KafkaConsumerGroupBuilderTests
     }
 
     [Fact]
-    public void GivenAddConsumer_WhenMixedOverloads_ThenPreservesRegistrationOrderAndPipelines()
+    public async Task GivenAddConsumer_WhenMixedOverloads_ThenPreservesRegistrationOrderAndPipelines()
     {
         // Arrange
         var builder = new KafkaConsumerGroupBuilder<string, string>();
@@ -256,8 +325,10 @@ public sealed class KafkaConsumerGroupBuilderTests
         Assert.Equal(typeof(TestConsumerC), builder.ConsumerTypes[2]);
 
         Assert.False(builder.ConsumerPipelines.ContainsKey(typeof(TestConsumerA)));
-        Assert.Single(builder.ConsumerPipelines[typeof(TestConsumerB)].Descriptors);
-        Assert.Equal(2, builder.ConsumerPipelines[typeof(TestConsumerC)].Descriptors.Count);
+        Assert.Equal([nameof(TestMiddleware)], await RunAsync(builder.ConsumerPipelines[typeof(TestConsumerB)]));
+        Assert.Equal(
+            [nameof(TestMiddleware), nameof(AnotherTestMiddleware)],
+            await RunAsync(builder.ConsumerPipelines[typeof(TestConsumerC)]));
     }
 
     // ── OnError tests ──

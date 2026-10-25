@@ -30,7 +30,7 @@ internal sealed class RetryMiddleware<TMessage>(
 {
 
     /// <inheritdoc />
-    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, Func<Task> next)
     {
         // Inner middleware asks the same question this middleware answers, so a failure it treats
         // as final is exactly one that will not be retried.
@@ -61,19 +61,19 @@ internal sealed class RetryMiddleware<TMessage>(
     /// </summary>
     private async Task RunAttemptAsync(
         ConsumeContext<TMessage> context,
-        IMiddlewarePipeline<ConsumeContext<TMessage>> next,
+        Func<Task> next,
         IAsyncDisposable? attempt)
     {
         if (circuitBreakerNotifier is null || attempt is null)
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
         await using var _ = attempt.ConfigureAwait(false);
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {
@@ -105,7 +105,7 @@ internal sealed class RetryMiddleware<TMessage>(
     private async Task ExecuteRetryAsync(
         Exception originalException,
         ConsumeContext<TMessage> context,
-        IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+        Func<Task> next)
     {
         Exception lastException = originalException;
         var retryStart = Stopwatch.GetTimestamp();

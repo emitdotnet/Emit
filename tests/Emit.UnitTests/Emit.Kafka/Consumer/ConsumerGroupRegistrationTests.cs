@@ -1,6 +1,5 @@
 namespace Emit.Kafka.Tests.Consumer;
 
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Kafka.Consumer;
 using global::Emit.Kafka.DependencyInjection;

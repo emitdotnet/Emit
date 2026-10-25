@@ -18,7 +18,7 @@ public sealed class KafkaMetricsTests : IDisposable
     {
         listener.InstrumentPublished = (instrument, listenerInstance) =>
         {
-            if (instrument.Meter.Name == MeterNames.EmitKafka)
+            if (instrument.Meter.Name == KafkaMeterNames.Kafka)
             {
                 listenerInstance.EnableMeasurementEvents(instrument);
             }

@@ -2,7 +2,6 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using System.Text;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration;
 using Emit.Testing;

@@ -69,12 +69,12 @@ public static class KafkaEmitBuilderExtensions
         ArgumentNullException.ThrowIfNull(configure);
         EnsureNotAlreadyRegistered(builder.Services);
 
-        var kafkaBuilder = new KafkaBuilder(builder.Services, builder.InboundPipeline, builder.OutboundPipeline);
+        var kafkaBuilder = new KafkaBuilder(builder);
         configure(kafkaBuilder);
 
         // Register Kafka-level middleware with appropriate lifetimes
-        kafkaBuilder.InboundPipeline.RegisterServices(builder.Services);
-        kafkaBuilder.OutboundPipeline.RegisterServices(builder.Services);
+        kafkaBuilder.InboundLevel.RegisterServices(builder.Services);
+        kafkaBuilder.OutboundLevel.RegisterServices(builder.Services);
 
         // Register Kafka consumer observer invoker (zero overhead when no observers registered)
         builder.Services.AddSingleton<KafkaConsumerObserverInvoker>();
@@ -88,6 +88,10 @@ public static class KafkaEmitBuilderExtensions
         builder.Services.TryAddSingleton(sp => new KafkaBrokerMetrics(
             sp.GetService<IMeterFactory>(),
             sp.GetRequiredService<EmitMetricsEnrichment>()));
+
+        // The meters of both, for instrumentation to subscribe to
+        builder.Services.AddSingleton(new PackageMeter(KafkaMeterNames.Kafka));
+        builder.Services.AddSingleton(new PackageMeter(KafkaMeterNames.Broker));
 
         // Kafka attributes on the create span of each message produced
         builder.Services.AddSingleton<IActivityEnricher, KafkaActivityEnricher>();

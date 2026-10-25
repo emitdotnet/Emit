@@ -11,14 +11,11 @@ using Emit.Pipeline;
 /// <typeparam name="TValue">The message value type.</typeparam>
 public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<TValue>
 {
-    /// <inheritdoc />
-    IMessagePipelineBuilder IOutboundConfigurable.OutboundPipeline => Pipeline;
-
     /// <summary>
-    /// Gets the per-producer outbound middleware pipeline builder. Middleware registered here
-    /// wraps only this producer's outbound messages.
+    /// Gets the per-producer outbound middleware level. Middleware registered here wraps only this producer's
+    /// outbound messages.
     /// </summary>
-    internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
+    internal MessagePipelineBuilder<SendContext<TValue>> Pipeline { get; } = new();
 
     /// <summary>
     /// Gets a value indicating whether this producer has opted out of the transactional outbox.
@@ -56,7 +53,16 @@ public sealed class KafkaProducerBuilder<TKey, TValue> : IOutboundConfigurable<T
     public IOutboundConfigurable<TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
         where TMiddleware : class, IMiddleware<SendContext<TValue>>
     {
-        Pipeline.Use(typeof(TMiddleware), lifetime);
+        Pipeline.Use<TMiddleware>(lifetime);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IOutboundConfigurable<TValue> Use(
+        Func<IServiceProvider, IMiddleware<SendContext<TValue>>> factory,
+        MiddlewareLifetime lifetime = default)
+    {
+        Pipeline.Use(factory, lifetime);
         return this;
     }
 }

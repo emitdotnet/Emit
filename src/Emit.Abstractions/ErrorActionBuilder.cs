@@ -64,11 +64,6 @@ public class ErrorActionBuilder
         retryBackoff = backoff;
     }
 
-    internal void SetTerminalAction(ErrorAction action)
-    {
-        terminalAction = action;
-    }
-
     /// <summary>
     /// Ensures no terminal action has been configured yet.
     /// </summary>
@@ -82,11 +77,3 @@ public class ErrorActionBuilder
         }
     }
 }
-
-/// <summary>
-/// Describes the validator and terminal action configured for a consumer.
-/// </summary>
-public sealed record ConsumerValidation(
-    Type? ValidatorType,
-    Delegate? ValidatorDelegate,
-    ErrorAction Action);

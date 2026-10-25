@@ -11,12 +11,12 @@ EF Core persistence provider: outbox repository with PostgreSQL support and auto
 | `EfCoreDistributedLockProvider.cs` | IDistributedLockProvider implementation using PostgreSQL INSERT ON CONFLICT via EF Core DbConnection | Implement or debug distributed lock behavior |
 | `EfCoreDaemonAssignmentPersistence.cs` | IDaemonAssignmentPersistence implementation for PostgreSQL | Understand or debug daemon assignment persistence |
 | `EfCoreLeaderElectionPersistence.cs` | ILeaderElectionPersistence implementation for PostgreSQL | Understand or debug leader election persistence |
-| `IEfCoreTransactionContext.cs` | EF Core-specific ITransactionContext adding access to the underlying DbTransaction | Enlist an EF Core transaction or access the raw DbTransaction |
 | `EfCoreTransactionContext.cs` | IEfCoreTransactionContext implementation wrapping IDbContextTransaction with commit/rollback state tracking | Debug EF Core transaction lifecycle or understand double-commit guard |
-| `EfCoreTransactionExtensions.cs` | BeginTransactionAsync extension on IEmitContext starting an EF Core transaction and associating it with the context | Open a transaction in an EF Core handler before producing messages |
 | `DbContextFactoryExtensions.cs` | Creates the contexts Emit's background work runs on, connected to the primary whatever the user's connection string targets | Change how coordination, locks or outbox delivery connect |
 | `TableNames.cs` | Table name constants (outbox, locks) | Reference or modify table naming |
 | `Emit.EntityFrameworkCore.csproj` | Project file with EF Core and Npgsql dependencies | Configure EF Core provider dependencies |
+| `EfCoreUnitOfWork.cs` | EF Core IUnitOfWork: begins a database transaction on the DbContext and makes it the ambient transaction | Understand explicit transactions with EF Core |
+| `EfCoreUnitOfWorkTransaction.cs` | EF Core unit of work transaction: saves changes then commits, rolls back on dispose when not committed | Debug EF Core commit or rollback |
 
 ## Subdirectories
 

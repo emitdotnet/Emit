@@ -10,15 +10,15 @@ Core outbox library: configuration, DI registration, pipeline builder, and backg
 | `EmitContext.cs` | Scoped context exposing the active transaction and registering unit-of-work callbacks | Access the transaction context, or understand how OnSucceeded and OnFailed reach the current unit of work |
 | `DefaultRandomProvider.cs` | IRandomProvider implementation wrapping Random.Shared for backoff jitter | Understand or replace random number generation |
 | `Emit.csproj` | Core library project file with MessagePack, Transactional, and Options dependencies | Configure core library dependencies or package metadata |
+| `NodeIdentityService.cs` | Default node identity: a random node id generated once at startup and the service name from LeaderElectionOptions | Understand how a node identifies itself |
 
 ## Subdirectories
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
 | `Configuration/` | Options classes and IValidateOptions validators for worker and core settings | Add or modify configuration options |
-| `Consumer/` | Circuit breaker, error handling, validation, rate limiting, and distribution middleware | Implement consumer middleware or debug consumer behavior |
+| `Consumer/` | Circuit breaker, error handling, retry, rate limiting, and worker distribution | Implement consumer middleware or debug consumer behavior |
 | `DependencyInjection/` | EmitBuilder fluent API and AddEmit service registration | Extend the registration API or add new top-level services |
-| `ErrorHandling/` | Placeholder directory; error handling types have moved to `src/Emit.Abstractions/ErrorHandling/` | Understand the current location of error handling abstractions |
 | `Middleware/` | UnitOfWorkMiddleware bounding each handler's unit of work: transaction and OnSucceeded/OnFailed callbacks | Understand transactions, callbacks, or how a nested handler joins an enclosing transaction |
 | `Metrics/` | Core emit metrics and metrics middleware for consume/produce operations | Monitor performance, set up dashboards, or customize instrumentation |
 | `Observability/` | Observer middleware invokers for consume, produce, and outbox events | Implement custom observability or understand observer invocation |

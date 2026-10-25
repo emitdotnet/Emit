@@ -10,3 +10,4 @@ FluentValidation integration: adapter bridging IValidator<T> into the Emit valid
 | `FluentValidationExtensions.cs` | ValidateWithFluentValidation extension method on IConsumerGroupConfigurable<T> | Register FluentValidation validators on consumer groups |
 | `README.md` | Package overview and usage | Understand what this package provides |
 | `Emit.FluentValidation.csproj` | Project file with FluentValidation dependency | Configure FluentValidation package dependencies |
+| `FluentValidationNullTolerantMessageValidator.cs` | Variant of the FluentValidation adapter treating null messages as valid, used with `allowNullMessages: true` | Understand null payload handling in FluentValidation |

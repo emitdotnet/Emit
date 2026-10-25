@@ -1,5 +1,6 @@
 namespace Emit.Kafka.JsonSerializer.Tests;
 
+using global::Emit.DependencyInjection;
 using global::Emit.Kafka.DependencyInjection;
 using global::Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +30,7 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(new EmitBuilder(services));
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -58,7 +59,7 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(new EmitBuilder(services));
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -90,7 +91,7 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(new EmitBuilder(services));
         var schema = new ConfluentSchemaRegistry.Schema("{}", ConfluentSchemaRegistry.SchemaType.Json);
 
         // Act & Assert
@@ -151,7 +152,7 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var kafkaBuilder = new KafkaBuilder(services, new MessagePipelineBuilder(), new MessagePipelineBuilder());
+        var kafkaBuilder = new KafkaBuilder(new EmitBuilder(services));
         var schema = new ConfluentSchemaRegistry.Schema("{}", ConfluentSchemaRegistry.SchemaType.Json);
 
         // Act & Assert

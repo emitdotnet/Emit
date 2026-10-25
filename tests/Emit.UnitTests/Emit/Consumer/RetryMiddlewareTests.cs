@@ -3,7 +3,6 @@ namespace Emit.UnitTests.Consumer;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
 using global::Emit.Tracing;
@@ -88,13 +87,13 @@ public sealed class RetryMiddlewareTests
         var context = CreateContext(sp);
 
         var callCount = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             callCount++;
             if (callCount == 1)
                 throw new InvalidOperationException("first attempt fails");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -115,14 +114,14 @@ public sealed class RetryMiddlewareTests
 
         var seenServiceProviders = new List<IServiceProvider>();
         var callCount = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            seenServiceProviders.Add(ctx.Services);
+            seenServiceProviders.Add(context.Services);
             callCount++;
             if (callCount == 1)
                 throw new InvalidOperationException("first attempt fails");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -144,13 +143,13 @@ public sealed class RetryMiddlewareTests
         var context = CreateContext(sp);
 
         var callCount = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             callCount++;
             if (callCount == 1)
                 throw new InvalidOperationException("first attempt fails");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -170,7 +169,7 @@ public sealed class RetryMiddlewareTests
             out _);
         var context = CreateContext(sp);
 
-        var next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -189,8 +188,8 @@ public sealed class RetryMiddlewareTests
             out _);
         var context = CreateContext(sp);
 
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
-            throw new InvalidOperationException("always fails"));
+        Func<Task> next = () =>
+            throw new InvalidOperationException("always fails");
 
         // Act & Assert — exception propagates after all retries
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -209,11 +208,11 @@ public sealed class RetryMiddlewareTests
             : ErrorAction.Retry(3, Backoff.None, ErrorAction.DeadLetter()));
         var context = CreateContext(new ServiceCollection().BuildServiceProvider());
         var calls = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             calls++;
             throw new ArgumentException("not retryable");
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<ArgumentException>(() => middleware.InvokeAsync(context, next));
@@ -231,11 +230,11 @@ public sealed class RetryMiddlewareTests
             : ErrorAction.DeadLetter());
         var context = CreateContext(new ServiceCollection().BuildServiceProvider());
         var calls = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             calls++;
             throw new TimeoutException("transient");
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<TimeoutException>(() => middleware.InvokeAsync(context, next));
@@ -253,13 +252,13 @@ public sealed class RetryMiddlewareTests
             : ErrorAction.Discard());
         var context = CreateContext(new ServiceCollection().BuildServiceProvider());
         var calls = 0;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             calls++;
             throw calls == 1
                 ? new TimeoutException("transient")
                 : new ArgumentException("permanent");
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<ArgumentException>(() => middleware.InvokeAsync(context, next));
@@ -275,12 +274,12 @@ public sealed class RetryMiddlewareTests
         var middleware = CreateMiddleware(maxAttempts: 1);
         var context = CreateContext(new ServiceCollection().BuildServiceProvider());
         var decisions = new List<bool>();
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             var exception = new InvalidOperationException("attempt failed");
-            decisions.Add(ctx.WillRetry!(exception));
+            decisions.Add(context.WillRetry!(exception));
             throw exception;
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
@@ -298,14 +297,14 @@ public sealed class RetryMiddlewareTests
         var context = CreateContext(new ServiceCollection().BuildServiceProvider(), cts.Token);
         var calls = 0;
         bool? willRetry = null;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             calls++;
             cts.Cancel();
-            var exception = new OperationCanceledException(ctx.CancellationToken);
-            willRetry = ctx.WillRetry!(exception);
+            var exception = new OperationCanceledException(context.CancellationToken);
+            willRetry = context.WillRetry!(exception);
             throw exception;
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<OperationCanceledException>(() => middleware.InvokeAsync(context, next));
@@ -344,11 +343,11 @@ public sealed class RetryMiddlewareTests
             breaker.Object);
         var context = CreateContext(new ServiceCollection().BuildServiceProvider());
         List<int> attempts = [];
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            attempts.Add(ctx.RetryAttempt);
+            attempts.Add(context.RetryAttempt);
             return attempts.Count == 1 ? throw new InvalidOperationException("first attempt fails") : Task.CompletedTask;
-        });
+        };
 
         // Act
         var run = middleware.InvokeAsync(context, next);

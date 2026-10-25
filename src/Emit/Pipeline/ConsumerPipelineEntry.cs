@@ -1,7 +1,6 @@
 namespace Emit.Pipeline;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 
 /// <summary>
 /// Pairs consumer identity metadata with its fully-composed middleware pipeline delegate.

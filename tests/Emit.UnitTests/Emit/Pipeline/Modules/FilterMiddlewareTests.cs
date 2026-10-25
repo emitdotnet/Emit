@@ -24,7 +24,7 @@ public sealed class FilterMiddlewareTests
         // Act
         var context = BuildContext("msg", new ServiceCollection().BuildServiceProvider());
         var nextCalled = false;
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(context, () => { nextCalled = true; return Task.CompletedTask; });
 
         // Assert — all entries evaluated in order, next reached because all returned true
         Assert.Equal([1, 2, 3], callOrder);
@@ -41,7 +41,7 @@ public sealed class FilterMiddlewareTests
         // Act
         var context = BuildContext("msg", new ServiceCollection().BuildServiceProvider());
         var nextCalled = false;
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(context, () => { nextCalled = true; return Task.CompletedTask; });
 
         // Assert
         Assert.False(nextCalled);
@@ -58,7 +58,7 @@ public sealed class FilterMiddlewareTests
         // Act
         var context = BuildContext("msg", new ServiceCollection().BuildServiceProvider());
         var nextCalled = false;
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(context, () => { nextCalled = true; return Task.CompletedTask; });
 
         // Assert
         Assert.True(nextCalled);
@@ -76,7 +76,7 @@ public sealed class FilterMiddlewareTests
 
         // Act
         var context = BuildContext("msg", new ServiceCollection().BuildServiceProvider());
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(context, () => Task.CompletedTask);
 
         // Assert
         Assert.False(thirdCalled);
@@ -113,7 +113,7 @@ public sealed class FilterMiddlewareTests
 
         // Act
         var nextCalled = false;
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(context, () => { nextCalled = true; return Task.CompletedTask; });
 
         // Assert
         Assert.True(nextCalled);
@@ -141,7 +141,7 @@ public sealed class FilterMiddlewareTests
 
         // Act
         var nextCalled = false;
-        await module.InvokeAsync(context, new TestPipeline<ConsumeContext<string>>(_ => { nextCalled = true; return Task.CompletedTask; }));
+        await module.InvokeAsync(context, () => { nextCalled = true; return Task.CompletedTask; });
 
         // Assert
         Assert.True(nextCalled);

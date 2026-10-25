@@ -85,13 +85,13 @@ Sending to an unregistered request type throws `InvalidOperationException` at di
 
 ## Middleware
 
-The mediator supports the same [middleware levels](../concepts/pipeline-model/#middleware-levels) as the rest of Emit. Register mediator-wide middleware on `InboundPipeline`, or per-handler middleware using the two-argument `AddHandler` overload:
+Mediator requests run the middleware of `emit.Pipeline`, the [level](../concepts/pipeline-model/#middleware-levels) of every pipeline, then their own levels. Register mediator-wide middleware on `Pipeline`, or per-handler middleware using the two-argument `AddHandler` overload:
 
 ```csharp
 emit.AddMediator(mediator =>
 {
     // Runs for every request dispatched through this mediator
-    mediator.InboundPipeline.Use<LoggingMiddleware>();
+    mediator.Pipeline.Use<LoggingMiddleware>();
 
     // Runs only for PlacePizzaOrder requests
     mediator.AddHandler<PlacePizzaOrderHandler, PlacePizzaOrder>(handler =>
@@ -103,7 +103,7 @@ emit.AddMediator(mediator =>
 });
 ```
 
-The context flowing through all middleware layers is `MediatorContext<TRequest>`, which extends `MessageContext<T>`.
+Mediator middleware implements `IMiddleware<MediatorContext>` to run on every request, or `IMiddleware<MediatorContext<TRequest>>` for one request type. The middleware of consumers and producers (`emit.InboundPipeline`, `emit.OutboundPipeline`) never runs on requests.
 
 ## Observers
 

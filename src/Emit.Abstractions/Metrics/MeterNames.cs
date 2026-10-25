@@ -1,8 +1,9 @@
 namespace Emit.Abstractions.Metrics;
 
 /// <summary>
-/// Constants for all Emit meter names. Use these when subscribing to Emit meters
-/// with OpenTelemetry or <see cref="System.Diagnostics.Metrics.MeterListener"/>.
+/// The names of Emit's own meters. Use these when subscribing to Emit meters with OpenTelemetry or
+/// <see cref="System.Diagnostics.Metrics.MeterListener"/>; each optional Emit package, such as a messaging provider or
+/// the mediator, names its own meters and registers them as a <see cref="PackageMeter"/>.
 /// </summary>
 public static class MeterNames
 {
@@ -25,19 +26,4 @@ public static class MeterNames
     /// Daemon metrics: runs on each node, starts and failures.
     /// </summary>
     public const string EmitDaemon = "Emit.Daemon";
-
-    /// <summary>
-    /// Mediator request dispatch metrics.
-    /// </summary>
-    public const string EmitMediator = "Emit.Mediator";
-
-    /// <summary>
-    /// Kafka-specific producer and consumer metrics.
-    /// </summary>
-    public const string EmitKafka = "Emit.Kafka";
-
-    /// <summary>
-    /// librdkafka client and broker statistics metrics.
-    /// </summary>
-    public const string EmitKafkaBroker = "Emit.Kafka.Broker";
 }

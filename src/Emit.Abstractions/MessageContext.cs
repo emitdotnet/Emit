@@ -1,14 +1,16 @@
 namespace Emit.Abstractions;
 
 /// <summary>
-/// Base context for all pipeline operations. Provides cancellation, service resolution,
-/// a typed payload bag, and message identity. Each pattern (Kafka, Mediator, Bus) provides
-/// a subclass via <see cref="MessageContext{T}"/> that carries strongly-typed message data.
+/// Base context for all pipeline operations: the message, its identity, cancellation, service resolution and a
+/// payload bag. Each kind of pipeline has its own context derived from it: <see cref="ConsumeContext"/> for a
+/// message consumed, <see cref="SendContext"/> for a message produced, and the mediator's context for a request.
+/// Middleware written for <see cref="MessageContext"/> runs on every pipeline.
 /// </summary>
 public abstract class MessageContext
 {
     private Dictionary<Type, object>? payloads;
     private IServiceProvider services = null!;
+    private object? message;
 
     /// <summary>
     /// Cancellation token for this processing operation.
@@ -28,6 +30,15 @@ public abstract class MessageContext
     /// Feature collection for optional, pattern-specific capabilities.
     /// </summary>
     public IFeatureCollection Features { get; } = new FeatureCollection();
+
+    /// <summary>
+    /// The message being processed. The typed context of each pipeline exposes it with its type.
+    /// </summary>
+    public object? Message
+    {
+        get => message;
+        protected init => message = value;
+    }
 
     /// <summary>
     /// The identity of the message. On consume it is the same on every delivery of the message (after a
@@ -97,33 +108,14 @@ public abstract class MessageContext
     {
         this.services = services;
     }
-}
-
-/// <summary>
-/// Typed message context that provides strongly-typed access to the message payload.
-/// All runtime pipelines operate on this typed context — there is no non-generic pipeline
-/// at runtime. Global middleware uses open generics closed per message type at build time.
-/// </summary>
-/// <typeparam name="T">The message type.</typeparam>
-public abstract class MessageContext<T> : MessageContext
-{
-    private T message = default!;
 
     /// <summary>
-    /// The message payload being processed.
+    /// Replaces the message on this context. Used by batch middleware to replace the batch with a filtered subset
+    /// without losing <see cref="Features"/> or <see cref="Services"/>.
     /// </summary>
-    public required T Message
-    {
-        get => message;
-        init => message = value;
-    }
-
-    /// <summary>
-    /// Replaces the message on this context. Used by batch validation middleware
-    /// to replace the batch with a filtered subset without losing Features/Services.
-    /// </summary>
-    internal void WithMessage(T message)
+    internal void WithMessage(object? message)
     {
         this.message = message;
     }
 }
+

@@ -17,11 +17,11 @@ internal sealed class ConsumeObserverMiddleware<TMessage>(
     private readonly IConsumeObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, Func<Task> next)
     {
         if (this.observers is [])
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -39,7 +39,7 @@ internal sealed class ConsumeObserverMiddleware<TMessage>(
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -14,11 +14,5 @@ internal sealed class MiddlewarePipeline<TContext>(
     where TContext : MessageContext
 {
     /// <inheritdoc />
-    public Task InvokeAsync(TContext context) => middleware.InvokeAsync(context, next);
-
-    /// <summary>
-    /// Creates a <see cref="MessageDelegate{TContext}"/> that invokes this pipeline.
-    /// Used as a bridge during migration from delegate-based to interface-based pipeline.
-    /// </summary>
-    public MessageDelegate<TContext> AsDelegate() => context => InvokeAsync(context);
+    public Task InvokeAsync(TContext context) => middleware.InvokeAsync(context, () => next.InvokeAsync(context));
 }

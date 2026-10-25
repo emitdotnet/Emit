@@ -2,7 +2,6 @@ namespace Emit.Kafka.Tests.DependencyInjection;
 
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.DependencyInjection;
 using global::Emit.Kafka;

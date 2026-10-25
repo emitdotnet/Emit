@@ -23,16 +23,18 @@ builder.Services.AddOpenTelemetry()
     });
 ```
 
-Selectively enable or disable individual meters:
+Selectively disable Emit's meters, or the meters of an optional package:
 
 ```csharp
 metrics.AddEmitInstrumentation(options =>
 {
-    options.EnableKafkaBrokerMeter = false;  // skip librdkafka statistics
+    options.EnableLockMeter = false;                   // skip distributed lock instruments
+    options.DisableMeter(KafkaMeterNames.Broker);      // skip librdkafka statistics
+    options.DisableMeter(MediatorMeterNames.Mediator); // skip mediator instruments
 });
 ```
 
-All options default to `true`:
+Emit's own meters are controlled by options that default to `true`:
 
 | Option | Meter controlled |
 |---|---|
@@ -40,11 +42,10 @@ All options default to `true`:
 | `EnableOutboxMeter` | `Emit.Outbox` |
 | `EnableLockMeter` | `Emit.Lock` |
 | `EnableDaemonMeter` | `Emit.Daemon` |
-| `EnableMediatorMeter` | `Emit.Mediator` |
-| `EnableKafkaMeter` | `Emit.Kafka` |
-| `EnableKafkaBrokerMeter` | `Emit.Kafka.Broker` |
 
-`AddEmitInstrumentation` also registers histogram views with second-scale bucket boundaries for all `*duration` instruments and byte-scale boundaries for `emit.kafka.produce.message_size`. The OTel SDK default boundaries (`[0, 5, 10, 25, ...]`) assume milliseconds; without this override, every sub-second observation lands in the `le=5` bucket and `histogram_quantile` returns nonsense values.
+Each optional package registers its own meters, and `AddEmitInstrumentation` subscribes to every one of them unless you disable it with `DisableMeter`. The Kafka provider's are `KafkaMeterNames.Kafka` (`Emit.Kafka`) and `KafkaMeterNames.Broker` (`Emit.Kafka.Broker`); the mediator's is `MediatorMeterNames.Mediator` (`Emit.Mediator`).
+
+Emit's duration histograms advise second-scale bucket boundaries, and `emit.kafka.produce.message_size` byte-scale ones, so any OpenTelemetry pipeline aggregates them correctly without views. The OTel SDK default boundaries (`[0, 5, 10, 25, ...]`) assume milliseconds; without the advice, every sub-second observation would land in the `le=5` bucket and `histogram_quantile` would return nonsense values.
 
 ## Meter: `Emit`
 
@@ -188,4 +189,4 @@ Low-level librdkafka broker statistics. These come directly from Confluent's sta
 | `emit.kafka.broker.connects` | Counter | `broker_id` | Cumulative connection attempts |
 | `emit.kafka.broker.disconnects` | Counter | `broker_id` | Cumulative disconnections |
 
-These instruments are useful for diagnosing network-level issues but rarely needed for day-to-day monitoring. Disable them with `options.EnableKafkaBrokerMeter = false` if your metrics pipeline does not need this level of detail.
+These instruments are useful for diagnosing network-level issues but rarely needed for day-to-day monitoring. Disable them with `options.DisableMeter(KafkaMeterNames.Broker)` if your metrics pipeline does not need this level of detail.

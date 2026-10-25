@@ -1,8 +1,8 @@
 namespace Emit.Kafka;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Emit.Kafka.Consumer;
+using Emit.Pipeline;
 
 /// <summary>
 /// Kafka producer that invokes the outbound middleware pipeline before serializing and producing.
@@ -38,7 +38,7 @@ internal sealed class KafkaPipelineProducer<TKey, TValue>(
         };
 
         // The key travels to the terminal as a payload of the send context
-        context.SetPayload(new KafkaProducePayload(message.Key, message.Value is null));
+        context.SetPayload(new KafkaMessageKey<TKey>(message.Key));
 
         // Copy user-provided headers to context
         if (message.Headers is { Count: > 0 })

@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 /// without an intermediate adapter.
 /// </summary>
 /// <typeparam name="TValue">The message type to filter.</typeparam>
-public sealed class FilterMiddleware<TValue> : IMiddleware<ConsumeContext<TValue>>
+internal sealed class FilterMiddleware<TValue> : IMiddleware<ConsumeContext<TValue>>
 {
     private readonly List<FilterEntry<TValue>> entries = [];
 
@@ -60,7 +60,7 @@ public sealed class FilterMiddleware<TValue> : IMiddleware<ConsumeContext<TValue
     /// <inheritdoc />
     public async Task InvokeAsync(
         ConsumeContext<TValue> context,
-        IMiddlewarePipeline<ConsumeContext<TValue>> next)
+        Func<Task> next)
     {
         foreach (var entry in entries)
         {
@@ -74,7 +74,7 @@ public sealed class FilterMiddleware<TValue> : IMiddleware<ConsumeContext<TValue
                 return;
         }
 
-        await next.InvokeAsync(context).ConfigureAwait(false);
+        await next().ConfigureAwait(false);
     }
 }
 

@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 /// it can be inserted into the pipeline without an intermediate adapter.
 /// </summary>
 /// <typeparam name="TValue">The message type to validate.</typeparam>
-public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TValue>>
+internal sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TValue>>
 {
     private Type? validatorType;
     private IMessageValidator<TValue>? delegateValidator;
@@ -96,7 +96,7 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
     /// <inheritdoc />
     public async Task InvokeAsync(
         ConsumeContext<TValue> context,
-        IMiddlewarePipeline<ConsumeContext<TValue>> next)
+        Func<Task> next)
     {
         var validator = delegateValidator ??
             (IMessageValidator<TValue>)context.Services.GetRequiredService(validatorType!);
@@ -109,7 +109,7 @@ public sealed class ValidationMiddleware<TValue> : IMiddleware<ConsumeContext<TV
         if (result.IsValid)
         {
             metrics.RecordValidationCompleted(EmitMetrics.ValidationResultPassed, EmitMetrics.ValidationActionNone);
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 

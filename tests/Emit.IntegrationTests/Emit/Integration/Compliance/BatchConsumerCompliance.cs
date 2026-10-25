@@ -2,6 +2,7 @@ namespace Emit.IntegrationTests.Integration.Compliance;
 
 using System.Collections.Concurrent;
 using Emit.Abstractions;
+using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
 using Emit.DependencyInjection;
 using Emit.IntegrationTests.Integration;
@@ -133,7 +134,8 @@ public abstract class BatchConsumerCompliance
 
     /// <summary>
     /// Configures the messaging provider with a <c>string, string</c> topic in batch mode
-    /// backed by <see cref="BatchContextInspector"/>.
+    /// backed by <see cref="BatchContextInspector"/>, with <see cref="BatchGroupMiddleware"/> registered on the
+    /// consumer group.
     /// </summary>
     protected abstract void ConfigureEmitBatchContextInspector(
         EmitBuilder emit,
@@ -1112,11 +1114,11 @@ public abstract class BatchConsumerCompliance
     // ── Test 15 ──
 
     /// <summary>
-    /// Verifies that when a batch context is inspected, items within the batch carry valid
-    /// individual transport contexts with non-negative offsets and known partition values.
+    /// Verifies that middleware registered on a batch consumer's group runs once for the whole batch, seeing all
+    /// of its items, while the items within the batch keep their own transport contexts.
     /// </summary>
     [Fact]
-    public async Task GivenBatchConsumer_WhenBatchEnvelopeInspected_ThenSyntheticContextAndRealItemContextCorrect()
+    public async Task GivenBatchConsumerWithGroupMiddleware_WhenABatchIsHandled_ThenTheMiddlewareRunsOnceForTheBatchAndItemsKeepTheirContext()
     {
         // Arrange
         var topic = $"batch-t15-{Guid.NewGuid():N}";
@@ -1156,6 +1158,7 @@ public abstract class BatchConsumerCompliance
 
             var item = batch[0];
             Assert.NotNull(item.TransportContext);
+            Assert.Equal([batch.Count], inspector.GroupMiddlewareMessageCounts);
         }
         finally
         {
@@ -1916,6 +1919,13 @@ public abstract class BatchConsumerCompliance
     public sealed class BatchContextInspector : IBatchConsumer<string>
     {
         private readonly ConcurrentQueue<IReadOnlyList<BatchItem<string>>> batches = new();
+        private readonly ConcurrentQueue<int> groupMiddlewareMessageCounts = new();
+
+        /// <summary>All batches received so far.</summary>
+        public IReadOnlyList<IReadOnlyList<BatchItem<string>>> ReceivedBatches => [.. batches];
+
+        /// <summary>The message count <see cref="BatchGroupMiddleware"/> saw on each run.</summary>
+        public IReadOnlyList<int> GroupMiddlewareMessageCounts => [.. groupMiddlewareMessageCounts];
 
         /// <inheritdoc />
         public Task ConsumeAsync(ConsumeContext<MessageBatch<string>> context, CancellationToken cancellationToken)
@@ -1924,8 +1934,21 @@ public abstract class BatchConsumerCompliance
             return Task.CompletedTask;
         }
 
-        /// <summary>All batches received so far.</summary>
-        public IReadOnlyList<IReadOnlyList<BatchItem<string>>> ReceivedBatches => [.. batches];
+        /// <summary>Records a run of <see cref="BatchGroupMiddleware"/>.</summary>
+        public void RecordGroupMiddleware(int messageCount) => groupMiddlewareMessageCounts.Enqueue(messageCount);
+    }
+
+    /// <summary>
+    /// Consumer group middleware that runs on batches: it records the message count of each context it sees.
+    /// </summary>
+    public sealed class BatchGroupMiddleware(BatchContextInspector inspector) : IMiddleware<ConsumeContext>
+    {
+        /// <inheritdoc />
+        public Task InvokeAsync(ConsumeContext context, Func<Task> next)
+        {
+            inspector.RecordGroupMiddleware(context.MessageCount);
+            return next();
+        }
     }
 
 }

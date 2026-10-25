@@ -90,12 +90,12 @@ Most metadata middleware needs is available directly on the context, without goi
 |---|---|---|
 | `DestinationAddress` | `MessageContext` | Transport URI (e.g. `kafka://broker:9092/orders`) |
 | `SourceAddress` | `MessageContext` | Sender address, propagated via headers |
-| `Message` | `MessageContext<T>` | The typed message payload |
+| `Message` | `MessageContext` | The message, typed in `ConsumeContext<T>` and `SendContext<T>` |
 | `MessageId` | `MessageContext` | The message's identity, the same on every delivery: the key to deduplicate on |
 | `Timestamp` | `MessageContext` | When the message was created or received |
-| `Headers` | `ConsumeContext<T>` | Message headers (delegated from `TransportContext`) |
-| `RetryAttempt` | `ConsumeContext<T>` | Current retry count (0 on first attempt) |
-| `TransportContext` | `ConsumeContext<T>` | Full transport metadata: raw bytes, headers, provider ID |
+| `Headers` | `ConsumeContext` | Message headers (delegated from `TransportContext`) |
+| `RetryAttempt` | `ConsumeContext` | Current retry count (0 on first attempt) |
+| `TransportContext` | `ConsumeContext` | Full transport metadata: raw bytes, headers, provider ID |
 
 ### Extracting transport info from URIs
 

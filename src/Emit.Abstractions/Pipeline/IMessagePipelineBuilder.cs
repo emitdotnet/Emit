@@ -1,75 +1,43 @@
 namespace Emit.Abstractions.Pipeline;
 
-using Microsoft.Extensions.DependencyInjection;
-
 /// <summary>
-/// Collects middleware descriptors and composes them into a typed <see cref="MessageDelegate{TContext}"/>
-/// chain at build time. Each builder (EmitBuilder, KafkaBuilder, MediatorBuilder, etc.) exposes
-/// an instance via pipeline properties. Open generic middleware types are closed per message
-/// type when <see cref="Build{TContext,TMessage}"/> is called.
+/// A level of middleware for one kind of pipeline. Middleware registered here runs on every pipeline of this
+/// level, in registration order (first registered is outermost), and must accept its context
+/// <typeparamref name="TContext"/> or a context it derives from.
 /// </summary>
-public interface IMessagePipelineBuilder
+/// <typeparam name="TContext">The context of the pipelines this level applies to.</typeparam>
+public interface IMessagePipelineBuilder<TContext> where TContext : MessageContext
 {
     /// <summary>
-    /// Gets the registered middleware descriptors in registration order.
+    /// Registers a middleware resolved from the service provider.
     /// </summary>
-    IReadOnlyList<MiddlewareDescriptor> Descriptors { get; }
-
-    /// <summary>
-    /// Registers a middleware type with an explicit lifetime. The type may be an open generic
-    /// (e.g., <c>typeof(LoggingMiddleware&lt;&gt;)</c>) that is closed per message type at build time,
-    /// or a closed type that implements <see cref="IMiddleware{TContext}"/> for a specific context type.
-    /// </summary>
-    /// <param name="middlewareType">The middleware type (open or closed generic).</param>
+    /// <typeparam name="TMiddleware">The middleware type.</typeparam>
     /// <param name="lifetime">Controls when the middleware instance is created.</param>
     /// <returns>This builder for chaining.</returns>
-    IMessagePipelineBuilder Use(Type middlewareType, MiddlewareLifetime lifetime = default);
+    IMessagePipelineBuilder<TContext> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
+        where TMiddleware : class, IMiddleware<TContext>;
 
     /// <summary>
-    /// Registers a closed middleware type. Use this for middleware that implements
-    /// <see cref="IMiddleware{TContext}"/> for a specific context type. Direction compatibility
-    /// is validated at build time.
+    /// Registers a middleware created by a factory.
     /// </summary>
-    /// <typeparam name="TMiddleware">The middleware type to register.</typeparam>
-    /// <param name="lifetime">Controls when the middleware instance is created.</param>
-    /// <returns>This builder for chaining.</returns>
-    IMessagePipelineBuilder Use<TMiddleware>(MiddlewareLifetime lifetime = default)
-        where TMiddleware : class;
-
-    /// <summary>
-    /// Registers a typed factory-based middleware for a specific context type.
-    /// </summary>
-    /// <typeparam name="TContext">The pipeline context type.</typeparam>
-    /// <param name="factory">A factory that creates the typed middleware instance.</param>
+    /// <param name="factory">Creates the middleware instance.</param>
     /// <param name="lifetime">Controls when the factory is invoked.</param>
     /// <returns>This builder for chaining.</returns>
-    IMessagePipelineBuilder Use<TContext>(
+    IMessagePipelineBuilder<TContext> Use(
         Func<IServiceProvider, IMiddleware<TContext>> factory,
-        MiddlewareLifetime lifetime = default)
-        where TContext : MessageContext;
+        MiddlewareLifetime lifetime = default);
 
     /// <summary>
-    /// Registers all collected middleware types in the service collection with the appropriate lifetime.
-    /// Open generic types are registered as open generics — .NET DI resolves closed forms automatically.
+    /// Registers a generic middleware type definition, such as <c>typeof(ValidationMiddleware&lt;&gt;)</c>, closed
+    /// with the message type of each pipeline. Use it for middleware that needs the message type; other middleware
+    /// is registered with <see cref="Use{TMiddleware}"/>.
     /// </summary>
-    /// <param name="services">The service collection to register middleware types in.</param>
-    void RegisterServices(IServiceCollection services);
-
-    /// <summary>
-    /// Flattens parent layers and this builder's middleware, closes open generic types with
-    /// <typeparamref name="TMessage"/>, validates each closed type implements
-    /// <see cref="IMiddleware{TContext}"/> for the target context, and composes the
-    /// <see cref="IMiddlewarePipeline{TContext}"/> chain.
-    /// </summary>
-    /// <typeparam name="TContext">The pipeline context type (e.g., <c>ConsumeContext&lt;TValue&gt;</c>).</typeparam>
-    /// <typeparam name="TMessage">The message type to close open generics with.</typeparam>
-    /// <param name="services">The service provider for resolving middleware.</param>
-    /// <param name="terminal">The terminal pipeline (e.g., handler invoker).</param>
-    /// <param name="parentLayers">Parent pipeline builders, outermost first.</param>
-    /// <returns>A composed <see cref="IMiddlewarePipeline{TContext}"/> chain.</returns>
-    IMiddlewarePipeline<TContext> Build<TContext, TMessage>(
-        IServiceProvider services,
-        IMiddlewarePipeline<TContext> terminal,
-        params IMessagePipelineBuilder[] parentLayers)
-        where TContext : MessageContext;
+    /// <param name="middlewareType">A generic type definition with one type parameter, the message type.</param>
+    /// <param name="lifetime">Controls when the middleware instance is created.</param>
+    /// <returns>This builder for chaining.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="middlewareType"/> is not a generic type definition with one type parameter, or its closed
+    /// form cannot run on the pipelines of this level.
+    /// </exception>
+    IMessagePipelineBuilder<TContext> Use(Type middlewareType, MiddlewareLifetime lifetime = default);
 }

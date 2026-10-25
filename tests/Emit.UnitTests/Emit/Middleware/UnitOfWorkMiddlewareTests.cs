@@ -3,10 +3,10 @@ namespace Emit.UnitTests.Middleware;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Consumer;
 using global::Emit.Metrics;
 using global::Emit.Middleware;
+using global::Emit.Pipeline;
 using global::Emit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -100,7 +100,7 @@ public sealed class UnitOfWorkMiddlewareTests
         var (sp, mockUow, _) = CreateServicesWithUnitOfWork();
         var middleware = CreateMiddleware(typeof(TransactionalTestHandler));
         var context = CreateContext(sp);
-        var next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -116,7 +116,7 @@ public sealed class UnitOfWorkMiddlewareTests
         var (sp, _, mockTransaction) = CreateServicesWithUnitOfWork();
         var middleware = CreateMiddleware(typeof(TransactionalTestHandler));
         var context = CreateContext(sp);
-        var next = new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask);
+        Func<Task> next = () => Task.CompletedTask;
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -132,7 +132,7 @@ public sealed class UnitOfWorkMiddlewareTests
         var (sp, _, mockTransaction) = CreateServicesWithUnitOfWork();
         var middleware = CreateMiddleware(typeof(TransactionalTestHandler));
         var context = CreateContext(sp);
-        var next = new TestPipeline<ConsumeContext<string>>(_ => throw new InvalidOperationException("handler failed"));
+        Func<Task> next = () => throw new InvalidOperationException("handler failed");
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
@@ -148,11 +148,11 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(sp);
         var nextCalled = false;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -169,11 +169,11 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(CreateServices());
         var nextCalled = false;
-        var next = new TestPipeline<ConsumeContext<string>>(_ =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -191,11 +191,11 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(TransactionalTestHandler));
         var context = CreateContext(sp, cts.Token);
         var capturedToken = CancellationToken.None;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            capturedToken = ctx.CancellationToken;
+            capturedToken = context.CancellationToken;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -215,13 +215,13 @@ public sealed class UnitOfWorkMiddlewareTests
         var (sp, _, _) = CreateServicesWithUnitOfWork(log);
         var middleware = CreateMiddleware(typeof(TransactionalTestHandler));
         var context = CreateContext(sp);
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ => Log(log, "succeeded"));
             emitContext.OnFailed((_, _) => Log(log, "failed"));
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -240,9 +240,9 @@ public sealed class UnitOfWorkMiddlewareTests
         var context = CreateContext(sp);
         var thrown = new InvalidOperationException("handler failed");
         Exception? received = null;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ => Log(log, "succeeded"));
             emitContext.OnFailed((ex, _) =>
             {
@@ -250,7 +250,7 @@ public sealed class UnitOfWorkMiddlewareTests
                 return Log(log, "failed");
             });
             throw thrown;
-        });
+        };
 
         // Act
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
@@ -269,13 +269,13 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(CreateServices());
         context.WillRetry = _ => true;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ => Log(log, "succeeded"));
             emitContext.OnFailed((_, _) => Log(log, "failed"));
             throw new InvalidOperationException("attempt failed");
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context, next));
@@ -292,17 +292,17 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(CreateServices(), cts.Token);
         Exception? received = null;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            ctx.Services.GetRequiredService<IEmitContext>().OnFailed((ex, _) =>
+            context.Services.GetRequiredService<IEmitContext>().OnFailed((ex, _) =>
             {
                 received = ex;
                 return Task.CompletedTask;
             });
             cts.Cancel();
-            ctx.CancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await Assert.ThrowsAsync<OperationCanceledException>(() => middleware.InvokeAsync(context, next));
@@ -318,14 +318,14 @@ public sealed class UnitOfWorkMiddlewareTests
         var log = new List<string>();
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(CreateServices());
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ => Log(log, "first"));
             emitContext.OnSucceeded(_ => throw new InvalidOperationException("callback failed"));
             emitContext.OnSucceeded(_ => Log(log, "third"));
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -352,16 +352,16 @@ public sealed class UnitOfWorkMiddlewareTests
         var middleware = CreateMiddleware(typeof(NonTransactionalTestHandler));
         var context = CreateContext(CreateServices());
         Exception? registrationFailure = null;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ =>
             {
                 registrationFailure = Record.Exception(() => emitContext.OnSucceeded(_ => Task.CompletedTask));
                 return Task.CompletedTask;
             });
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -378,16 +378,16 @@ public sealed class UnitOfWorkMiddlewareTests
         var context = CreateContext(CreateServices());
         var release = new TaskCompletionSource();
         Task<Exception?>? lateRegistration = null;
-        var next = new TestPipeline<ConsumeContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
-            var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
+            var emitContext = context.Services.GetRequiredService<IEmitContext>();
             lateRegistration = Task.Run<Exception?>(async () =>
             {
                 await release.Task;
                 return Record.Exception(() => emitContext.OnSucceeded(_ => Task.CompletedTask));
             });
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -413,12 +413,12 @@ public sealed class UnitOfWorkMiddlewareTests
         });
         var outerHandler = new TestPipeline<ConsumeContext<string>>(async ctx =>
         {
-            await inner.InvokeAsync(CreateContext(ctx.Services), innerHandler);
+            await new MiddlewarePipeline<ConsumeContext<string>>(inner, innerHandler).InvokeAsync(CreateContext(ctx.Services));
             log.Add("inner returned");
         });
 
         // Act
-        await outer.InvokeAsync(context, outerHandler);
+        await new MiddlewarePipeline<ConsumeContext<string>>(outer, outerHandler).InvokeAsync(context);
 
         // Assert
         Assert.Equal(["inner returned", "commit", "dispose", "inner succeeded"], log);
@@ -442,12 +442,12 @@ public sealed class UnitOfWorkMiddlewareTests
         {
             var emitContext = ctx.Services.GetRequiredService<IEmitContext>();
             emitContext.OnSucceeded(_ => Log(log, "outer succeeded"));
-            await inner.InvokeAsync(CreateContext(ctx.Services), innerHandler);
+            await new MiddlewarePipeline<ConsumeContext<string>>(inner, innerHandler).InvokeAsync(CreateContext(ctx.Services));
             log.Add("inner returned");
         });
 
         // Act
-        await outer.InvokeAsync(context, outerHandler);
+        await new MiddlewarePipeline<ConsumeContext<string>>(outer, outerHandler).InvokeAsync(context);
 
         // Assert
         Assert.Equal(["inner succeeded", "inner returned", "outer succeeded"], log);
@@ -480,10 +480,10 @@ public sealed class UnitOfWorkMiddlewareTests
             }
         });
 
-        var first = CreateMiddleware(typeof(NonTransactionalTestHandler))
-            .InvokeAsync(CreateContext(sp), Handler("first", fail: false));
-        var second = CreateMiddleware(typeof(NonTransactionalTestHandler))
-            .InvokeAsync(CreateContext(sp), Handler("second", fail: true));
+        var first = new MiddlewarePipeline<ConsumeContext<string>>(
+            CreateMiddleware(typeof(NonTransactionalTestHandler)), Handler("first", fail: false)).InvokeAsync(CreateContext(sp));
+        var second = new MiddlewarePipeline<ConsumeContext<string>>(
+            CreateMiddleware(typeof(NonTransactionalTestHandler)), Handler("second", fail: true)).InvokeAsync(CreateContext(sp));
 
         // Act
         await first;
@@ -551,9 +551,9 @@ public sealed class UnitOfWorkMiddlewareTests
             new Mock<INodeIdentity>().Object,
             NullLogger<RetryMiddleware<string>>.Instance);
 
-        var pipeline = new TestPipeline<ConsumeContext<string>>(ctx =>
-            retry.InvokeAsync(ctx, new TestPipeline<ConsumeContext<string>>(attemptContext =>
-                CreateMiddleware(typeof(NonTransactionalTestHandler)).InvokeAsync(attemptContext, handler))));
+        var pipeline = new MiddlewarePipeline<ConsumeContext<string>>(
+            retry,
+            new MiddlewarePipeline<ConsumeContext<string>>(CreateMiddleware(typeof(NonTransactionalTestHandler)), handler));
 
         return (CreateContext(sp), pipeline);
     }

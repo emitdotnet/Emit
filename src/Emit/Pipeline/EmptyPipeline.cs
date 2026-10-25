@@ -1,7 +1,6 @@
 namespace Emit.Pipeline;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 
 /// <summary>
 /// No-op terminal pipeline that completes immediately. Used as the default terminal

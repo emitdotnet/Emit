@@ -5,7 +5,6 @@ using System.Text;
 using System.Threading.Channels;
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
-using Emit.Abstractions.Pipeline;
 using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
 using Emit.Metrics;

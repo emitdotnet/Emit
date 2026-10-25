@@ -22,7 +22,7 @@ internal sealed class MediatorTracingMiddleware<TMessage>(
     private static readonly string RequestTypeName = typeof(TMessage).Name;
 
     /// <inheritdoc />
-    public async Task InvokeAsync(MediatorContext<TMessage> context, IMiddlewarePipeline<MediatorContext<TMessage>> next)
+    public async Task InvokeAsync(MediatorContext<TMessage> context, Func<Task> next)
     {
         using var activity = MessagingActivity.StartActivity(
             Source,
@@ -45,7 +45,7 @@ internal sealed class MediatorTracingMiddleware<TMessage>(
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (Exception exception)
         {

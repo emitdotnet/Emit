@@ -2,7 +2,7 @@ namespace Emit.UnitTests.Routing;
 
 using System.Diagnostics;
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
+using Emit.Pipeline;
 using Emit.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

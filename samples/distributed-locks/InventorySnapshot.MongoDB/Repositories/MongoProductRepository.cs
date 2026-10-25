@@ -1,5 +1,6 @@
 namespace InventorySnapshot.MongoDB.Repositories;
 
+using global::MongoDB.Bson.Serialization;
 using global::MongoDB.Driver;
 using InventorySnapshot.Common.Domain;
 using InventorySnapshot.Common.Repositories;
@@ -7,6 +8,16 @@ using InventorySnapshot.Common.Repositories;
 internal sealed class MongoProductRepository : IProductRepository
 {
     private readonly IMongoCollection<Product> _collection;
+
+    static MongoProductRepository()
+    {
+        // The SKU identifies a product, so it is the document id
+        BsonClassMap.TryRegisterClassMap<Product>(map =>
+        {
+            map.AutoMap();
+            map.MapIdMember(p => p.Sku);
+        });
+    }
 
     public MongoProductRepository(IMongoDatabase database)
     {

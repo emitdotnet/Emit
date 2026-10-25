@@ -17,7 +17,13 @@ using OpenTelemetry.Trace;
 using BuildingSentinel.Common.Validation;
 using FluentValidation;
 using Scalar.AspNetCore;
+using global::MongoDB.Bson;
+using global::MongoDB.Bson.Serialization;
+using global::MongoDB.Bson.Serialization.Serializers;
 using global::MongoDB.Driver;
+
+// Guids are stored as the standard UUID representation, as Emit stores its own
+BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -6,10 +6,6 @@ using Xunit;
 
 public sealed class MessageContextTests
 {
-    private sealed class TestContext : MessageContext<string>
-    {
-    }
-
     private sealed class TestTransportContext : TransportContext
     {
     }
@@ -44,16 +40,8 @@ public sealed class MessageContextTests
     public void GivenMessageContext_WhenWithServicesCalled_ThenServicesReplaced()
     {
         // Arrange
-        var originalServices = new Mock<IServiceProvider>().Object;
         var newServices = new Mock<IServiceProvider>().Object;
-        var context = new TestContext
-        {
-            Services = originalServices,
-            CancellationToken = CancellationToken.None,
-            MessageId = "msg-id",
-            Timestamp = DateTimeOffset.UtcNow,
-            Message = "hello",
-        };
+        var context = CreateConsumeContext();
 
         // Act
         context.WithServices(newServices);

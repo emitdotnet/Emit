@@ -1,23 +1,19 @@
 namespace Emit.Abstractions.Pipeline;
 
 /// <summary>
-/// A middleware component in the typed message processing pipeline.
-/// The context type parameter determines the direction — consume middleware implements
-/// <c>IMiddleware&lt;ConsumeContext&lt;T&gt;&gt;</c>, outbound implements
-/// <c>IMiddleware&lt;SendContext&lt;T&gt;&gt;</c>. Register open generic types
-/// (e.g., <c>typeof(LoggingMiddleware&lt;&gt;)</c>) for global middleware that is closed
-/// per message type at build time.
+/// A middleware component of a message pipeline. The context type is the least the middleware needs, and it runs
+/// on every pipeline whose context derives from it: <see cref="MessageContext"/> on every pipeline,
+/// <see cref="ConsumeContext"/> on every consumer, <see cref="ConsumeContext{T}"/> on consumers of
+/// <c>T</c>, and likewise for <see cref="SendContext"/> on producers.
 /// </summary>
-/// <typeparam name="TContext">
-/// The pipeline context type. Determines which pipelines this middleware can participate in.
-/// </typeparam>
-public interface IMiddleware<TContext> where TContext : MessageContext
+/// <typeparam name="TContext">The least derived context the middleware needs.</typeparam>
+public interface IMiddleware<in TContext> where TContext : MessageContext
 {
     /// <summary>
-    /// Processes a message and optionally delegates to the next middleware in the pipeline.
+    /// Processes a message and optionally continues the pipeline.
     /// </summary>
-    /// <param name="context">The typed message context flowing through the pipeline.</param>
-    /// <param name="next">The next pipeline in the chain. Call to continue processing; skip to short-circuit.</param>
+    /// <param name="context">The context of the message flowing through the pipeline.</param>
+    /// <param name="next">Continues the pipeline with the same context. Skip it to short-circuit.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task InvokeAsync(TContext context, IMiddlewarePipeline<TContext> next);
+    Task InvokeAsync(TContext context, Func<Task> next);
 }

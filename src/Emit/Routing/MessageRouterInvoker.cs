@@ -3,7 +3,7 @@ namespace Emit.Routing;
 using System.Diagnostics;
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
-using Emit.Abstractions.Pipeline;
+using Emit.Pipeline;
 using Emit.Tracing;
 using Microsoft.Extensions.Logging;
 

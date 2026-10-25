@@ -16,6 +16,7 @@ using Xunit;
 /// MongoDB integration tests for <see cref="MongoDbLeaderElectionPersistence"/>.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(MongoDbFailPointCollection.Name)]
 public class MongoDbLeaderElectionCompliance : DatabaseLeaderElectionCompliance, IClassFixture<MongoDbContainerFixture>
 {
     private readonly string databaseName;

@@ -12,6 +12,9 @@ Unit tests for the Emit.Mediator library: builder, DI registration, handler invo
 | `MediatorMiddlewareTests.cs` | Unit tests for mediator middleware pipeline execution order | Debugging mediator middleware test failures |
 | `MediatorResponseFeatureTests.cs` | Unit tests for mediator response feature construction and access | Debugging mediator response feature test failures |
 | `MediatorTests.cs` | Unit tests for IMediator.SendAsync dispatch and response | Debugging mediator send test failures |
+| `MediatorDispatchShapeTests.cs` | Behavior every dispatch shape (void, response, stream) shares, run against each shape | Debugging mediator dispatch test failures |
+| `MediatorStreamTests.cs` | Stream handlers running inside the middleware pipeline for the whole life of the stream | Debugging mediator stream test failures |
+| `MediatorUnitOfWorkCallbackTests.cs` | Unit of work callbacks registered by mediator handlers through the real pipeline | Debugging mediator callback test failures |
 
 ## Subdirectories
 

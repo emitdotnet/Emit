@@ -85,13 +85,13 @@ public sealed class EmitMetrics
 
         // Pipeline
         ProduceDuration = meter.CreateHistogram<double>(
-            "emit.pipeline.produce.duration", "s", "Total outbound pipeline execution time.");
+            "emit.pipeline.produce.duration", "s", "Total outbound pipeline execution time.", tags: null, advice: HistogramAdvice.Seconds);
 
         ProduceCompleted = meter.CreateCounter<long>(
             "emit.pipeline.produce.completed", "{message}", "Count of completed produce pipeline executions.");
 
         ConsumeDuration = meter.CreateHistogram<double>(
-            "emit.pipeline.consume.duration", "s", "Total inbound pipeline execution time.");
+            "emit.pipeline.consume.duration", "s", "Total inbound pipeline execution time.", tags: null, advice: HistogramAdvice.Seconds);
 
         ConsumeCompleted = meter.CreateCounter<long>(
             "emit.pipeline.consume.completed", "{message}", "Count of completed consume pipeline executions.");
@@ -107,7 +107,7 @@ public sealed class EmitMetrics
             "emit.consumer.retry.attempts", "{attempt}", "Number of retry attempts per retry sequence.");
 
         RetryDuration = meter.CreateHistogram<double>(
-            "emit.consumer.retry.duration", "s", "Wall-clock time spent in retry loops.");
+            "emit.consumer.retry.duration", "s", "Wall-clock time spent in retry loops.", tags: null, advice: HistogramAdvice.Seconds);
 
         Discards = meter.CreateCounter<long>(
             "emit.consumer.discards", "{message}", "Count of messages explicitly discarded.");
@@ -121,14 +121,14 @@ public sealed class EmitMetrics
             "emit.consumer.circuit_breaker.state_transitions", "{transition}", "Count of circuit breaker state transitions.");
 
         CircuitBreakerOpenDuration = meter.CreateHistogram<double>(
-            "emit.consumer.circuit_breaker.open_duration", "s", "Duration from circuit opened to half-open.");
+            "emit.consumer.circuit_breaker.open_duration", "s", "Duration from circuit opened to half-open.", tags: null, advice: HistogramAdvice.Seconds);
 
         meter.CreateObservableGauge(
             "emit.consumer.circuit_breaker.state", ObserveCircuitBreakerStates, description: "Current circuit breaker state (0=closed, 1=open, 2=half_open).");
 
         // Rate limiting
         RateLimitWaitDuration = meter.CreateHistogram<double>(
-            "emit.consumer.rate_limit.wait_duration", "s", "Time spent waiting for rate limit permits.");
+            "emit.consumer.rate_limit.wait_duration", "s", "Time spent waiting for rate limit permits.", tags: null, advice: HistogramAdvice.Seconds);
 
         // Dead letter queue
         DlqProduced = meter.CreateCounter<long>(

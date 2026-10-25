@@ -16,13 +16,13 @@ public sealed class MediatorMiddlewareTests
     {
         // Arrange
         var order = new List<string>();
-        TrackingMiddleware<TestRequest>.Order = order;
+        TrackingMiddleware.Order = order;
         TestHandler.Tracker = order;
 
         var services = new ServiceCollection();
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(TrackingMiddleware<>));
+            emit.Pipeline.Use<TrackingMiddleware>();
             emit.AddMediator(m => m.AddHandler<TestHandler>());
         });
         var provider = services.BuildServiceProvider();
@@ -42,7 +42,7 @@ public sealed class MediatorMiddlewareTests
     {
         // Arrange
         var order = new List<string>();
-        TrackingMiddleware<TestRequest>.Order = order;
+        TrackingMiddleware.Order = order;
         TestHandler.Tracker = order;
 
         var services = new ServiceCollection();
@@ -50,7 +50,7 @@ public sealed class MediatorMiddlewareTests
         {
             emit.AddMediator(m =>
             {
-                m.InboundPipeline.Use(typeof(TrackingMiddleware<>));
+                m.Pipeline.Use<TrackingMiddleware>();
                 m.AddHandler<TestHandler>();
             });
         });
@@ -71,17 +71,17 @@ public sealed class MediatorMiddlewareTests
     {
         // Arrange
         var order = new List<string>();
-        GlobalMiddleware<TestRequest>.Order = order;
+        GlobalMiddleware.Order = order;
         PatternMiddleware<TestRequest>.Order = order;
         TestHandler.Tracker = order;
 
         var services = new ServiceCollection();
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(GlobalMiddleware<>));
+            emit.Pipeline.Use<GlobalMiddleware>();
             emit.AddMediator(m =>
             {
-                m.InboundPipeline.Use(typeof(PatternMiddleware<>));
+                m.Pipeline.Use(typeof(PatternMiddleware<>));
                 m.AddHandler<TestHandler>();
             });
         });
@@ -107,7 +107,7 @@ public sealed class MediatorMiddlewareTests
         var services = new ServiceCollection();
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(ShortCircuitMiddleware<>));
+            emit.Pipeline.Use<ShortCircuitMiddleware>();
             emit.AddMediator(m => m.AddHandler<ShortCircuitHandler>());
         });
         var provider = services.BuildServiceProvider();
@@ -124,21 +124,21 @@ public sealed class MediatorMiddlewareTests
     {
         // Arrange
         var order = new List<string>();
-        GlobalMiddleware<TestRequest>.Order = order;
+        GlobalMiddleware.Order = order;
         PatternMiddleware<TestRequest>.Order = order;
-        HandlerMiddleware<TestRequest>.Order = order;
+        HandlerMiddleware.Order = order;
         TestHandler.Tracker = order;
 
         var services = new ServiceCollection();
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(GlobalMiddleware<>));
+            emit.Pipeline.Use<GlobalMiddleware>();
             emit.AddMediator(m =>
             {
-                m.InboundPipeline.Use(typeof(PatternMiddleware<>));
+                m.Pipeline.Use(typeof(PatternMiddleware<>));
                 m.AddHandler<TestHandler, TestRequest>(handler =>
                 {
-                    handler.UseInbound(typeof(HandlerMiddleware<>));
+                    handler.Use<HandlerMiddleware>();
                 });
             });
         });
@@ -159,13 +159,13 @@ public sealed class MediatorMiddlewareTests
     {
         // Arrange
         var order = new List<string>();
-        TrackingMiddleware<VoidRequest>.Order = order;
+        TrackingMiddleware.Order = order;
         VoidHandler.Tracker = order;
 
         var services = new ServiceCollection();
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(TrackingMiddleware<>));
+            emit.Pipeline.Use<TrackingMiddleware>();
             emit.AddMediator(m => m.AddHandler<VoidHandler>());
         });
         var provider = services.BuildServiceProvider();
@@ -225,28 +225,28 @@ public sealed class MediatorMiddlewareTests
 
     // ── Middleware ──
 
-    private sealed class TrackingMiddleware<T> : IMiddleware<MediatorContext<T>>
+    private sealed class TrackingMiddleware : IMiddleware<MessageContext>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MessageContext context, Func<Task> next)
         {
             Order?.Add("tracking:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             Order?.Add("tracking:after");
         }
     }
 
-    private sealed class GlobalMiddleware<T> : IMiddleware<MediatorContext<T>>
+    private sealed class GlobalMiddleware : IMiddleware<MessageContext>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MessageContext context, Func<Task> next)
         {
             Order?.Add("global:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             Order?.Add("global:after");
         }
     }
@@ -256,28 +256,28 @@ public sealed class MediatorMiddlewareTests
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MediatorContext<T> context, Func<Task> next)
         {
             Order?.Add("pattern:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             Order?.Add("pattern:after");
         }
     }
 
-    private sealed class ShortCircuitMiddleware<T> : IMiddleware<MediatorContext<T>>
+    private sealed class ShortCircuitMiddleware : IMiddleware<MessageContext>
     {
-        public Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next) => Task.CompletedTask;
+        public Task InvokeAsync(MessageContext context, Func<Task> next) => Task.CompletedTask;
     }
 
-    private sealed class HandlerMiddleware<T> : IMiddleware<MediatorContext<T>>
+    private sealed class HandlerMiddleware : IMiddleware<MediatorContext>
     {
         [ThreadStatic]
         internal static List<string>? Order;
 
-        public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+        public async Task InvokeAsync(MediatorContext context, Func<Task> next)
         {
             Order?.Add("handler:before");
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             Order?.Add("handler:after");
         }
     }

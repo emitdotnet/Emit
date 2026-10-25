@@ -83,14 +83,14 @@ public class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : IConsume
 For cross-cutting log context (adding a tenant ID to every message log, for example), use middleware to open a scope once and let all downstream code benefit:
 
 ```csharp
-public class TenantLoggingMiddleware<T>(ILogger<TenantLoggingMiddleware<T>> logger, ITenantResolver tenant)
-    : IMiddleware<ConsumeContext<T>>
+public class TenantLoggingMiddleware(ILogger<TenantLoggingMiddleware> logger, ITenantResolver tenant)
+    : IMiddleware<ConsumeContext>
 {
-    public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+    public async Task InvokeAsync(ConsumeContext context, Func<Task> next)
     {
         var tenantId = await tenant.ResolveAsync(context, context.CancellationToken);
         using var scope = logger.BeginScope(new { TenantId = tenantId });
-        await next.InvokeAsync(context);
+        await next();
     }
 }
 ```

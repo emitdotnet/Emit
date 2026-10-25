@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Middleware that starts the <c>create</c> span of an outbound message and makes it the message's creation
 /// context: its W3C trace context (traceparent, tracestate, baggage) goes into
-/// <see cref="SendContext{T}.Headers"/>, so whatever sends and consumes the message joins its trace.
+/// <see cref="SendContext.Headers"/>, so whatever sends and consumes the message joins its trace.
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ProduceTracingMiddleware<TMessage>(
@@ -23,11 +23,11 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
     public async Task InvokeAsync(
         SendContext<TMessage> context,
-        IMiddlewarePipeline<SendContext<TMessage>> next)
+        Func<Task> next)
     {
         if (!MessagingActivity.IsEnabled(EmitActivitySources.Producer, options))
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -46,7 +46,7 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
         if (activity is null)
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -63,7 +63,7 @@ internal sealed class ProduceTracingMiddleware<TMessage>(
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (Exception exception)
         {

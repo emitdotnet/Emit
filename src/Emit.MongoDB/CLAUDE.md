@@ -12,10 +12,13 @@ MongoDB persistence provider: outbox repository with sharding support and atomic
 | `MongoDbDistributedLockProvider.cs` | IDistributedLockProvider implementation using MongoDB atomic upserts and TTL index | Implement or debug distributed lock behavior |
 | `MongoDbDaemonAssignmentPersistence.cs` | IDaemonAssignmentPersistence implementation for MongoDB | Understand or debug daemon assignment persistence |
 | `MongoDbLeaderElectionPersistence.cs` | ILeaderElectionPersistence implementation for MongoDB | Understand or debug leader election persistence |
-| `IMongoTransactionContext.cs` | MongoDB-specific ITransactionContext adding access to the IClientSessionHandle | Enlist a MongoDB session or access the raw session handle |
 | `MongoTransactionContext.cs` | IMongoTransactionContext implementation wrapping IClientSessionHandle with commit/rollback state tracking | Debug MongoDB transaction lifecycle or understand double-commit guard |
-| `MongoTransactionExtensions.cs` | BeginMongoTransactionAsync extension on IEmitContext starting a MongoDB session transaction and associating it with the context | Open a transaction in a MongoDB handler before producing messages |
 | `Emit.MongoDB.csproj` | Project file with MongoDB.Driver dependency | Configure MongoDB provider dependencies |
+| `IMongoSessionAccessor.cs` | Access to the active MongoDB session of the current scope, to enlist repository operations in the ambient transaction | Write MongoDB repositories that join the transaction |
+| `IMongoUnitOfWorkTransaction.cs` | MongoDB unit of work transaction exposing its client session | Use the session of an explicit MongoDB transaction |
+| `MongoSessionHolder.cs` | Scoped holder of the active MongoDB session, set when a unit of work begins and cleared when it ends | Understand how the session reaches IMongoSessionAccessor |
+| `MongoUnitOfWork.cs` | MongoDB IUnitOfWork: starts a session and transaction and makes it the ambient transaction | Understand explicit transactions with MongoDB |
+| `MongoUnitOfWorkTransaction.cs` | MongoDB unit of work transaction: commit, rollback, and rollback on dispose when not committed | Debug MongoDB commit or rollback |
 
 ## Subdirectories
 

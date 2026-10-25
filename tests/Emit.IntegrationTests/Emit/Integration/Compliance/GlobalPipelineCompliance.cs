@@ -1,60 +1,59 @@
 namespace Emit.IntegrationTests.Integration.Compliance;
 
+using System.Collections.Concurrent;
 using Emit.Abstractions;
 using Emit.Abstractions.Pipeline;
 using Emit.DependencyInjection;
-using Emit.IntegrationTests.Integration;
+using Emit.Mediator;
+using Emit.Mediator.DependencyInjection;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 
 /// <summary>
-/// Compliance tests for global inbound and outbound pipeline middleware. Derived classes
-/// configure a <c>string, string</c> topic and register middleware on the global
-/// <see cref="EmitBuilder.InboundPipeline"/> and <see cref="EmitBuilder.OutboundPipeline"/>.
+/// Compliance tests for the global middleware levels: <see cref="EmitBuilder.Pipeline"/> runs on every pipeline,
+/// <see cref="EmitBuilder.InboundPipeline"/> on every message consumed, and <see cref="EmitBuilder.OutboundPipeline"/>
+/// on every message produced. Derived classes configure a <c>string, string</c> topic.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class GlobalPipelineCompliance
 {
     /// <summary>
-    /// Configures the messaging provider with a <c>string, string</c> topic that has a producer
-    /// and a consumer group containing <see cref="SinkConsumer{TMessage}"/> of <see cref="string"/>.
-    /// Also registers <see cref="InboundCounterMiddleware"/> on <c>emit.InboundPipeline</c>.
+    /// Configures the messaging provider with a <c>string, string</c> topic that has a producer and a consumer group
+    /// containing <see cref="SinkConsumer{TMessage}"/> of <see cref="string"/>.
     /// </summary>
     /// <param name="emit">The Emit builder to configure.</param>
     /// <param name="topic">The topic name to register.</param>
     /// <param name="groupId">The consumer group ID.</param>
-    protected abstract void ConfigureWithInboundMiddleware(EmitBuilder emit, string topic, string groupId);
+    protected abstract void ConfigureProvider(EmitBuilder emit, string topic, string groupId);
 
     /// <summary>
-    /// Configures the messaging provider with a <c>string, string</c> topic that has a producer
-    /// and a consumer group containing <see cref="SinkConsumer{TMessage}"/> of <see cref="string"/>.
-    /// Also registers <see cref="OutboundCounterMiddleware"/> on <c>emit.OutboundPipeline</c>.
-    /// </summary>
-    /// <param name="emit">The Emit builder to configure.</param>
-    /// <param name="topic">The topic name to register.</param>
-    /// <param name="groupId">The consumer group ID.</param>
-    protected abstract void ConfigureWithOutboundMiddleware(EmitBuilder emit, string topic, string groupId);
-
-    /// <summary>
-    /// Verifies that global inbound middleware is invoked when a message is consumed.
+    /// Verifies that each global level runs on its pipelines and only on them: a message produced and consumed, and
+    /// a mediator request.
     /// </summary>
     [Fact]
-    public async Task GivenGlobalInboundMiddleware_WhenMessageConsumed_ThenMiddlewareInvoked()
+    public async Task GivenMiddlewareOnEachGlobalLevel_WhenAMessageFlowsAndARequestIsSent_ThenEachRunsOnItsPipelinesOnly()
     {
         // Arrange
-        var topic = $"test-inbound-mw-{Guid.NewGuid():N}";
+        var topic = $"test-global-mw-{Guid.NewGuid():N}";
         var groupId = $"group-{Guid.NewGuid():N}";
         var sink = new MessageSink<string>();
-        var counter = new InvocationCounter();
+        var recorder = new PipelineRecorder();
 
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddSingleton(sink);
-                services.AddSingleton(counter);
-                services.AddEmit(emit => ConfigureWithInboundMiddleware(emit, topic, groupId));
+                services.AddSingleton(recorder);
+                services.AddEmit(emit =>
+                {
+                    emit.Pipeline.Use<EveryPipelineMiddleware>();
+                    emit.InboundPipeline.Use<InboundMiddleware>();
+                    emit.OutboundPipeline.Use<OutboundMiddleware>();
+                    emit.AddMediator(mediator => mediator.AddHandler<PingHandler>());
+                    ConfigureProvider(emit, topic, groupId);
+                });
             })
             .Build();
 
@@ -64,13 +63,16 @@ public abstract class GlobalPipelineCompliance
         {
             // Act
             using var scope = host.Services.CreateScope();
-            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
-            await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
+            await scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>()
+                .ProduceAsync(new EventMessage<string, string>("k", "hello"));
+            var consumed = await sink.WaitForMessageAsync();
+            await scope.ServiceProvider.GetRequiredService<IMediator>().SendAsync(new Ping());
 
-            // Assert — consumer received the message and middleware fired.
-            var ctx = await sink.WaitForMessageAsync();
-            Assert.Equal("hello", ctx.Message);
-            Assert.True(counter.Count > 0, $"Expected inbound middleware to be invoked at least once, but count was {counter.Count}.");
+            // Assert
+            Assert.Equal("hello", consumed.Message);
+            Assert.Equal(["consume", "mediator", "send"], recorder.Of(nameof(EveryPipelineMiddleware)));
+            Assert.Equal(["consume"], recorder.Of(nameof(InboundMiddleware)));
+            Assert.Equal(["send"], recorder.Of(nameof(OutboundMiddleware)));
         }
         finally
         {
@@ -80,75 +82,76 @@ public abstract class GlobalPipelineCompliance
     }
 
     /// <summary>
-    /// Verifies that global outbound middleware is invoked when a message is produced,
-    /// and that the message still reaches the consumer.
+    /// Records the kind of pipeline each middleware ran on.
     /// </summary>
-    [Fact]
-    public async Task GivenGlobalOutboundMiddleware_WhenMessageProduced_ThenMiddlewareInvoked()
+    public sealed class PipelineRecorder
     {
-        // Arrange
-        var topic = $"test-outbound-mw-{Guid.NewGuid():N}";
-        var groupId = $"group-{Guid.NewGuid():N}";
-        var sink = new MessageSink<string>();
-        var counter = new InvocationCounter();
+        private readonly ConcurrentQueue<(string Middleware, string Pipeline)> entries = new();
 
-        var host = Host.CreateDefaultBuilder()
-            .ConfigureServices(services =>
-            {
-                services.AddSingleton(sink);
-                services.AddSingleton(counter);
-                services.AddEmit(emit => ConfigureWithOutboundMiddleware(emit, topic, groupId));
-            })
-            .Build();
-
-        await host.StartAsync();
-
-        try
+        /// <summary>Records that <paramref name="middleware"/> ran on the pipeline of <paramref name="context"/>.</summary>
+        public void Record(string middleware, MessageContext context) => entries.Enqueue((middleware, context switch
         {
-            // Act
-            using var scope = host.Services.CreateScope();
-            var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
-            await producer.ProduceAsync(new EventMessage<string, string>("k", "hello"));
+            ConsumeContext => "consume",
+            SendContext => "send",
+            MediatorContext => "mediator",
+            _ => context.GetType().Name,
+        }));
 
-            // Assert — consumer received the message and outbound middleware fired.
-            var ctx = await sink.WaitForMessageAsync();
-            Assert.Equal("hello", ctx.Message);
-            Assert.True(counter.Count > 0, $"Expected outbound middleware to be invoked at least once, but count was {counter.Count}.");
-        }
-        finally
+        /// <summary>The kinds of pipeline <paramref name="middleware"/> ran on, in alphabetical order.</summary>
+        public IReadOnlyList<string> Of(string middleware) =>
+            [.. entries.Where(e => e.Middleware == middleware).Select(e => e.Pipeline).Order()];
+    }
+
+    /// <summary>
+    /// Middleware of every pipeline.
+    /// </summary>
+    public sealed class EveryPipelineMiddleware(PipelineRecorder recorder) : IMiddleware<MessageContext>
+    {
+        /// <inheritdoc />
+        public Task InvokeAsync(MessageContext context, Func<Task> next)
         {
-            await host.StopAsync();
-            host.Dispose();
+            recorder.Record(nameof(EveryPipelineMiddleware), context);
+            return next();
         }
     }
 
     /// <summary>
-    /// Global inbound middleware that increments an <see cref="InvocationCounter"/> and
-    /// delegates to the next middleware in the pipeline.
+    /// Middleware of every message consumed.
     /// </summary>
-    public sealed class InboundCounterMiddleware(InvocationCounter counter)
-        : IMiddleware<ConsumeContext<string>>
+    public sealed class InboundMiddleware(PipelineRecorder recorder) : IMiddleware<ConsumeContext>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next)
+        public Task InvokeAsync(ConsumeContext context, Func<Task> next)
         {
-            counter.Increment();
-            await next.InvokeAsync(context);
+            recorder.Record(nameof(InboundMiddleware), context);
+            return next();
         }
     }
 
     /// <summary>
-    /// Global outbound middleware that increments an <see cref="InvocationCounter"/> and
-    /// delegates to the next middleware in the pipeline.
+    /// Middleware of every message produced.
     /// </summary>
-    public sealed class OutboundCounterMiddleware(InvocationCounter counter)
-        : IMiddleware<SendContext<string>>
+    public sealed class OutboundMiddleware(PipelineRecorder recorder) : IMiddleware<SendContext>
     {
         /// <inheritdoc />
-        public async Task InvokeAsync(SendContext<string> context, IMiddlewarePipeline<SendContext<string>> next)
+        public Task InvokeAsync(SendContext context, Func<Task> next)
         {
-            counter.Increment();
-            await next.InvokeAsync(context);
+            recorder.Record(nameof(OutboundMiddleware), context);
+            return next();
         }
+    }
+
+    /// <summary>
+    /// A mediator request without a response.
+    /// </summary>
+    public sealed record Ping : IRequest;
+
+    /// <summary>
+    /// Handles <see cref="Ping"/>.
+    /// </summary>
+    public sealed class PingHandler : IRequestHandler<Ping>
+    {
+        /// <inheritdoc />
+        public Task HandleAsync(Ping request, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

@@ -2,7 +2,6 @@ namespace Emit.Kafka.Consumer;
 
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
-using Emit.Abstractions.Pipeline;
 using Emit.Consumer;
 using Emit.Pipeline;
 using ConfluentKafka = Confluent.Kafka;

@@ -3,7 +3,6 @@ namespace Emit.UnitTests.Pipeline.Modules;
 using global::Emit.Abstractions;
 using global::Emit.Abstractions.ErrorHandling;
 using global::Emit.Abstractions.Metrics;
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Metrics;
 using global::Emit.Pipeline.Modules;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,18 +35,18 @@ public sealed class ValidationMiddlewareTests
         };
     }
 
-    private static TestPipeline<ConsumeContext<string>> RecordingNext(out Action assertCalled)
+    private static Func<Task> RecordingNext(out Action assertCalled)
     {
         var called = false;
         assertCalled = () => Assert.True(called, "Expected next pipeline to be invoked, but it was not.");
-        return new TestPipeline<ConsumeContext<string>>(_ => { called = true; return Task.CompletedTask; });
+        return () => { called = true; return Task.CompletedTask; };
     }
 
-    private static TestPipeline<ConsumeContext<string>> RecordingNextNotCalled(out Action assertNotCalled)
+    private static Func<Task> RecordingNextNotCalled(out Action assertNotCalled)
     {
         var called = false;
         assertNotCalled = () => Assert.False(called, "Expected next pipeline NOT to be invoked, but it was.");
-        return new TestPipeline<ConsumeContext<string>>(_ => { called = true; return Task.CompletedTask; });
+        return () => { called = true; return Task.CompletedTask; };
     }
 
     // ── Tests ──
@@ -96,7 +95,7 @@ public sealed class ValidationMiddlewareTests
         var sp = services.BuildServiceProvider();
 
         // Act
-        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), () => Task.CompletedTask);
 
         // Assert
         Assert.Single(sink.ProducedMessages);
@@ -121,7 +120,7 @@ public sealed class ValidationMiddlewareTests
         var sp = services.BuildServiceProvider();
 
         // Act
-        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), () => Task.CompletedTask);
 
         // Assert
         Assert.Equal(1, recorder.Total("emit.consumer.dlq.produced", "reason", "validation"));
@@ -139,7 +138,7 @@ public sealed class ValidationMiddlewareTests
         var sp = services.BuildServiceProvider();
 
         // Act
-        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), () => Task.CompletedTask);
 
         // Assert
         Assert.Empty(sink.ProducedMessages);
@@ -172,7 +171,7 @@ public sealed class ValidationMiddlewareTests
 
         // Act & Assert — transient validator errors propagate so the outer error policy can retry.
         await Assert.ThrowsAsync<TimeoutException>(
-            () => module.InvokeAsync(CreateContext(services), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask)));
+            () => module.InvokeAsync(CreateContext(services), () => Task.CompletedTask));
     }
 
     [Fact]
@@ -188,7 +187,7 @@ public sealed class ValidationMiddlewareTests
         var sp = services.BuildServiceProvider();
 
         // Act
-        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), () => Task.CompletedTask);
 
         // Assert
         Assert.Single(sink.ProducedMessages);
@@ -214,7 +213,7 @@ public sealed class ValidationMiddlewareTests
         var services = BaseServices().BuildServiceProvider();
 
         // Act
-        await module.InvokeAsync(CreateContext(services), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(services), () => Task.CompletedTask);
 
         // Assert
         Assert.True(delegateCalled);
@@ -232,7 +231,7 @@ public sealed class ValidationMiddlewareTests
         module.Configure<StubValidator>(a => a.Discard());
 
         // Act
-        await module.InvokeAsync(CreateContext(sp), new TestPipeline<ConsumeContext<string>>(_ => Task.CompletedTask));
+        await module.InvokeAsync(CreateContext(sp), () => Task.CompletedTask);
 
         // Assert — validator was resolved and invoked (StubValidator always returns Success)
         var validator = sp.GetRequiredService<StubValidator>();

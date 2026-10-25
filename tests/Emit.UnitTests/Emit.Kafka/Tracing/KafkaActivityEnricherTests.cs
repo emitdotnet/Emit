@@ -17,7 +17,7 @@ public sealed class KafkaActivityEnricherTests
         using var activity = new Activity("create");
 
         // Act
-        enricher.Enrich(activity, Context(EnrichmentPhases.Produce, new KafkaProducePayload("order-1", IsTombstone: true)));
+        enricher.Enrich(activity, Context(EnrichmentPhases.Produce, "order-1", message: null));
 
         // Assert
         Assert.Equal(
@@ -35,7 +35,7 @@ public sealed class KafkaActivityEnricherTests
         using var activity = new Activity("create");
 
         // Act
-        enricher.Enrich(activity, Context(EnrichmentPhases.Produce, new KafkaProducePayload(42, IsTombstone: false)));
+        enricher.Enrich(activity, Context(EnrichmentPhases.Produce, 42, message: "value"));
 
         // Assert
         Assert.Empty(activity.TagObjects);
@@ -48,23 +48,23 @@ public sealed class KafkaActivityEnricherTests
         using var activity = new Activity("process");
 
         // Act
-        enricher.Enrich(activity, Context(EnrichmentPhases.Consume, new KafkaProducePayload("order-1", IsTombstone: true)));
+        enricher.Enrich(activity, Context(EnrichmentPhases.Consume, "order-1", message: null));
 
         // Assert
         Assert.Empty(activity.TagObjects);
     }
 
-    private static EnrichmentContext Context(string phase, KafkaProducePayload payload)
+    private static EnrichmentContext Context<TKey>(string phase, TKey key, string? message)
     {
-        var message = new SendContext<string>
+        var context = new SendContext<string?>
         {
             MessageId = "message-1",
             Timestamp = DateTimeOffset.UtcNow,
             CancellationToken = CancellationToken.None,
             Services = null!,
-            Message = "value",
+            Message = message,
         };
-        message.SetPayload(payload);
-        return new EnrichmentContext { MessageContext = message, Phase = phase };
+        context.SetPayload(new KafkaMessageKey<TKey>(key));
+        return new EnrichmentContext { MessageContext = context, Phase = phase };
     }
 }

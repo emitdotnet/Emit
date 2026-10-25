@@ -27,17 +27,17 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `Backoff.cs` | Abstract base with static factories (None, Exponential, Fixed) for retry delay strategies | Configure retry backoff in error policies or implement a custom backoff strategy |
 | `ConsumerKind.cs` | Enum distinguishing Direct consumer handlers from content-based Router dispatchers | Understand consumer identity kind values used in tracing, metrics, and error handling |
 | `ErrorActionBuilder.cs` | Base builder for configuring a terminal error action (DeadLetter, Discard) on a message | Understand how error actions are constructed inside error policy clauses |
-| `MessageContext.cs` | Abstract envelope flowing through pipelines with MessageId, Timestamp, CancellationToken, Services, and Features | Understand pipeline context model |
-| `ConsumeContext.cs` | Post-deserialization consume context carrying the typed message and parent TransportContext | Understand the consume pipeline context or implement consume middleware |
-| `SendContext.cs` | Outbound context for producing messages with typed message data and mutable headers | Implement outbound middleware or understand producer pipeline |
-| `TransportContext.cs` | Pre-deserialization transport context carrying raw bytes, headers, and provider metadata | Understand transport-level pipeline or implement transport middleware |
+| `MessageContext.cs` | Base context of every pipeline: the message, MessageId, Timestamp, CancellationToken, Services, and Features; middleware written for it runs on every pipeline | Understand pipeline context model |
+| `ConsumeContext.cs` | Context of a consumed message (`ConsumeContext`, with TransportContext, headers and retry attempt) and its typed variant `ConsumeContext<T>` | Understand the consume pipeline context or implement consume middleware |
+| `SendContext.cs` | Context of a message produced (`SendContext`, with mutable headers) and its typed variant `SendContext<T>` | Implement outbound middleware or understand producer pipeline |
+| `TransportContext.cs` | Pre-deserialization transport context carrying raw bytes, headers, and provider metadata, and the tracing attributes of its messaging system | Understand what a consumed message arrived in |
 | `IFeatureCollection.cs` | Type-safe feature bag interface used by pipeline contexts for optional, extensible metadata | Add new pipeline features or access existing ones in middleware |
 | `FeatureCollection.cs` | Dictionary-backed IFeatureCollection implementation used by message contexts | Understand how features are stored and retrieved on pipeline contexts |
 | `IConsumerFlowControl.cs` | Pause and resume of a consumer group declaration on this node, resolved as a keyed service under the declaration's name | Pause a consumer group from application code |
 | `IDeadLetterSink.cs` | Interface for producing messages to a dead letter destination by raw bytes and headers | Implement a DLQ producer or understand how failed messages are forwarded |
-| `IInboundConfigurable.cs` | Leaf builder interface for registering typed inbound middleware (Use) and consumer filters (Filter) | Implement a new builder that supports per-consumer pipeline configuration |
+| `IInboundConfigurable.cs` | Builder interface for registering middleware (Use, by type or factory) and consumer filters (Filter) on the consumer pipelines of a message type | Implement a new builder that supports per-consumer pipeline configuration |
 | `IMessageValidator.cs` | Interface for validating incoming messages; return Fail for deterministic failures, throw for transient errors | Implement message validation or understand the validation contract |
-| `IOutboundConfigurable.cs` | Leaf builder interface for registering typed outbound middleware (Use) on producer pipelines | Implement a new builder that supports per-producer pipeline configuration |
+| `IOutboundConfigurable.cs` | Builder interface for registering middleware (Use, by type or factory) on the producer pipeline of a message type | Implement a new builder that supports per-producer pipeline configuration |
 | `IResponseFeature.cs` | Feature interface for request-response patterns, allowing middleware to set a typed response | Implement request-response patterns or access response state in middleware |
 | `MessageValidationResult.cs` | Result type for IMessageValidator with static Success singleton and Fail factory methods | Return or inspect validation outcomes in validators and validation middleware |
 | `MessageValidationException.cs` | Exception thrown when a message fails validation; carries the list of validation error messages | Handle or inspect validation failures in error policies or dead-letter headers |
@@ -49,6 +49,10 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `IBatchMessage.cs` | Marker interface for batch-aware middleware behavior (per-item dead-lettering, rate limiting, metrics) | Implement batch-aware middleware or understand batch detection |
 | `MessageBatch.cs` | Immutable batch of BatchItem<T> flowing through the consume pipeline as the message payload | Understand batch message structure or implement batch consumers |
 | `BatchItem.cs` | Single item within a MessageBatch carrying deserialized message and original transport context | Access per-item data within a batch consumer handler |
+| `INodeIdentity.cs` | The identity of this application instance: node id and service name | Reference the node or service identity |
+| `IUnitOfWork.cs` | Begins a transactional unit of work coordinating business writes and outbox enqueues atomically | Produce through the outbox in an explicit transaction |
+| `IUnitOfWorkTransaction.cs` | An active unit of work: commit to persist everything atomically, dispose without committing to roll back | Understand the explicit transaction API |
+| `TransactionalAttribute.cs` | `[Transactional]`: wraps a consumer or mediator handler in a unit of work | Make a handler transactional |
 
 ## Subdirectories
 
@@ -60,5 +64,5 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `Metrics/` | Metrics enrichment, lock metrics, and meter name constants | Add custom metric enrichment or reference meter names |
 | `Models/` | OutboxEntry domain model | Create, query, or update outbox entries |
 | `Observability/` | Observer interfaces for consume, produce, and outbox lifecycle events | Implement monitoring, logging, or custom instrumentation |
-| `Pipeline/` | Middleware pipeline contracts: delegates, middleware interfaces, and builder interfaces | Implement middleware, understand pipeline architecture, or add new pipeline features |
+| `Pipeline/` | Middleware pipeline contracts: the middleware interface, middleware levels, and builder interfaces | Implement middleware, understand pipeline architecture, or add new pipeline features |
 | `Tracing/` | Activity source names, enrichment context, and activity enricher interface | Implement custom tracing enrichment or reference activity sources |

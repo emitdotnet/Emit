@@ -8,7 +8,9 @@ Unit tests for the Emit.Persistence.MongoDB library: outbox repository, transact
 | ---- | ---- | ------------ |
 | `MongoDbOutboxRepositoryTests.cs` | Unit tests for MongoDbOutboxRepository enqueue, delete, and sequence behavior | Debugging MongoDB repository test failures |
 | `MongoTransactionContextTests.cs` | Unit tests for MongoTransactionContext construction and commit | Debugging MongoDB transaction context test failures |
-| `MongoTransactionExtensionsTests.cs` | Unit tests for MongoDB transaction extension methods | Debugging MongoDB transaction extension test failures |
+| `MongoSessionHolderTests.cs` | Mongo session holder: empty until set | Debugging session holder test failures |
+| `MongoUnitOfWorkTests.cs` | MongoDB unit of work starting a session and transaction, making it ambient and setting the session holder | Debugging MongoDB unit of work test failures |
+| `MongoUnitOfWorkTransactionTests.cs` | MongoDB transaction: commit, rollback, session access, rollback on dispose, ambient transaction cleared | Debugging MongoDB transaction test failures |
 
 ## Subdirectories
 

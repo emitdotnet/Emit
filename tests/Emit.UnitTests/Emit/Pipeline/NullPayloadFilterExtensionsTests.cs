@@ -96,7 +96,6 @@ public sealed class NullPayloadFilterExtensionsTests
 
         public int RegisteredPredicateCount { get; private set; }
 
-        public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
 
         public IConsumerGroupConfigurable<string> OnError(Action<ErrorPolicyBuilder> configure) => this;
 
@@ -113,6 +112,10 @@ public sealed class NullPayloadFilterExtensionsTests
 
         public IInboundConfigurable<string> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
             where TMiddleware : class, IMiddleware<ConsumeContext<string>> => this;
+
+        public IInboundConfigurable<string> Use(
+            Func<IServiceProvider, IMiddleware<ConsumeContext<string>>> factory,
+            MiddlewareLifetime lifetime = default) => this;
 
         public IInboundConfigurable<string> Filter<TFilter>()
             where TFilter : class, IConsumerFilter<string> => this;

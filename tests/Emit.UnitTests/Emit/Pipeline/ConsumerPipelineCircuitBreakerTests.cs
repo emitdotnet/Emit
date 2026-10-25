@@ -208,9 +208,10 @@ public sealed class ConsumerPipelineCircuitBreakerTests
             Services = services.BuildServiceProvider(),
             LoggerFactory = NullLoggerFactory.Instance,
             ConsumeObservers = [],
-            GroupPipeline = new MessagePipelineBuilder(),
-            GlobalInboundPipeline = new MessagePipelineBuilder(),
-            ProviderInboundPipeline = new MessagePipelineBuilder(),
+            GroupPipeline = new MessagePipelineBuilder<ConsumeContext<string>>(),
+            GlobalPipeline = new MessagePipelineBuilder<MessageContext>(),
+            GlobalInboundPipeline = new MessagePipelineBuilder<ConsumeContext>(),
+            ProviderInboundPipeline = new MessagePipelineBuilder<ConsumeContext>(),
             ValidationMiddleware = validation,
             FilterMiddleware = filter,
             RetryPolicy = retryPolicy,
@@ -246,13 +247,13 @@ public sealed class ConsumerPipelineCircuitBreakerTests
 
     private sealed class ThrowingMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) =>
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next) =>
             throw new InvalidOperationException("dependency unavailable");
     }
 
     private sealed class SkippingMiddleware : IMiddleware<ConsumeContext<string>>
     {
-        public Task InvokeAsync(ConsumeContext<string> context, IMiddlewarePipeline<ConsumeContext<string>> next) =>
+        public Task InvokeAsync(ConsumeContext<string> context, Func<Task> next) =>
             Task.CompletedTask;
     }
 }

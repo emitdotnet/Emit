@@ -1,6 +1,7 @@
 namespace Emit.Routing;
 
-using Emit.Abstractions.Pipeline;
+using Emit.Abstractions;
+using Emit.Pipeline;
 
 /// <summary>
 /// Holds the configuration for a single route registered via the router builder.
@@ -14,5 +15,5 @@ internal sealed class RouteEntry<TMessage>
     public required Type ConsumerType { get; init; }
 
     /// <summary>Optional per-route middleware pipeline, or <c>null</c> if no per-route middleware was configured.</summary>
-    public IMessagePipelineBuilder? Pipeline { get; init; }
+    public MessagePipelineBuilder<ConsumeContext<TMessage>>? Pipeline { get; init; }
 }

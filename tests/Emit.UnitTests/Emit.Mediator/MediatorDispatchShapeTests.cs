@@ -1,6 +1,7 @@
 namespace Emit.Mediator.Tests;
 
 using System.Runtime.CompilerServices;
+using global::Emit.Abstractions;
 using global::Emit.Abstractions.Pipeline;
 using global::Emit.DependencyInjection;
 using global::Emit.Mediator;
@@ -130,10 +131,10 @@ public abstract class MediatorDispatchShapeTests
 
         services.AddEmit(emit =>
         {
-            emit.InboundPipeline.Use(typeof(GlobalRecordingMiddleware<>));
+            emit.Pipeline.Use<GlobalRecordingMiddleware>();
             emit.AddMediator(mediator =>
             {
-                mediator.InboundPipeline.Use(typeof(MediatorRecordingMiddleware<>));
+                mediator.Pipeline.Use(typeof(MediatorRecordingMiddleware<>));
                 configure(mediator);
             });
         });
@@ -166,15 +167,15 @@ internal sealed class ScopeProbe
     public Guid Id { get; } = Guid.NewGuid();
 }
 
-internal sealed class GlobalRecordingMiddleware<T> : IMiddleware<MediatorContext<T>>
+internal sealed class GlobalRecordingMiddleware : IMiddleware<MessageContext>
 {
-    public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+    public async Task InvokeAsync(MessageContext context, Func<Task> next)
     {
         var tracker = context.Services.GetRequiredService<DispatchTracker>();
         tracker.Add("global:enter");
         try
         {
-            await next.InvokeAsync(context);
+            await next();
         }
         finally
         {
@@ -185,13 +186,13 @@ internal sealed class GlobalRecordingMiddleware<T> : IMiddleware<MediatorContext
 
 internal sealed class MediatorRecordingMiddleware<T> : IMiddleware<MediatorContext<T>>
 {
-    public async Task InvokeAsync(MediatorContext<T> context, IMiddlewarePipeline<MediatorContext<T>> next)
+    public async Task InvokeAsync(MediatorContext<T> context, Func<Task> next)
     {
         var tracker = context.Services.GetRequiredService<DispatchTracker>();
         tracker.Add("mediator:enter");
         try
         {
-            await next.InvokeAsync(context);
+            await next();
         }
         finally
         {

@@ -1,6 +1,5 @@
 namespace Emit.UnitTests.Mediator.Observability;
 
-using global::Emit.Abstractions.Pipeline;
 using global::Emit.Mediator;
 using global::Emit.Mediator.Observability;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,11 +18,11 @@ public class MediatorObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -54,11 +53,11 @@ public class MediatorObserverMiddlewareTests
             NullLogger<MediatorObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             callSequence.Add("Next");
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);
@@ -79,7 +78,7 @@ public class MediatorObserverMiddlewareTests
             NullLogger<MediatorObserverMiddleware<string>>.Instance);
 
         var context = CreateContext();
-        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(_ => throw expectedException);
+        Func<Task> next = () => throw expectedException;
 
         // Act & Assert
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -109,11 +108,11 @@ public class MediatorObserverMiddlewareTests
 
         var context = CreateContext();
         var nextCalled = false;
-        IMiddlewarePipeline<MediatorContext<string>> next = new TestPipeline<MediatorContext<string>>(ctx =>
+        Func<Task> next = () =>
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        };
 
         // Act
         await middleware.InvokeAsync(context, next);

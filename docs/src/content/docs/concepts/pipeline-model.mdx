@@ -29,8 +29,9 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
     T["Tracing"] --> A["Error handling"]
     A --> B["Observers"]
     B --> D["Metrics"]
-    D --> E["User middleware (Global → Provider → Group)"]
-    E --> F["Retry"]
+    D --> E["User middleware (Every pipeline → Global → Provider → Group)"]
+    E --> R["Rate limit"]
+    R --> F["Retry"]
     F --> G["Filters"]
     G --> H["Validation"]
     H --> I["Unit of work"]
@@ -43,7 +44,8 @@ After fan-out, each consumer runs its own fully composed pipeline from outermost
 | **Error handling** | Catches exceptions, records the failure on the `process` span, evaluates the error policy (dead-letter, discard) | Yes |
 | **Observers** | Invokes registered `IConsumeObserver` callbacks | Yes |
 | **Metrics** | Records duration and success/failure counters | Yes |
-| **User middleware** | Your custom middleware, composed Global to Provider to Group | Only if registered |
+| **User middleware** | Your custom middleware, composed from the level of every pipeline to the group level | Only if registered |
+| **Rate limit** | Waits for the consumer group's rate limiter to let the message through; a batch takes one permit per item | Only if configured |
 | **Retry** | Runs each attempt (filters, validation and the unit of work): re-executes it on failure, as the matching error policy clause decides, and holds it while the circuit breaker is open, reporting its outcome | Only if the error policy retries or a circuit breaker is configured |
 | **Filters** | Runs consumer filters; a message a filter rejects stops here | Only if configured |
 | **Validation** | Runs `IMessageValidator<T>` before the handler | Only if configured |
@@ -69,10 +71,10 @@ The outbound path is simpler: no fan-out, no deserialization. When you call `IEv
 
 | Layer | What it does | Always present? |
 |---|---|---|
-| **Observers** | Invokes registered `IProduceObserver` callbacks | Yes |
 | **Tracing** | Starts the `create` span of the message and puts its trace context in the headers | Yes |
 | **Metrics** | Records produce duration and counters | Yes |
-| **User middleware** | Your custom middleware, composed Global to Provider to per-producer | Only if registered |
+| **Observers** | Invokes registered `IProduceObserver` callbacks | Yes |
+| **User middleware** | Your custom middleware, composed from the level of every pipeline to the per-producer level | Only if registered |
 | **Terminal** | Delivers the message to its destination | Yes |
 
 The terminal is selected at registration time. When outbox infrastructure is configured, the outbox terminal is the default. Producers can opt out with `UseDirect()`:
@@ -82,13 +84,20 @@ The terminal is selected at registration time. When outbox infrastructure is con
 
 ## Context objects
 
-Middleware receives a typed context that carries everything relevant to one message's journey. The context type determines which pipeline direction the middleware belongs to.
+Middleware receives a context that carries everything relevant to one message's journey. Each kind of pipeline has its own context, with a typed variant per message type:
 
-`ConsumeContext<T>` is the inbound context. It extends `MessageContext<T>`, which extends `MessageContext`. Beyond the common properties, it adds a `TransportContext` reference, the raw headers from the broker, and a `RetryAttempt` counter. The active transaction, if any, is available from the scoped `IEmitContext`.
+<Mermaid code={`flowchart TD
+    M["MessageContext"] --> C["ConsumeContext"] --> CT["ConsumeContext&lt;T&gt;"]
+    M --> S["SendContext"] --> ST["SendContext&lt;T&gt;"]
+    M --> R["MediatorContext"] --> RT["MediatorContext&lt;T&gt;"]`} />
 
-`SendContext<T>` is the outbound context. It also extends `MessageContext<T>` and adds a mutable headers list you can write to before the message leaves.
+`MessageContext` is shared by all of them: the message, `MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `CancellationToken`, `Services` (the current DI scope), a feature collection, and a payload bag.
 
-All contexts share the `MessageContext` base: `MessageId`, `Timestamp`, `DestinationAddress`, `SourceAddress`, `CancellationToken`, `Services` (the current DI scope), a feature collection, and a payload bag.
+`ConsumeContext` is the context of a message consumed. It adds a `TransportContext` reference, the raw headers from the broker, and a `RetryAttempt` counter. The active transaction, if any, is available from the scoped `IEmitContext`.
+
+`SendContext` is the context of a message produced. It adds a mutable headers list you can write to before the message leaves.
+
+The typed variants, such as `ConsumeContext<T>`, give you the message as `T`. A middleware runs on every pipeline whose context derives from the one it is written for: see [Custom Middleware](../../advanced/custom-middleware/#implementing-middleware).
 
 ### Transport context
 
@@ -103,11 +112,12 @@ See [Feature Collection & Payload Bag](../../advanced/feature-collection/) for t
 
 ## Middleware levels
 
-User middleware composes across four levels, each narrowing scope. Higher levels run outside lower levels, exactly like ASP.NET Core middleware wrapping your endpoints.
+User middleware composes across five levels, each narrowing scope. Higher levels run outside lower levels, exactly like ASP.NET Core middleware wrapping your endpoints.
 
 | Level | Scope | Configured on |
 |---|---|---|
-| **Global** | Every message, every provider | `EmitBuilder` |
+| **Every pipeline** | Every message consumed or produced, and every mediator request | `EmitBuilder.Pipeline` |
+| **Global** | Every message consumed, or every message produced, whatever its provider | `EmitBuilder.InboundPipeline`, `EmitBuilder.OutboundPipeline` |
 | **Provider** | All messages for one provider | Provider builder (e.g. `KafkaBuilder`) |
 | **Group** | One consumer group or producer | Group or producer builder |
 | **Leaf** | One consumer, route, or per-producer registration | Consumer, route, or producer builder |

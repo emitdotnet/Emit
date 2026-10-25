@@ -7,6 +7,7 @@ namespace Emit.OpenTelemetry;
 public sealed class EmitInstrumentationOptions
 {
     private readonly List<KeyValuePair<string, object?>> tags = [];
+    private readonly HashSet<string> disabledMeters = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets or sets whether the <c>Emit</c> meter (pipeline and consumer middleware) is enabled. Default: <c>true</c>.
@@ -29,19 +30,17 @@ public sealed class EmitInstrumentationOptions
     public bool EnableDaemonMeter { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets whether the <c>Emit.Mediator</c> meter (mediator request dispatch) is enabled. Default: <c>true</c>.
+    /// Stops subscribing to a meter an optional Emit package registers, such as the broker statistics of the Kafka
+    /// provider or the mediator's. Every package meter is subscribed to otherwise.
     /// </summary>
-    public bool EnableMediatorMeter { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets whether the <c>Emit.Kafka</c> meter (Kafka producer/consumer) is enabled. Default: <c>true</c>.
-    /// </summary>
-    public bool EnableKafkaMeter { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets whether the <c>Emit.Kafka.Broker</c> meter (librdkafka broker statistics) is enabled. Default: <c>true</c>.
-    /// </summary>
-    public bool EnableKafkaBrokerMeter { get; set; } = true;
+    /// <param name="meterName">The name of the package meter.</param>
+    /// <returns>This options instance for method chaining.</returns>
+    public EmitInstrumentationOptions DisableMeter(string meterName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(meterName);
+        disabledMeters.Add(meterName);
+        return this;
+    }
 
     /// <summary>
     /// Adds a static tag that will be appended to every metric recorded by Emit.
@@ -58,4 +57,6 @@ public sealed class EmitInstrumentationOptions
     }
 
     internal ReadOnlyMemory<KeyValuePair<string, object?>> GetTags() => tags.ToArray();
+
+    internal bool IsDisabled(string meterName) => disabledMeters.Contains(meterName);
 }

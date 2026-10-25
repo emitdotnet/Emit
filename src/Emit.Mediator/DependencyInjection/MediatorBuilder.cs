@@ -7,16 +7,16 @@ using Emit.Pipeline;
 /// <summary>
 /// Configures handler registrations for the mediator.
 /// </summary>
-public sealed class MediatorBuilder : IInboundConfigurable
+public sealed class MediatorBuilder
 {
     private readonly Dictionary<Type, HandlerRegistration> registrations = [];
     private readonly List<Type> observerTypes = [];
 
     /// <summary>
-    /// Gets the mediator-level inbound middleware pipeline builder. Middleware registered here
-    /// wraps all mediator request handlers.
+    /// Gets the middleware level of every mediator request. It runs inside the level of every pipeline,
+    /// <see cref="Emit.DependencyInjection.EmitBuilder.Pipeline"/>, and wraps every request handler.
     /// </summary>
-    public IMessagePipelineBuilder InboundPipeline { get; } = new MessagePipelineBuilder();
+    public IMessagePipelineBuilder<MediatorContext> Pipeline => PipelineLevel;
 
     /// <summary>
     /// Gets the handler registrations, keyed by request type.
@@ -27,6 +27,11 @@ public sealed class MediatorBuilder : IInboundConfigurable
     /// Gets the registered observer types.
     /// </summary>
     internal IReadOnlyList<Type> ObserverTypes => observerTypes;
+
+    /// <summary>
+    /// The level behind <see cref="Pipeline"/>.
+    /// </summary>
+    internal MessagePipelineBuilder<MediatorContext> PipelineLevel { get; } = new(typeof(MediatorContext<>));
 
     /// <summary>
     /// Creates a new mediator builder.
@@ -53,7 +58,7 @@ public sealed class MediatorBuilder : IInboundConfigurable
     /// <summary>
     /// Registers a handler type with per-handler middleware configuration.
     /// Middleware registered here wraps only this handler, forming the innermost pipeline layer
-    /// (global → mediator → per-handler → terminal). The <typeparamref name="TRequest"/> type
+    /// (every pipeline → mediator → unit of work → per-handler → handler). The <typeparamref name="TRequest"/> type
     /// parameter constrains the middleware builder so that only middleware compatible with the
     /// handler's request type can be registered.
     /// </summary>
@@ -124,7 +129,7 @@ public sealed class MediatorBuilder : IInboundConfigurable
             $"{nameof(IStreamRequestHandler<,>)}<{requestType.Name}, TResponse>.");
     }
 
-    private void RegisterHandler<THandler>(IMessagePipelineBuilder? handlerPipeline) where THandler : class, IRequestHandler
+    private void RegisterHandler<THandler>(MessagePipelineBuilder? handlerPipeline) where THandler : class, IRequestHandler
     {
         var handlerType = typeof(THandler);
 
@@ -157,7 +162,7 @@ public sealed class MediatorBuilder : IInboundConfigurable
         Type handlerType,
         Type requestType,
         Type? responseType,
-        IMessagePipelineBuilder? handlerPipeline,
+        MessagePipelineBuilder? handlerPipeline,
         bool isStream = false)
     {
         var declaresSingle = requestType.GetInterfaces().Any(i =>
@@ -189,6 +194,6 @@ public sealed class MediatorBuilder : IInboundConfigurable
         Type HandlerType,
         Type RequestType,
         Type? ResponseType,
-        IMessagePipelineBuilder? HandlerPipeline,
+        MessagePipelineBuilder? HandlerPipeline,
         bool IsStream = false);
 }

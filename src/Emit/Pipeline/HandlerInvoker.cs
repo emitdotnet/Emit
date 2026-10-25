@@ -1,7 +1,6 @@
 namespace Emit.Pipeline;
 
 using Emit.Abstractions;
-using Emit.Abstractions.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>

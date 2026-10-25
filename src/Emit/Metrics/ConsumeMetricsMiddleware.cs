@@ -14,14 +14,14 @@ internal sealed class ConsumeMetricsMiddleware<TMessage>(
     string consumerIdentifier) : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, Func<Task> next)
     {
         var provider = EmitEndpointAddress.GetScheme(context.DestinationAddress) ?? "unknown";
         var start = Stopwatch.GetTimestamp();
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(start).TotalSeconds;
             metrics.RecordConsumeCompleted(elapsed, provider, EmitMetrics.ResultSuccess, consumerIdentifier);

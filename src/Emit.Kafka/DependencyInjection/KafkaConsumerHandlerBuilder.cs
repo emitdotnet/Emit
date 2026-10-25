@@ -14,19 +14,25 @@ using Emit.Pipeline.Modules;
 /// <typeparam name="TValue">The message value type.</typeparam>
 public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<TValue>
 {
-    /// <inheritdoc />
-    IMessagePipelineBuilder IInboundConfigurable.InboundPipeline => Pipeline;
-
     /// <summary>
-    /// Gets the per-consumer middleware pipeline builder.
+    /// Gets the per-consumer middleware level.
     /// </summary>
-    internal IMessagePipelineBuilder Pipeline { get; } = new MessagePipelineBuilder();
+    internal MessagePipelineBuilder<ConsumeContext<TValue>> Pipeline { get; } = new();
 
     /// <inheritdoc />
     public IInboundConfigurable<TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)
         where TMiddleware : class, IMiddleware<ConsumeContext<TValue>>
     {
-        Pipeline.Use(typeof(TMiddleware), lifetime);
+        Pipeline.Use<TMiddleware>(lifetime);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IInboundConfigurable<TValue> Use(
+        Func<IServiceProvider, IMiddleware<ConsumeContext<TValue>>> factory,
+        MiddlewareLifetime lifetime = default)
+    {
+        Pipeline.Use(factory, lifetime);
         return this;
     }
 

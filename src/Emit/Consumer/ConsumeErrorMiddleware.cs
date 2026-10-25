@@ -23,11 +23,11 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
     Type? consumerType) : IMiddleware<ConsumeContext<TMessage>>
 {
     /// <inheritdoc />
-    public async Task InvokeAsync(ConsumeContext<TMessage> context, IMiddlewarePipeline<ConsumeContext<TMessage>> next)
+    public async Task InvokeAsync(ConsumeContext<TMessage> context, Func<Task> next)
     {
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {

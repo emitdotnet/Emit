@@ -14,11 +14,11 @@ internal sealed class MediatorObserverMiddleware<TMessage>(
     private readonly IMediatorObserver[] observers = observers.ToArray();
 
     /// <inheritdoc />
-    public async Task InvokeAsync(MediatorContext<TMessage> context, IMiddlewarePipeline<MediatorContext<TMessage>> next)
+    public async Task InvokeAsync(MediatorContext<TMessage> context, Func<Task> next)
     {
         if (this.observers is [])
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -36,7 +36,7 @@ internal sealed class MediatorObserverMiddleware<TMessage>(
 
         try
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
         }
         catch (Exception ex)
         {

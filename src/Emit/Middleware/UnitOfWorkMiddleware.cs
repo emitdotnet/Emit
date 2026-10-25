@@ -21,7 +21,7 @@ internal sealed class UnitOfWorkMiddleware<TContext>(
     private readonly bool isTransactional = Attribute.IsDefined(handlerType, typeof(TransactionalAttribute));
 
     /// <inheritdoc />
-    public async Task InvokeAsync(TContext context, IMiddlewarePipeline<TContext> next)
+    public async Task InvokeAsync(TContext context, Func<Task> next)
     {
         var emitContext = context.Services.GetRequiredService<IEmitContext>();
 
@@ -61,13 +61,13 @@ internal sealed class UnitOfWorkMiddleware<TContext>(
 
     private async Task ExecuteAsync(
         TContext context,
-        IMiddlewarePipeline<TContext> next,
+        Func<Task> next,
         IEmitContext emitContext,
         UnitOfWorkCallbacks? callbacks)
     {
         if (!isTransactional)
         {
-            await next.InvokeAsync(context).ConfigureAwait(false);
+            await next().ConfigureAwait(false);
             return;
         }
 
@@ -78,7 +78,7 @@ internal sealed class UnitOfWorkMiddleware<TContext>(
 
         callbacks?.Transaction = emitContext.Transaction;
 
-        await next.InvokeAsync(context).ConfigureAwait(false);
+        await next().ConfigureAwait(false);
 
         // Use CancellationToken.None so a shutdown signal racing with a successful handler
         // cannot silently discard committed work by cancelling the commit.

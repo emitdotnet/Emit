@@ -2,7 +2,6 @@ namespace Emit.Routing;
 
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
-using Emit.Abstractions.Pipeline;
 using Emit.Middleware;
 using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,9 +70,8 @@ internal sealed class RouterRegistration<TMessage>
         var subPipelines = new Dictionary<object, (Type ConsumerType, IMiddlewarePipeline<ConsumeContext<TMessage>> Pipeline)>();
         foreach (var route in routes)
         {
-            IMiddlewarePipeline<ConsumeContext<TMessage>> subPipeline = terminalFactory(route.ConsumerType);
-            if (route.Pipeline is not null)
-                subPipeline = route.Pipeline.Build<ConsumeContext<TMessage>, TMessage>(services, subPipeline);
+            var subPipeline = MessagePipelineBuilder.Build<ConsumeContext<TMessage>, TMessage>(
+                services, terminalFactory(route.ConsumerType), route.Pipeline);
             var unitOfWorkMw = new UnitOfWorkMiddleware<ConsumeContext<TMessage>>(route.ConsumerType, unitOfWorkLogger);
             subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(unitOfWorkMw, subPipeline);
             subPipelines[route.RouteKey] = (route.ConsumerType, subPipeline);

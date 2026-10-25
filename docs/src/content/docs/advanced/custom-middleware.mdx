@@ -1,61 +1,73 @@
 ---
 title: Custom Middleware
-description: Writing and registering your own middleware for the inbound and outbound pipelines.
+description: Writing and registering your own middleware for consumers, producers and mediator requests.
 ---
 
 import Mermaid from '../../../components/Mermaid.astro';
 
-Middleware in Emit follows the same pattern as ASP.NET: each component receives the context and a `next` delegate. Call `next` to continue the pipeline; skip it to short-circuit. See [Concepts: Pipeline](../../concepts/pipeline-model/) for the overall model.
+Middleware in Emit follows the same pattern as ASP.NET: each component receives the context and a `next` delegate. Call `next()` to continue the pipeline; skip it to short-circuit. See [Concepts: Pipeline](../../concepts/pipeline-model/) for the overall model.
 
 ## Implementing middleware
 
 ```csharp
-public class TimingMiddleware<T> : IMiddleware<ConsumeContext<T>>
+public class TimingMiddleware(ILogger<TimingMiddleware> logger) : IMiddleware<MessageContext>
 {
-    private readonly ILogger<TimingMiddleware<T>> _logger;
-
-    public TimingMiddleware(ILogger<TimingMiddleware<T>> logger)
-    {
-        _logger = logger;
-    }
-
-    public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+    public async Task InvokeAsync(MessageContext context, Func<Task> next)
     {
         var sw = Stopwatch.StartNew();
         try
         {
-            await next.InvokeAsync(context);
+            await next();
         }
         finally
         {
-            _logger.LogDebug("Message handled in {ElapsedMs}ms", sw.ElapsedMilliseconds);
+            logger.LogDebug("Message {MessageId} handled in {ElapsedMs}ms", context.MessageId, sw.ElapsedMilliseconds);
         }
     }
 }
 ```
 
-For outbound middleware, replace `ConsumeContext<T>` with `SendContext<T>`.
+The context type is the least your middleware needs, and it runs on every pipeline whose context derives from it:
 
-`IMiddlewarePipeline<in TContext>` is contravariant, so a pipeline typed for a base context works with any derived context. Emit closes the open generic at registration time for each message type it handles.
+| Implement | Runs on | Gives you |
+|---|---|---|
+| `IMiddleware<MessageContext>` | Every pipeline: consumers, producers, mediator requests | The message as `object`, its id, timestamp, services, features |
+| `IMiddleware<ConsumeContext>` | Every consumer | Plus `TransportContext`, `Headers`, `RetryAttempt` |
+| `IMiddleware<SendContext>` | Every producer | Plus the writable `Headers` |
+| `IMiddleware<MediatorContext>` | Every mediator request | The request as `object` |
+| `IMiddleware<ConsumeContext<T>>` (or `SendContext<T>`, `MediatorContext<T>`) | Pipelines of message type `T` | The typed `Message` |
+
+Most cross-cutting middleware needs no generics at all. Write a generic middleware only when it needs the message type, for example to resolve an `IValidator<T>` for each message type.
 
 ## Registering middleware
 
-### Global (all messages, all providers)
+Middleware composes across levels, outermost first. Each level only accepts middleware that can run on its pipelines, so registering middleware on the wrong level fails right away: a compile error, or an exception during `AddEmit` for a generic type definition.
+
+### Every pipeline
 
 ```csharp
 builder.Services.AddEmit(emit =>
 {
-    emit.InboundPipeline.Use<TimingMiddleware<>>();    // open generic
-    emit.OutboundPipeline.Use<SigningMiddleware<>>();
+    emit.Pipeline.Use<TimingMiddleware>();   // consumers, producers and mediator requests
 });
 ```
 
-### Provider level (all messages for one provider)
+### Every consumer or producer
+
+```csharp
+emit.InboundPipeline.Use<TenantMiddleware>();    // IMiddleware<ConsumeContext>
+emit.OutboundPipeline.Use<SigningMiddleware>();  // IMiddleware<SendContext>
+
+// Generic middleware that needs the message type, closed for each message type
+emit.InboundPipeline.Use(typeof(ValidationMiddleware<>));
+```
+
+### Provider level
 
 ```csharp
 emit.AddKafka(kafka =>
 {
-    kafka.InboundPipeline.Use<KafkaHeaderMiddleware<>>();
+    kafka.InboundPipeline.Use<KafkaHeaderMiddleware>();
 });
 ```
 
@@ -64,21 +76,23 @@ emit.AddKafka(kafka =>
 ```csharp
 topic.ConsumerGroup("order-processor", group =>
 {
-    group.Use<OrderValidationMiddleware<OrderPlaced>>(); // closed generic is fine here
+    group.Use<OrderValidationMiddleware>();   // IMiddleware<ConsumeContext<OrderPlaced>>, or of a base context
     group.AddConsumer<OrderPlacedConsumer>();
 });
 ```
+
+A group with a batch consumer composes its middleware into the pipeline of the batch, so it must run on batches: `IMiddleware<ConsumeContext>` or `IMiddleware<MessageContext>`, where `context.Message` is the `MessageBatch<T>`.
 
 ### Per-consumer level
 
 ```csharp
 group.AddConsumer<OrderPlacedConsumer>(consumer =>
 {
-    consumer.Use<ConsumerSpecificMiddleware<OrderPlaced>>();
+    consumer.Use<ConsumerSpecificMiddleware>();
 });
 ```
 
-Open generics work at the global and provider levels. Closed generics are required at the group and consumer levels, since the message type is known there.
+Mediator requests have their own levels: see [Mediator: Middleware](../../mediator/#middleware).
 
 ## Middleware lifetimes
 
@@ -96,25 +110,23 @@ See [Configuration Reference: Middleware lifetimes](../configuration/#middleware
 Sometimes you need to construct middleware manually instead of letting the DI container resolve it. Use the factory overload:
 
 ```csharp
-group.Use<OrderPlaced>(sp => new CustomMiddleware<OrderPlaced>(
-    sp.GetRequiredService<ILogger<CustomMiddleware<OrderPlaced>>>(),
+group.Use(sp => new CustomMiddleware(
+    sp.GetRequiredService<ILogger<CustomMiddleware>>(),
     sp.GetRequiredService<IFeatureFlags>()));
 ```
 
-The factory receives `IServiceProvider` and returns the middleware instance. A `MiddlewareLifetime` can be passed as the second parameter; the default is `Singleton`.
-
-This works at all registration levels (global, provider, group, consumer) for both inbound and outbound pipelines.
+The factory receives `IServiceProvider` and returns the middleware instance. A `MiddlewareLifetime` can be passed as the second parameter; the default is `Singleton`. It works at every level except a group with a batch consumer, whose middleware is registered by type.
 
 ## Accessing services
 
 Middleware is resolved from the DI container. For scoped dependencies in `Scoped` middleware, constructor injection works directly. For singleton middleware that needs per-message scoped services, resolve from `context.Services`:
 
 ```csharp
-public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+public async Task InvokeAsync(ConsumeContext context, Func<Task> next)
 {
     var repo = context.Services.GetRequiredService<IOrderRepository>();
     // ...
-    await next.InvokeAsync(context);
+    await next();
 }
 ```
 
@@ -123,15 +135,15 @@ public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<Con
 Returning without calling `next` aborts the pipeline. The message is acknowledged and not retried:
 
 ```csharp
-public async Task InvokeAsync(ConsumeContext<T> context, IMiddlewarePipeline<ConsumeContext<T>> next)
+public async Task InvokeAsync(ConsumeContext context, Func<Task> next)
 {
     if (context.TransportContext is KafkaTransportContext<string> { Key: "__test__" })
     {
-        _logger.LogDebug("Skipping test message");
+        logger.LogDebug("Skipping test message");
         return; // pipeline ends here
     }
 
-    await next.InvokeAsync(context);
+    await next();
 }
 ```
 
@@ -139,17 +151,18 @@ To treat the message as failed and trigger the error policy, throw instead of re
 
 ## Execution order
 
-Middleware executes in registration order, outermost first. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your global middleware.
+Middleware executes in registration order, outermost first. Emit's built-in instrumentation (tracing, metrics, observers) always runs before your middleware.
 
-The transactional middleware wraps only the handler invocation, running inside the retry loop. Custom middleware registered at the consumer level runs outside the transaction unless it is placed after the transactional middleware in the pipeline.
+The unit of work wraps the per-consumer middleware and the handler, inside the retry loop: per-consumer middleware runs inside the transaction, while group and higher levels run outside it.
 
 <Mermaid code={`
 flowchart LR
-    A[Built-in\nTracing/Metrics] --> B[Global\nmiddleware]
-    B --> C[Provider\nmiddleware]
-    C --> D[Group\nmiddleware]
-    D --> E[Consumer\nmiddleware]
-    E --> F[Handler]
+    A[Built-in\nTracing/Metrics] --> B[Every pipeline\nmiddleware]
+    B --> C[Global inbound\nmiddleware]
+    C --> D[Provider\nmiddleware]
+    D --> E[Group\nmiddleware]
+    E --> F[Consumer\nmiddleware]
+    F --> G[Handler]
 `} />
 
 The last-registered middleware at each level is closest to the handler.
