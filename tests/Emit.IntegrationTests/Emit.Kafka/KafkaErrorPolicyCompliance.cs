@@ -35,7 +35,7 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
                 });
             });
 
-            // Source topic — producer + consumer with typed exception clause.
+            // Source topic: producer, and a consumer with a typed exception clause and no Default.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
                 t.UseUtf8Serialization();
@@ -44,9 +44,7 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
                 t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.OnError(e => e
-                        .When<ArgumentException>(a => a.DeadLetter())
-                        .Default(a => a.Discard()));
+                    group.OnError(e => e.When<ArgumentException>(a => a.DeadLetter()));
                     group.AddConsumer<TypedExceptionConsumer>();
                 });
             });
@@ -77,7 +75,7 @@ public class KafkaErrorPolicyCompliance(KafkaContainerFixture fixture)
                 });
             });
 
-            // Source topic — producer + consumer that always throws; predicate filters by message content.
+            // Source topic: producer, and a consumer that always throws; the predicate filters by message content.
             kafka.Topic<string, string>(sourceTopic, t =>
             {
                 t.UseUtf8Serialization();

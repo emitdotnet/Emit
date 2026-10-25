@@ -21,7 +21,7 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class RetryMiddleware<TMessage>(
-    Func<Exception, ErrorAction>? evaluatePolicy,
+    Func<Exception, ErrorAction?>? evaluatePolicy,
     EmitMetrics emitMetrics,
     EmitTracingOptions tracingOptions,
     INodeIdentity nodeIdentity,

@@ -18,7 +18,7 @@ public sealed class ConsumeErrorMiddlewareTests
     // ── Helpers ──
 
     private static ConsumeErrorMiddleware<string> CreateMiddleware(
-        Func<Exception, ErrorAction>? evaluatePolicy = null,
+        Func<Exception, ErrorAction?>? evaluatePolicy = null,
         IDeadLetterSink? deadLetterSink = null,
         EmitMetrics? metrics = null) =>
         new(
@@ -216,7 +216,7 @@ public sealed class ConsumeErrorMiddlewareTests
     // ── Batch dead-letter helpers ──
 
     private static ConsumeErrorMiddleware<MessageBatch<string>> CreateBatchMiddleware(
-        Func<Exception, ErrorAction>? evaluatePolicy = null,
+        Func<Exception, ErrorAction?>? evaluatePolicy = null,
         IDeadLetterSink? deadLetterSink = null,
         EmitMetrics? metrics = null) =>
         new(
@@ -435,18 +435,23 @@ public sealed class ConsumeErrorMiddlewareTests
         Assert.Equal(3, recorder.Total("emit.consumer.discards"));
     }
 
-    [Fact]
-    public async Task GivenNoErrorPolicy_WhenTheHandlerThrows_ThenOneDiscardIsCounted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GivenNoErrorPolicyAction_WhenTheHandlerThrows_ThenTheMessageIsDiscardedAsUnconfigured(bool hasPolicy)
     {
-        // Arrange
+        // Arrange: no policy at all, or a policy with no action for this failure
         using var recorder = new MeasurementRecorder(MeterNames.Emit);
-        var middleware = CreateMiddleware(metrics: new EmitMetrics(null, recorder.Enrichment));
+        var middleware = CreateMiddleware(
+            evaluatePolicy: hasPolicy ? _ => null : null,
+            metrics: new EmitMetrics(null, recorder.Enrichment));
 
         // Act
         await middleware.InvokeAsync(CreateContext(), () => throw new InvalidOperationException("failed"));
 
         // Assert
         Assert.Equal(1, recorder.Total("emit.consumer.discards"));
+        Assert.Equal(1, recorder.Total("emit.consumer.error.actions", "action", EmitMetrics.ErrorActionDiscardUnconfigured));
     }
 
     [Fact]

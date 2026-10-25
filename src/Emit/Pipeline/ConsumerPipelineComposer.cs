@@ -86,13 +86,13 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// stripped. When set, a retry middleware wraps the unit of work and retries each failure
     /// whose matching action is a retry, until that action's attempts are used up.
     /// </summary>
-    public Func<Exception, ErrorAction>? RetryPolicy { get; init; }
+    public Func<Exception, ErrorAction?>? RetryPolicy { get; init; }
 
     /// <summary>
-    /// Gets the optional error policy evaluator. When <see langword="null"/>, failed
+    /// Gets the optional error policy evaluator. When it is <see langword="null"/> or returns no action, failed
     /// messages are discarded with a warning that identifies the consumer by name.
     /// </summary>
-    public Func<Exception, ErrorAction>? ErrorPolicy { get; init; }
+    public Func<Exception, ErrorAction?>? ErrorPolicy { get; init; }
 
     /// <summary>
     /// Gets the optional circuit breaker notifier. When set, the retry middleware holds each attempt

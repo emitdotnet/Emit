@@ -54,7 +54,8 @@ public sealed class ErrorPolicyBuilder
     }
 
     /// <summary>
-    /// Sets the default action applied when no other clause matches or when a clause falls through.
+    /// Sets the action applied when no clause matches. Optional: without it, a failure no clause matches is
+    /// logged as a warning and the message is discarded, as for a consumer group with no error policy.
     /// </summary>
     /// <param name="configure">Configures the default error action.</param>
     /// <returns>This builder for chaining.</returns>
@@ -73,21 +74,10 @@ public sealed class ErrorPolicyBuilder
     }
 
     /// <summary>
-    /// Builds the error policy. Validates that a Default action has been configured.
+    /// Builds the error policy.
     /// </summary>
     /// <returns>The built error policy.</returns>
-    /// <exception cref="InvalidOperationException">Default action was not configured.</exception>
-    public ErrorPolicy Build()
-    {
-        if (defaultAction is null)
-        {
-            throw new InvalidOperationException(
-                $"{nameof(Default)} error action is required when configuring error handling. " +
-                $"Call .{nameof(Default)}(...) on the error policy builder.");
-        }
-
-        return new ErrorPolicy(clauses.ToList(), defaultAction);
-    }
+    public ErrorPolicy Build() => new(clauses.ToList(), defaultAction);
 
     private static ErrorAction BuildAction(Action<ErrorPolicyActionBuilder> configure)
     {

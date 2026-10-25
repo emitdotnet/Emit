@@ -110,14 +110,20 @@ public sealed class ErrorPolicyBuilderTests
     }
 
     [Fact]
-    public void GivenNoDefault_WhenBuild_ThenThrows()
+    public void GivenNoDefault_WhenNoClauseMatches_ThenNoActionIsReturned()
     {
         // Arrange
-        var builder = new ErrorPolicyBuilder()
-            .When<InvalidOperationException>(a => a.Discard());
+        var policy = new ErrorPolicyBuilder()
+            .When<InvalidOperationException>(a => a.DeadLetter())
+            .Build();
 
-        // Act & Assert
-        Assert.Throws<InvalidOperationException>(() => builder.Build());
+        // Act
+        var matched = policy.Evaluate(new InvalidOperationException());
+        var unmatched = policy.Evaluate(new ArgumentException());
+
+        // Assert
+        Assert.IsType<ErrorAction.DeadLetterAction>(matched);
+        Assert.Null(unmatched);
     }
 
     [Fact]

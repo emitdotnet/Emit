@@ -4,7 +4,7 @@ namespace Emit.Abstractions.ErrorHandling;
 /// An immutable error policy built from <see cref="ErrorPolicyBuilder"/>.
 /// Evaluates exceptions against ordered clauses to determine the appropriate action.
 /// </summary>
-public sealed class ErrorPolicy(IReadOnlyList<ErrorClause> clauses, ErrorAction defaultAction)
+public sealed class ErrorPolicy(IReadOnlyList<ErrorClause> clauses, ErrorAction? defaultAction)
 {
     /// <summary>
     /// The ordered clauses in this policy.
@@ -12,17 +12,18 @@ public sealed class ErrorPolicy(IReadOnlyList<ErrorClause> clauses, ErrorAction 
     public IReadOnlyList<ErrorClause> Clauses => clauses;
 
     /// <summary>
-    /// The default action applied when no clause matches.
+    /// The action applied when no clause matches, or <see langword="null"/> when none is configured: the message
+    /// is then discarded with a warning.
     /// </summary>
-    public ErrorAction DefaultAction => defaultAction;
+    public ErrorAction? DefaultAction => defaultAction;
 
     /// <summary>
     /// Evaluates the given exception against the policy clauses and returns the matching action.
     /// Clauses are evaluated in registration order, then Default.
     /// </summary>
     /// <param name="exception">The exception to evaluate.</param>
-    /// <returns>The error action to take.</returns>
-    public ErrorAction Evaluate(Exception exception)
+    /// <returns>The error action to take, or <see langword="null"/> when no clause matches and no Default is configured.</returns>
+    public ErrorAction? Evaluate(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
