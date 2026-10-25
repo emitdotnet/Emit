@@ -109,7 +109,8 @@ public static class KafkaTopicBuilderJsonSchemaExtensions
         where TKey : class
     {
         builder.SetKeyDeserializer(
-            new ConfluentSerdes.JsonDeserializer<TKey>(config, jsonSchemaGeneratorSettings));
+            new ConfluentSerdes.JsonDeserializer<TKey>(config, jsonSchemaGeneratorSettings),
+            InvalidData.Always);
     }
 
     /// <summary>
@@ -128,7 +129,8 @@ public static class KafkaTopicBuilderJsonSchemaExtensions
         where TKey : class
     {
         builder.SetKeyAsyncDeserializerFactory(client =>
-            new ConfluentSerdes.JsonDeserializer<TKey>(client, schema, config, jsonSchemaGeneratorSettings));
+            new ConfluentSerdes.JsonDeserializer<TKey>(client, schema, config, jsonSchemaGeneratorSettings),
+            IsInvalidData);
     }
 
     // ── Value deserializer ──
@@ -146,7 +148,8 @@ public static class KafkaTopicBuilderJsonSchemaExtensions
         where TValue : class
     {
         builder.SetValueDeserializer(
-            new ConfluentSerdes.JsonDeserializer<TValue>(config, jsonSchemaGeneratorSettings));
+            new ConfluentSerdes.JsonDeserializer<TValue>(config, jsonSchemaGeneratorSettings),
+            InvalidData.Always);
     }
 
     /// <summary>
@@ -165,7 +168,10 @@ public static class KafkaTopicBuilderJsonSchemaExtensions
         where TValue : class
     {
         builder.SetValueAsyncDeserializerFactory(client =>
-            new ConfluentSerdes.JsonDeserializer<TValue>(client, schema, config, jsonSchemaGeneratorSettings));
+            new ConfluentSerdes.JsonDeserializer<TValue>(client, schema, config, jsonSchemaGeneratorSettings),
+            IsInvalidData);
     }
 
+    /// <summary>Whether the JSON could not be read or did not map to the message type.</summary>
+    private static bool IsInvalidData(Exception exception) => exception is Newtonsoft.Json.JsonException;
 }

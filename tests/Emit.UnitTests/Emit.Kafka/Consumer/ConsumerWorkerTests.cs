@@ -458,6 +458,7 @@ public sealed class ConsumerWorkerTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
         };
@@ -744,6 +745,7 @@ public sealed class ConsumerWorkerTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = ErrorAction.Discard(),
@@ -763,6 +765,65 @@ public sealed class ConsumerWorkerTests
         Assert.NotNull(consumer.CapturedContext);
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
         mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 1), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenDeserializerFailingForAnotherReasonThanInvalidData_WhenItRecovers_ThenTheMessageIsConsumedWithoutTheErrorAction()
+    {
+        // Arrange: the key deserializer cannot reach its service twice, then succeeds
+        var consumer = new CapturingConsumer();
+        var deserializer = new UnreachableThenWorkingDeserializer(failures: 2);
+        var deadLetterSink = CreateMockDeadLetterSink();
+        var registration = CreateRegistrationWithFailingDeserializer(
+            ErrorAction.DeadLetter(), deserializer, ex => ex is InvalidDataException);
+        var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
+        var worker = CreateWorker(
+            registration: registration,
+            offsetManager: mockOffsetManager.Object,
+            scopeFactory: CreateScopeFactory(typeof(TestConsumer), consumer),
+            deadLetterSink: deadLetterSink.Object);
+        mockOffsetManager.Setup(m => m.MarkAsProcessed("test-topic", 0, 0)).Callback(worker.Complete);
+        worker.Writer.TryWrite(CreateConsumeResult());
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.Equal(3, deserializer.Calls);
+        Assert.Equal("test-key", ((KafkaTransportContext<string>)consumer.CapturedContext!.TransportContext).Key);
+        deadLetterSink.Verify(
+            s => s.ProduceAsync(It.IsAny<byte[]?>(), It.IsAny<byte[]?>(), It.IsAny<IReadOnlyList<KeyValuePair<string, string>>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        mockOffsetManager.Verify(m => m.MarkAsProcessed("test-topic", 0, 0), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenDeserializerFailingForAnotherReasonThanInvalidData_WhenTheWorkerIsCancelled_ThenNeitherTheMessageNorTheOnesAfterItAreHandled()
+    {
+        // Arrange: the key deserializer never reaches its service; the worker is cancelled, as when the host stops
+        // or its pool is stopped on a rebalance
+        var consumer = new CapturingConsumer();
+        var deserializer = new UnreachableThenWorkingDeserializer(failures: int.MaxValue);
+        var registration = CreateRegistrationWithFailingDeserializer(
+            ErrorAction.Discard(), deserializer, ex => ex is InvalidDataException);
+        var mockOffsetManager = new Mock<OffsetManager>(CreateCommitter());
+        var worker = CreateWorker(
+            registration: registration,
+            offsetManager: mockOffsetManager.Object,
+            scopeFactory: CreateScopeFactory(typeof(TestConsumer), consumer));
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 0));
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 1));
+        using var cts = new CancellationTokenSource();
+        deserializer.Failed += () => { if (deserializer.Calls == 2) cts.Cancel(); };
+
+        // Act
+        await worker.RunAsync(cts.Token);
+
+        // Assert
+        Assert.Equal(2, deserializer.Calls);
+        Assert.Null(consumer.CapturedContext);
+        mockOffsetManager.Verify(m => m.MarkAsProcessed(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<long>()), Times.Never);
     }
 
     // ── Batch mode ──
@@ -964,6 +1025,7 @@ public sealed class ConsumerWorkerTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
         };
@@ -972,7 +1034,9 @@ public sealed class ConsumerWorkerTests
     // ── Deserialization error handling ──
 
     private static ConsumerGroupRegistration<string, string> CreateRegistrationWithFailingDeserializer(
-        ErrorAction? deserializationErrorAction = null)
+        ErrorAction? deserializationErrorAction = null,
+        ConfluentKafka.IAsyncDeserializer<string>? keyAsyncDeserializer = null,
+        Func<Exception, bool>? isInvalidKeyData = null)
     {
         return new ConsumerGroupRegistration<string, string>
         {
@@ -980,7 +1044,9 @@ public sealed class ConsumerWorkerTests
             TopicName = "test-topic",
             GroupId = "test-group",
             DestinationAddress = new Uri("kafka://broker:9092/test-topic"),
-            KeyDeserializer = new AlwaysThrowingDeserializer(),
+            KeyDeserializer = keyAsyncDeserializer is null ? new AlwaysThrowingDeserializer() : null,
+            KeyAsyncDeserializer = keyAsyncDeserializer,
+            IsInvalidKeyData = isInvalidKeyData,
             ValueDeserializer = ConfluentKafka.Deserializers.Utf8,
             BuildConsumerPipelines = () => [new ConsumerPipelineEntry<string> { Identifier = "TestConsumer", Kind = ConsumerKind.Direct, ConsumerType = typeof(TestConsumer), Pipeline = new HandlerInvoker<string>(typeof(TestConsumer)) }],
             WorkerCount = 1,
@@ -988,6 +1054,7 @@ public sealed class ConsumerWorkerTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             DeserializationErrorAction = deserializationErrorAction,
@@ -1013,6 +1080,7 @@ public sealed class ConsumerWorkerTests
             BufferSize = bufferSize,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
         };
@@ -1197,6 +1265,27 @@ public sealed class ConsumerWorkerTests
             }
 
             return System.Text.Encoding.UTF8.GetString(data);
+        }
+    }
+
+    /// <summary>Async deserializer whose service cannot be reached for its first calls.</summary>
+    private sealed class UnreachableThenWorkingDeserializer(int failures) : ConfluentKafka.IAsyncDeserializer<string>
+    {
+        private int calls;
+
+        public event Action? Failed;
+
+        public int Calls => Volatile.Read(ref calls);
+
+        public Task<string> DeserializeAsync(ReadOnlyMemory<byte> data, bool isNull, ConfluentKafka.SerializationContext context)
+        {
+            if (Interlocked.Increment(ref calls) <= failures)
+            {
+                Failed?.Invoke();
+                throw new HttpRequestException("No route to host");
+            }
+
+            return Task.FromResult(System.Text.Encoding.UTF8.GetString(data.Span));
         }
     }
 }

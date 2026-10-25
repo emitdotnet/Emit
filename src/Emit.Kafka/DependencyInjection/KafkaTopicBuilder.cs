@@ -57,6 +57,18 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
     /// <summary>Factory for creating the async value deserializer from a schema registry client.</summary>
     internal Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TValue>>? ValueAsyncDeserializerFactory { get; private set; }
 
+    /// <summary>
+    /// Whether a failure of the async key deserializer means the bytes are invalid, or <see langword="null"/> for a
+    /// synchronous one, whose failures always do.
+    /// </summary>
+    internal Func<Exception, bool>? IsInvalidKeyData { get; private set; }
+
+    /// <summary>
+    /// Whether a failure of the async value deserializer means the bytes are invalid, or <see langword="null"/> for a
+    /// synchronous one, whose failures always do.
+    /// </summary>
+    internal Func<Exception, bool>? IsInvalidValueData { get; private set; }
+
     // ── Internal state ──
 
     /// <summary>Whether <see cref="Producer"/> was called.</summary>
@@ -136,13 +148,22 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
 
     /// <summary>
     /// Sets the async key deserializer. Mutually exclusive with the sync overload and factory overload.
+    /// A failure of the deserializer means the bytes are invalid when it throws <see cref="InvalidDataException"/>,
+    /// or an exception <paramref name="isInvalidData"/> recognizes; the message is then handled by the consumer
+    /// group's deserialization error action. Any other failure, such as a service the deserializer calls being
+    /// unreachable, is retried until the message is deserialized.
     /// </summary>
     /// <param name="deserializer">The async key deserializer.</param>
-    public void SetKeyDeserializer(ConfluentKafka.IAsyncDeserializer<TKey> deserializer)
+    /// <param name="isInvalidData">
+    /// Recognizes the other exceptions the deserializer throws for invalid bytes; <see cref="InvalidData.Always"/> for a
+    /// deserializer that calls no service.
+    /// </param>
+    public void SetKeyDeserializer(ConfluentKafka.IAsyncDeserializer<TKey> deserializer, Func<Exception, bool>? isInvalidData = null)
     {
         ArgumentNullException.ThrowIfNull(deserializer);
         ThrowIfAlreadyConfigured(KeyDeserializer, KeyAsyncDeserializerFactory, "key deserializer");
         KeyAsyncDeserializer = deserializer;
+        IsInvalidKeyData = DeserializationFailure.ForAsyncDeserializer(isInvalidData);
     }
 
     /// <summary>
@@ -158,13 +179,22 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
 
     /// <summary>
     /// Sets the async value deserializer. Mutually exclusive with the sync overload and factory overload.
+    /// A failure of the deserializer means the bytes are invalid when it throws <see cref="InvalidDataException"/>,
+    /// or an exception <paramref name="isInvalidData"/> recognizes; the message is then handled by the consumer
+    /// group's deserialization error action. Any other failure, such as a service the deserializer calls being
+    /// unreachable, is retried until the message is deserialized.
     /// </summary>
     /// <param name="deserializer">The async value deserializer.</param>
-    public void SetValueDeserializer(ConfluentKafka.IAsyncDeserializer<TValue> deserializer)
+    /// <param name="isInvalidData">
+    /// Recognizes the other exceptions the deserializer throws for invalid bytes; <see cref="InvalidData.Always"/> for a
+    /// deserializer that calls no service.
+    /// </param>
+    public void SetValueDeserializer(ConfluentKafka.IAsyncDeserializer<TValue> deserializer, Func<Exception, bool>? isInvalidData = null)
     {
         ArgumentNullException.ThrowIfNull(deserializer);
         ThrowIfAlreadyConfigured(ValueDeserializer, ValueAsyncDeserializerFactory, "value deserializer");
         ValueAsyncDeserializer = deserializer;
+        IsInvalidValueData = DeserializationFailure.ForAsyncDeserializer(isInvalidData);
     }
 
     /// <summary>
@@ -194,25 +224,41 @@ public sealed class KafkaTopicBuilder<TKey, TValue>
     /// <summary>
     /// Sets a deferred key deserializer factory that will be resolved at DI time using the schema registry client.
     /// Mutually exclusive with sync and async key deserializer overloads.
+    /// A failure of the deserializer means the bytes are invalid when their framing is wrong, when they fail a data
+    /// quality rule, or when <paramref name="isInvalidData"/> recognizes the exception; the message is then handled
+    /// by the consumer group's deserialization error action. Any other failure, such as an unreachable schema
+    /// registry, is retried until the message is deserialized.
     /// </summary>
     /// <param name="factory">A factory that receives the schema registry client and returns an async key deserializer.</param>
+    /// <param name="isInvalidData">Recognizes the exceptions the deserializer throws for bytes its format cannot decode.</param>
     /// <exception cref="InvalidOperationException">A key deserializer has already been configured.</exception>
-    public void SetKeyAsyncDeserializerFactory(Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TKey>> factory)
+    public void SetKeyAsyncDeserializerFactory(
+        Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TKey>> factory,
+        Func<Exception, bool>? isInvalidData = null)
     {
         ThrowIfAlreadyConfigured(KeyDeserializer, KeyAsyncDeserializer, KeyAsyncDeserializerFactory, "key deserializer");
         KeyAsyncDeserializerFactory = factory;
+        IsInvalidKeyData = DeserializationFailure.ForSchemaRegistryDeserializer(isInvalidData);
     }
 
     /// <summary>
     /// Sets a deferred value deserializer factory that will be resolved at DI time using the schema registry client.
     /// Mutually exclusive with sync and async value deserializer overloads.
+    /// A failure of the deserializer means the bytes are invalid when their framing is wrong, when they fail a data
+    /// quality rule, or when <paramref name="isInvalidData"/> recognizes the exception; the message is then handled
+    /// by the consumer group's deserialization error action. Any other failure, such as an unreachable schema
+    /// registry, is retried until the message is deserialized.
     /// </summary>
     /// <param name="factory">A factory that receives the schema registry client and returns an async value deserializer.</param>
+    /// <param name="isInvalidData">Recognizes the exceptions the deserializer throws for bytes its format cannot decode.</param>
     /// <exception cref="InvalidOperationException">A value deserializer has already been configured.</exception>
-    public void SetValueAsyncDeserializerFactory(Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TValue>> factory)
+    public void SetValueAsyncDeserializerFactory(
+        Func<ConfluentSchemaRegistry.ISchemaRegistryClient, ConfluentKafka.IAsyncDeserializer<TValue>> factory,
+        Func<Exception, bool>? isInvalidData = null)
     {
         ThrowIfAlreadyConfigured(ValueDeserializer, ValueAsyncDeserializer, ValueAsyncDeserializerFactory, "value deserializer");
         ValueAsyncDeserializerFactory = factory;
+        IsInvalidValueData = DeserializationFailure.ForSchemaRegistryDeserializer(isInvalidData);
     }
 
     private static void ThrowIfAlreadyConfigured(object? conflicting1, object? conflicting2, string component)

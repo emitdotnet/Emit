@@ -95,6 +95,30 @@ public sealed class OffsetManagerTests
     }
 
     [Fact]
+    public async Task GivenOffsetsProcessedOutOfOrder_WhenFirstUnhandled_ThenItIsTheLowestNotProcessed()
+    {
+        // Arrange
+        await using var committer = CreateCommitter(Mock.Of<ConfluentKafka.IConsumer<byte[], byte[]>>());
+        var manager = new OffsetManager(committer);
+        manager.Enqueue("topic", 0, 5);
+        manager.Enqueue("topic", 0, 6);
+        manager.Enqueue("topic", 0, 7);
+
+        // Act
+        manager.MarkAsProcessed("topic", 0, 6);
+        var beforeFive = manager.FirstUnhandled("topic", 0);
+        manager.MarkAsProcessed("topic", 0, 5);
+        var afterFive = manager.FirstUnhandled("topic", 0);
+        manager.MarkAsProcessed("topic", 0, 7);
+
+        // Assert
+        Assert.Equal(5, beforeFive);
+        Assert.Equal(7, afterFive);
+        Assert.Null(manager.FirstUnhandled("topic", 0));
+        Assert.Null(manager.FirstUnhandled("topic", 1));
+    }
+
+    [Fact]
     public async Task GivenUnknownPartition_WhenMarkAsProcessed_ThenSilentlyIgnored()
     {
         // Arrange
@@ -128,8 +152,8 @@ public sealed class OffsetManagerTests
     [InlineData(true)]
     public async Task GivenRetiredManager_WhenAWorkerOfItsPoolStillMarksAnOffset_ThenNothingIsCommitted(bool asBatch)
     {
-        // Arrange: a worker can outlive its pool's stop timeout; once the pool is replaced, what it finishes must
-        // not move the commits of the partitions the new pool now tracks
+        // Arrange: a handler that did not stop when cancelled can finish after its pool was replaced; what it
+        // finishes must not move the commits of a partition the consumer may no longer own
         var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
         await using var committer = CreateCommitter(mockConsumer.Object);
         var manager = new OffsetManager(committer);

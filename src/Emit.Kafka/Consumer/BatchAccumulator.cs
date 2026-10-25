@@ -19,7 +19,8 @@ internal sealed class BatchAccumulator(
     /// <summary>
     /// Accumulates up to <c>maxSize</c> messages or until <c>timeout</c>
     /// elapses after the first message arrives. Returns <c>null</c> if the channel completes
-    /// with no messages accumulated.
+    /// with no messages accumulated. Cancelled after the first message, it returns the messages taken so far,
+    /// so none leaves the queue without the caller knowing.
     /// </summary>
     public async Task<List<ConfluentKafka.ConsumeResult<byte[], byte[]>>?> AccumulateAsync(
         CancellationToken cancellationToken)
@@ -60,10 +61,10 @@ internal sealed class BatchAccumulator(
                 taken?.Invoke();
             }
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested
-                                                  && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
-            // Timeout elapsed — dispatch what we have (partial batch)
+            // Timeout elapsed: dispatch what we have (partial batch). When the worker stops instead, the messages
+            // taken are returned all the same, for the worker to count them as unhandled
         }
 
         return batch.Count > 0 ? batch : null;

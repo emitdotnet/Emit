@@ -136,7 +136,7 @@ Kafka producer and consumer client metrics.
 | Instrument | Type | Tags | Description |
 |---|---|---|---|
 | `emit.kafka.consume.messages` | Counter | `consumer_group`, `topic`, `partition` | Messages read from Kafka |
-| `emit.kafka.consume.deserialization.errors` | Counter | `consumer_group`, `topic`, `component`, `action` | Deserialization exceptions |
+| `emit.kafka.consume.deserialization.errors` | Counter | `consumer_group`, `topic`, `component`, `action` | Deserialization exceptions (`dead_letter`, `discard`, or `retry` for a failure other than invalid data) |
 | `emit.kafka.consume.deserialization.duration` | Histogram (s) | `consumer_group`, `component` | Deserializer execution time |
 | `emit.kafka.consume.partition.events` | Counter | `consumer_group`, `topic`, `type` | Partition rebalance events |
 | `emit.kafka.consume.offset.commits` | Counter | `consumer_group`, `result` | Offset commit operations |

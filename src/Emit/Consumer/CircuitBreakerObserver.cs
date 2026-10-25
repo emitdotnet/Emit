@@ -340,7 +340,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
 
     /// <summary>
     /// Enters <see cref="gate"/> to report what a worker did, unless the observer was disposed: the consumer
-    /// stopped, and a worker that outlived the stop has nothing left to change.
+    /// stopped, and there is nothing left to change.
     /// </summary>
     private async ValueTask<bool> TryEnterGateAsync()
     {

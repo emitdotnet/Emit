@@ -3,7 +3,9 @@ namespace Emit.Kafka.Tests;
 using System.Text;
 using Emit.Abstractions;
 using Emit.DependencyInjection;
+using Emit.IntegrationTests.Integration;
 using Emit.Kafka.DependencyInjection;
+using Emit.Kafka.Observability;
 using Emit.Kafka.Tests.TestInfrastructure;
 using Emit.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,6 +119,170 @@ public class KafkaDeserializationErrorTests(KafkaContainerFixture fixture)
         {
             await host.StopAsync();
             host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that messages whose deserializer cannot reach the schema registry are not dead-lettered or
+    /// discarded: they wait, retried, and all arrive in order once the registry can be reached.
+    /// </summary>
+    [Fact]
+    public async Task GivenUnreachableSchemaRegistry_WhenMessagesArrive_ThenTheyWaitAndAllArriveInOrderOnceItIsBack()
+    {
+        // Arrange: the producer reaches the schema registry directly, the consumer through a proxy that is down
+        var topic = $"test-deser-registry-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var sink = new MessageSink<string>();
+        var failures = new InvocationCounter();
+        await using var registry = new ToggleableTcpProxy(new Uri(fixture.SchemaRegistryUrl));
+
+        using var producerHost = BuildAvroHost(fixture.SchemaRegistryUrl, topic, t =>
+        {
+            t.SetUtf8KeySerializer();
+            t.SetAvroValueSerializer();
+            t.Producer();
+        });
+        using var consumerHost = BuildAvroHost(
+            registry.Url,
+            topic,
+            t =>
+            {
+                t.SetUtf8KeyDeserializer();
+                t.SetAvroValueDeserializer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.DeserializationRetryBackoff = Backoff.Fixed(TimeSpan.FromMilliseconds(200));
+                    group.OnDeserializationError(e => e.Discard());
+                    group.AddConsumer<SinkConsumer<string>>();
+                });
+            },
+            services => services.AddSingleton(sink).AddSingleton(failures));
+
+        await producerHost.StartAsync();
+        await consumerHost.StartAsync();
+
+        try
+        {
+            using (var scope = producerHost.Services.CreateScope())
+            {
+                var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
+                foreach (var value in new[] { "first", "second", "third" })
+                {
+                    await producer.ProduceAsync(new EventMessage<string, string>("k1", value));
+                }
+            }
+
+            // Act: the first message is retried while the registry cannot be reached, then the registry is back
+            await TestHelpers.WaitUntilAsync(
+                () => failures.Count >= 3, "The deserialization of the first message was not retried.");
+            Assert.Empty(sink.ReceivedMessages);
+            registry.Up();
+
+            // Assert
+            await TestHelpers.WaitUntilAsync(
+                () => sink.ReceivedMessages.Count == 3, "Not every message arrived once the schema registry was back.");
+            Assert.Equal(["first", "second", "third"], sink.ReceivedMessages.Select(m => m.Message));
+        }
+        finally
+        {
+            await consumerHost.StopAsync();
+            await producerHost.StopAsync();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that bytes the Avro deserializer cannot decode are dead-lettered at once, the schema registry
+    /// being reachable: invalid data is never retried.
+    /// </summary>
+    [Fact]
+    public async Task GivenBytesThatAreNotAvro_WhenConsumed_ThenTheyAreDeadLetteredWithoutRetry()
+    {
+        // Arrange
+        var topic = $"test-deser-avro-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+        var dlqTopic = $"test-deser-avro-dlt-{Guid.NewGuid():N}";
+        var dlqSink = new MessageSink<byte[]>();
+        var failures = new InvocationCounter();
+
+        using var host = BuildAvroHost(
+            fixture.SchemaRegistryUrl,
+            topic,
+            t =>
+            {
+                t.SetUtf8KeyDeserializer();
+                t.SetAvroValueDeserializer();
+                t.ConsumerGroup(groupId, group =>
+                {
+                    group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                    group.OnDeserializationError(e => e.DeadLetter());
+                    group.AddConsumer<NullConsumer>();
+                });
+            },
+            services => services.AddSingleton(dlqSink).AddSingleton(failures),
+            kafka => kafka.DeadLetter(dlqTopic, t => t.ConsumerGroup($"group-dlt-{Guid.NewGuid():N}", group =>
+            {
+                group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
+                group.AddConsumer<SinkConsumer<byte[]>>();
+            })));
+
+        await host.StartAsync();
+
+        try
+        {
+            // Act: a plain JSON payload, which has no schema registry framing
+            using var rawProducer = new ConfluentKafka.ProducerBuilder<byte[], byte[]>(
+                new ConfluentKafka.ProducerConfig { BootstrapServers = fixture.BootstrapServers }).Build();
+            await rawProducer.ProduceAsync(topic, new ConfluentKafka.Message<byte[], byte[]>
+            {
+                Key = Encoding.UTF8.GetBytes("k1"),
+                Value = Encoding.UTF8.GetBytes("""{"not":"avro"}"""),
+            });
+
+            // Assert
+            var ctx = await dlqSink.WaitForMessageAsync();
+            Assert.Equal(
+                typeof(InvalidDataException).FullName,
+                ctx.Headers.First(h => h.Key == DeadLetterHeaders.ExceptionType).Value);
+            Assert.Equal(1, failures.Count);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    private IHost BuildAvroHost(
+        string schemaRegistryUrl,
+        string topic,
+        Action<KafkaTopicBuilder<string, string>> configureTopic,
+        Action<IServiceCollection>? configureServices = null,
+        Action<KafkaBuilder>? configureKafka = null) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                configureServices?.Invoke(services);
+                services.AddEmit(emit => emit.AddKafka(kafka =>
+                {
+                    kafka.ConfigureClient(config => config.BootstrapServers = fixture.BootstrapServers);
+                    kafka.ConfigureSchemaRegistry(registry => registry.Url = schemaRegistryUrl);
+                    kafka.AutoProvision();
+                    kafka.AddConsumerObserver<DeserializationFailureObserver>();
+                    configureKafka?.Invoke(kafka);
+                    kafka.Topic(topic, configureTopic);
+                }));
+            })
+            .Build();
+
+    /// <summary>
+    /// Counts the failed attempts to deserialize a message, when the test registers an <see cref="InvocationCounter"/>.
+    /// </summary>
+    private sealed class DeserializationFailureObserver(IServiceProvider services) : IKafkaConsumerObserver
+    {
+        public Task OnDeserializationErrorAsync(DeserializationErrorEvent e)
+        {
+            services.GetService<InvocationCounter>()?.Increment();
+            return Task.CompletedTask;
         }
     }
 

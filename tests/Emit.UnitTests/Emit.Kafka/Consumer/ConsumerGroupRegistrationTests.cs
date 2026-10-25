@@ -1,5 +1,6 @@
 namespace Emit.Kafka.Tests.Consumer;
 
+using global::Emit.Abstractions;
 using global::Emit.Consumer;
 using global::Emit.Kafka.Consumer;
 using global::Emit.Kafka.DependencyInjection;
@@ -26,6 +27,7 @@ public sealed class ConsumerGroupRegistrationTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = applyClientConfig ?? (_ => { }),
             ApplyConsumerConfigOverrides = applyOverrides ?? (_ => { }),
         };

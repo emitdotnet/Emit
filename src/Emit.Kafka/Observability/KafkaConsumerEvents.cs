@@ -70,4 +70,8 @@ public sealed record OffsetCommitErrorEvent(string GroupId, IReadOnlyList<TopicP
 /// <param name="Partition">The partition the message was consumed from.</param>
 /// <param name="Offset">The offset of the message that failed deserialization.</param>
 /// <param name="Exception">The deserialization exception.</param>
-public sealed record DeserializationErrorEvent(string GroupId, string Topic, int Partition, long Offset, Exception Exception);
+/// <param name="WillRetry">
+/// Whether the deserialization is retried, the failure not meaning invalid data, rather than the message being
+/// handled by the consumer group's deserialization error action.
+/// </param>
+public sealed record DeserializationErrorEvent(string GroupId, string Topic, int Partition, long Offset, Exception Exception, bool WillRetry);

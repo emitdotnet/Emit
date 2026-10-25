@@ -102,7 +102,7 @@ public sealed class KafkaTopicBuilderAvroExtensionsTests
     }
 
     [Fact]
-    public void GivenAvroValueDeserializer_WhenSchemaRegistryConfigured_ThenSetsFactory()
+    public void GivenAvroValueDeserializer_WhenSchemaRegistryConfigured_ThenSetsFactoryTellingAvroDecodeFailuresFromOthers()
     {
         // Arrange
         var builder = new KafkaTopicBuilder<string, string>("test-topic");
@@ -112,6 +112,8 @@ public sealed class KafkaTopicBuilderAvroExtensionsTests
 
         // Assert
         Assert.NotNull(builder.ValueAsyncDeserializerFactory);
+        Assert.True(builder.IsInvalidValueData!(new global::Avro.AvroTypeException("Unknown union branch")));
+        Assert.False(builder.IsInvalidValueData!(new HttpRequestException()));
     }
 
     [Fact]

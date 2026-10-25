@@ -106,6 +106,25 @@ public sealed class OffsetCommitterTests
     }
 
     [Fact]
+    public async Task GivenPartitionsLost_WhenDiscardedThenFlushed_ThenOnlyTheOthersAreCommitted()
+    {
+        // Arrange
+        var mockConsumer = new Mock<ConfluentKafka.IConsumer<byte[], byte[]>>();
+        await using var committer = new OffsetCommitter(mockConsumer.Object, TimeSpan.FromMinutes(1), "test-group", CreateObserverInvoker(), CreateKafkaMetrics(), NullLogger.Instance);
+        committer.RecordCommittableOffset("topic", 0, 5);
+        committer.RecordCommittableOffset("topic", 1, 10);
+
+        // Act
+        committer.Discard([new ConfluentKafka.TopicPartition("topic", 0)]);
+        committer.Flush();
+
+        // Assert
+        mockConsumer.Verify(c => c.Commit(It.Is<IEnumerable<ConfluentKafka.TopicPartitionOffset>>(
+            offsets => offsets.Count() == 1 && offsets.Single().Partition.Value == 1 && offsets.Single().Offset.Value == 11)),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task GivenFlush_WhenCalled_ThenClearsPendingOffsets()
     {
         // Arrange

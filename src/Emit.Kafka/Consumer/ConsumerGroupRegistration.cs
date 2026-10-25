@@ -41,6 +41,21 @@ internal sealed class ConsumerGroupRegistration<TKey, TValue>
     /// <summary>Async value deserializer.</summary>
     public ConfluentKafka.IAsyncDeserializer<TValue>? ValueAsyncDeserializer { get; init; }
 
+    /// <summary>
+    /// Whether a key deserializer failure means the bytes are invalid, or <see langword="null"/> when every failure
+    /// does, as for a synchronous deserializer. Other failures are retried.
+    /// </summary>
+    public Func<Exception, bool>? IsInvalidKeyData { get; init; }
+
+    /// <summary>
+    /// Whether a value deserializer failure means the bytes are invalid, or <see langword="null"/> when every failure
+    /// does, as for a synchronous deserializer. Other failures are retried.
+    /// </summary>
+    public Func<Exception, bool>? IsInvalidValueData { get; init; }
+
+    /// <summary>Delay between attempts to deserialize a message whose deserializer failed for a reason other than invalid data.</summary>
+    public required Backoff DeserializationRetryBackoff { get; init; }
+
     // ── Consumer pipelines ──
 
     /// <summary>

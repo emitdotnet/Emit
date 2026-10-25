@@ -38,7 +38,7 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `RoutingCompliance.cs` | Content-based router: route key matching and handler dispatch, and a routed handler dead letter carrying the route key and consumer group | Add routing tests or debug router dispatch |
 | `ValidationCompliance.cs` | Message validation: pass, fail (discard, dead-letter), a failed validation never retried, a validator that throws retried by the error policy | Add validation tests or debug validation outcomes |
 | `WorkerDistributionCompliance.cs` | ByKeyHash and RoundRobin distribution strategy correctness | Add distribution tests or debug worker assignment |
-| `WorkerPoolRebalanceRecoveryCompliance.cs` | Worker pool recovery after Kafka partition rebalance | Add rebalance recovery tests or debug partition reassignment |
+| `RebalanceCompliance.cs` | A rebalance while a handler outlasts the stop timeout: the handler cancelled before the partition is handed over, no key handled twice at once, order kept | Add rebalance tests or debug partition reassignment |
 | `TransactionalMiddlewareCompliance.cs` | [Transactional] attribute middleware: commit delivery, throw rollback, non-transactional pass-through, retry isolation | Add transactional middleware tests or debug [Transactional] behavior |
 | `UnitOfWorkCompliance.cs` | IUnitOfWork explicit transaction API: begin/commit, begin/rollback, auto-rollback on dispose, ordering | Add unit of work tests or debug IUnitOfWork behavior |
 | `ImplicitOutboxCompliance.cs` | EF Core implicit outbox (Tier 1): produce+SaveChanges atomicity, no-save no delivery | Add implicit outbox tests or debug EF Core implicit tier |

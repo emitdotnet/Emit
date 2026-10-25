@@ -1,9 +1,98 @@
 namespace Emit.Kafka.Consumer.Tests;
 
 using Xunit;
+using static Emit.Kafka.Consumer.Tests.WorkerPoolTestKit;
 
 public class WorkerPoolSupervisorTests
 {
+    [Fact]
+    public async Task GivenHandlerOutlastingTheStopTimeout_WhenThePoolStops_ThenItIsCancelledAndTheMessagesAfterItAreNeverHandled()
+    {
+        // Arrange: the first message is handled until cancelled, the second waits behind it
+        var consumer = new BlockingConsumer(observesCancellation: true);
+        var unhandled = 0;
+        var workerTasks = new List<Task>();
+        var supervisor = CreateSupervisor(consumer, count => unhandled += count, workerTasks: workerTasks);
+        await using var committer = CreateCommitter();
+        supervisor.Start(new OffsetManager(committer), CancellationToken.None);
+        var worker = supervisor.Workers![0];
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 0));
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 1));
+        await consumer.Started;
+
+        // Act
+        await supervisor.StopAsync();
+        await workerTasks[0].WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.True(consumer.Cancelled);
+        Assert.Equal(1, consumer.Handlings);
+        Assert.Equal(1, unhandled);
+    }
+
+    [Fact]
+    public async Task GivenPartitionsAlreadyOwnedByAnotherConsumer_WhenThePoolStopsAtOnce_ThenTheHandlerIsCancelledWithoutWaitingForTheStopTimeout()
+    {
+        // Arrange: a stop timeout far longer than the test
+        var consumer = new BlockingConsumer(observesCancellation: true);
+        var supervisor = CreateSupervisor(consumer, _ => { }, TimeSpan.FromMinutes(5));
+        await using var committer = CreateCommitter();
+        supervisor.Start(new OffsetManager(committer), CancellationToken.None);
+        supervisor.Workers![0].Writer.TryWrite(CreateConsumeResult(offset: 0));
+        await consumer.Started;
+
+        // Act
+        await supervisor.StopAsync(cancelAtOnce: true).WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.True(consumer.Cancelled);
+    }
+
+    [Fact]
+    public async Task GivenHandlerNotStoppingWhenCancelled_WhenThePoolStops_ThenItReturnsAndTheWorkerTakesNoFurtherMessage()
+    {
+        // Arrange: the handler ignores cancellation; a second message waits behind it
+        var consumer = new BlockingConsumer(observesCancellation: false);
+        var unhandled = 0;
+        var workerTasks = new List<Task>();
+        var supervisor = CreateSupervisor(consumer, count => unhandled += count, workerTasks: workerTasks);
+        await using var committer = CreateCommitter();
+        supervisor.Start(new OffsetManager(committer), CancellationToken.None);
+        var worker = supervisor.Workers![0];
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 0));
+        worker.Writer.TryWrite(CreateConsumeResult(offset: 1));
+        await consumer.Started;
+
+        // Act: the stop does not wait for the handler forever; the handler returns afterwards, ending its worker
+        await supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        consumer.Release();
+        await workerTasks[0].WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal(1, unhandled);
+        Assert.Equal(1, consumer.Handlings);
+    }
+
+    [Fact]
+    public async Task GivenHandlerWhoseCancellationCallbackBlocks_WhenThePoolStops_ThenItReturnsWithoutWaitingForTheCallback()
+    {
+        // Arrange: the handler registers a callback on its token that blocks until released
+        using var callbackReleased = new ManualResetEventSlim();
+        var consumer = new BlockingConsumer(observesCancellation: true, onCancelled: callbackReleased.Wait);
+        var supervisor = CreateSupervisor(consumer);
+        await using var committer = CreateCommitter();
+        supervisor.Start(new OffsetManager(committer), CancellationToken.None);
+        supervisor.Workers![0].Writer.TryWrite(CreateConsumeResult(offset: 0));
+        await consumer.Started;
+
+        // Act
+        var stopped = await supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(30)).ContinueWith(t => t.IsCompletedSuccessfully);
+        callbackReleased.Set();
+
+        // Assert
+        Assert.True(stopped);
+    }
+
     [Fact]
     public async Task GivenRunningWorkers_WhenExecutionTokenCancelledBeforeWorkerCompletes_ThenReturnsNull()
     {

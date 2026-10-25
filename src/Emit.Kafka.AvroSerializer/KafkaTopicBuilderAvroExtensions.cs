@@ -55,7 +55,7 @@ public static class KafkaTopicBuilderAvroExtensions
         this KafkaTopicBuilder<TKey, TValue> builder,
         IEnumerable<KeyValuePair<string, string>>? config = null)
     {
-        builder.SetKeyAsyncDeserializerFactory(client => new ConfluentSerdes.AvroDeserializer<TKey>(client, config));
+        builder.SetKeyAsyncDeserializerFactory(client => new ConfluentSerdes.AvroDeserializer<TKey>(client, config), IsInvalidData);
     }
 
     // ── Value deserializer ──
@@ -70,6 +70,9 @@ public static class KafkaTopicBuilderAvroExtensions
         this KafkaTopicBuilder<TKey, TValue> builder,
         IEnumerable<KeyValuePair<string, string>>? config = null)
     {
-        builder.SetValueAsyncDeserializerFactory(client => new ConfluentSerdes.AvroDeserializer<TValue>(client, config));
+        builder.SetValueAsyncDeserializerFactory(client => new ConfluentSerdes.AvroDeserializer<TValue>(client, config), IsInvalidData);
     }
+
+    /// <summary>Whether the Avro decoder failed on the bytes, a reader and writer schema mismatch included.</summary>
+    private static bool IsInvalidData(Exception exception) => exception is Avro.AvroException;
 }

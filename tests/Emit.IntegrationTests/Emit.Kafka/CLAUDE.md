@@ -29,8 +29,9 @@ Kafka integration tests: compliance implementations proving Kafka provider corre
 | `KafkaRoutingCompliance.cs` | Inherits RoutingCompliance | Debug or extend content-based routing tests |
 | `KafkaValidationCompliance.cs` | Inherits ValidationCompliance | Debug or extend message validation tests |
 | `KafkaWorkerDistributionCompliance.cs` | Inherits WorkerDistributionCompliance | Debug or extend worker distribution strategy tests |
-| `KafkaWorkerPoolRebalanceRecoveryCompliance.cs` | Inherits WorkerPoolRebalanceRecoveryCompliance | Debug or extend rebalance recovery tests |
-| `KafkaDeserializationErrorTests.cs` | Kafka-specific: behavior when a message cannot be deserialized | Debug or extend deserialization error handling |
+| `KafkaRebalanceCompliance.cs` | Inherits RebalanceCompliance | Debug or extend rebalance tests |
+| `KafkaCooperativeRebalanceTests.cs` | Kafka-specific: cooperative rebalances while every worker is busy: the partitions a consumer keeps go on from the messages its stopped pool left, partitions added to a running pool go to the same workers; nothing lost, order kept, no key handled twice at once | Debug or extend incremental rebalances |
+| `KafkaDeserializationErrorTests.cs` | Kafka-specific: invalid bytes dead-lettered at once (Avro included), messages waiting out an unreachable schema registry and all arriving in order | Debug or extend deserialization error handling |
 | `KafkaDlqKeyPreservationCompliance.cs` | Kafka-specific: original message key is preserved in DLQ message | Verify or change DLQ key forwarding |
 | `KafkaDlqMisconfigurationTests.cs` | Kafka-specific: behavior when DLQ topic is misconfigured | Debug or extend DLQ misconfiguration handling |
 | `KafkaDlqProduceFailureTests.cs` | Kafka-specific: behavior when DLQ produce itself fails | Debug or extend DLQ produce failure handling |

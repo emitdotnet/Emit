@@ -1,10 +1,13 @@
 namespace Emit.Kafka.Tests.DependencyInjection;
 
+using System.Net;
+using System.Runtime.Serialization;
 using global::Emit.Abstractions;
 using global::Emit.Kafka.DependencyInjection;
 using Moq;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
+using ConfluentSchemaRegistry = Confluent.SchemaRegistry;
 
 public sealed class KafkaTopicBuilderTests
 {
@@ -408,7 +411,7 @@ public sealed class KafkaTopicBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() =>
-            builder.SetKeyDeserializer((ConfluentKafka.IDeserializer<string>)null!));
+            builder.SetKeyDeserializer(null!));
     }
 
     [Fact]
@@ -455,6 +458,53 @@ public sealed class KafkaTopicBuilderTests
     }
 
     [Fact]
+    public void GivenAsyncValueDeserializer_WhenItFails_ThenOnlyInvalidDataExceptionAndWhatItsRuleRecognizesMeanInvalidData()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+        Exception[] invalidData = [new InvalidDataException(), new FormatException()];
+        Exception[] otherFailures = [new HttpRequestException(), new TaskCanceledException(), new ArgumentOutOfRangeException()];
+
+        // Act
+        builder.SetValueDeserializer(Mock.Of<ConfluentKafka.IAsyncDeserializer<string>>(), ex => ex is FormatException);
+
+        // Assert
+        Assert.All(invalidData, ex => Assert.True(builder.IsInvalidValueData!(ex), ex.GetType().Name));
+        Assert.All(otherFailures, ex => Assert.False(builder.IsInvalidValueData!(ex), ex.GetType().Name));
+    }
+
+    [Fact]
+    public void GivenSchemaRegistryValueDeserializer_WhenItFails_ThenOnlyFramingRuleConditionAndFormatFailuresMeanInvalidData()
+    {
+        // Arrange
+        var builder = new KafkaTopicBuilder<string, string>("test-topic");
+        Exception[] invalidData =
+        [
+            new InvalidDataException("Invalid magic byte: 123"),
+            new ArgumentOutOfRangeException(),
+            new IndexOutOfRangeException(),
+            new SerializationException("Rule failed", new ConfluentSchemaRegistry.RuleConditionException()),
+            new FormatException(),
+        ];
+        Exception[] otherFailures =
+        [
+            new HttpRequestException(),
+            new ConfluentSchemaRegistry.SchemaRegistryException("Schema not found", HttpStatusCode.NotFound, 40403),
+            new ConfluentSchemaRegistry.SchemaRegistryException("Unauthorized", HttpStatusCode.Unauthorized, 40101),
+            new TaskCanceledException(),
+            new SerializationException("Rule failed", new ConfluentSchemaRegistry.RuleException("KMS unavailable")),
+            new Exception("Failed to fetch token"),
+        ];
+
+        // Act
+        builder.SetValueAsyncDeserializerFactory(_ => Mock.Of<ConfluentKafka.IAsyncDeserializer<string>>(), ex => ex is FormatException);
+
+        // Assert
+        Assert.All(invalidData, ex => Assert.True(builder.IsInvalidValueData!(ex), ex.GetType().Name));
+        Assert.All(otherFailures, ex => Assert.False(builder.IsInvalidValueData!(ex), ex.GetType().Name));
+    }
+
+    [Fact]
     public void GivenSetValueDeserializer_WhenSyncAfterAsync_ThenThrowsInvalidOperationException()
     {
         // Arrange
@@ -486,7 +536,7 @@ public sealed class KafkaTopicBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() =>
-            builder.SetValueDeserializer((ConfluentKafka.IDeserializer<string>)null!));
+            builder.SetValueDeserializer(null!));
     }
 
     [Fact]

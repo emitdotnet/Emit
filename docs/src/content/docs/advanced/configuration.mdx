@@ -61,7 +61,8 @@ Emit-specific options:
 | `WorkerDistribution` | `ByKeyHash` | `ByKeyHash` or `RoundRobin` |
 | `BufferSize` | `32` | Per-worker channel capacity; a partition feeding a full channel is paused until it is half empty |
 | `CommitInterval` | `5s` | Offset commit frequency |
-| `WorkerStopTimeout` | `30s` | Graceful shutdown wait for in-flight messages |
+| `WorkerStopTimeout` | `30s` | How long in-flight messages may take to finish when a rebalance revokes the group's partitions, before their handlers are cancelled; also how long a cancelled handler may take to stop |
+| `DeserializationRetryBackoff` | exponential, `1s` to `30s` | Delay between attempts to deserialize a message whose deserializer failed for a reason other than invalid data, such as an unreachable schema registry |
 
 Confluent consumer options (also settable on the group):
 

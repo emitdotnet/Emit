@@ -74,7 +74,8 @@ public interface IKafkaConsumerObserver : Emit.Abstractions.Observability.IObser
     Task OnOffsetCommitErrorAsync(OffsetCommitErrorEvent e) => Task.CompletedTask;
 
     /// <summary>
-    /// Called when message deserialization fails before pipeline entry.
+    /// Called when message deserialization fails before pipeline entry: once for invalid data, and on every attempt
+    /// for any other failure, which is retried until the message is deserialized.
     /// </summary>
     /// <param name="e">The event details.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
