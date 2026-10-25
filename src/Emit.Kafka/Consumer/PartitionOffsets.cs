@@ -6,6 +6,20 @@ namespace Emit.Kafka.Consumer;
 /// </summary>
 internal sealed class PartitionOffsets
 {
+    /// <summary>
+    /// The lowest offset received and not yet processed, or <see langword="null"/> when every received offset was.
+    /// </summary>
+    public long? FirstUnhandled
+    {
+        get
+        {
+            lock (syncLock)
+            {
+                return receivedOrder.First?.Value;
+            }
+        }
+    }
+
     private readonly LinkedList<long> receivedOrder = new();
     private readonly SortedSet<long> completedOutOfOrder = [];
     private readonly object syncLock = new();

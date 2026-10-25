@@ -33,6 +33,7 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
     private ConsumerWorker<TKey, TValue>[]? workers;
     private Task[]? workerTasks;
     private IDistributionStrategy? distributionStrategy;
+    private CancellationTokenSource? poolCts;
     private CancellationTokenSource? monitorCts;
     private Task? monitorTask;
     private CancellationToken executionToken;
@@ -60,6 +61,11 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
     internal bool IsFaulted => isFaulted;
 
     /// <summary>
+    /// Whether a worker pool is running.
+    /// </summary>
+    internal bool IsRunning => workers is not null;
+
+    /// <summary>
     /// The current worker instances, or null if the pool is not running.
     /// </summary>
     internal ConsumerWorker<TKey, TValue>[]? Workers => workers;
@@ -82,7 +88,9 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
             _ => new ByKeyHashStrategy(registration.WorkerCount),
         };
 
-        var pool = workerFactory(offsetManager, executionToken);
+        // The pool's workers stop with the host, or when the pool is stopped and their stop timeout is over
+        poolCts = CancellationTokenSource.CreateLinkedTokenSource(executionToken);
+        var pool = workerFactory(offsetManager, poolCts.Token);
         workers = pool.Workers;
         workerTasks = pool.Tasks;
 
@@ -95,10 +103,18 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
     }
 
     /// <summary>
-    /// Stops the health monitor and drains the worker pool. Does not flush offsets —
-    /// the caller is responsible for committing offsets after stopping the pool.
+    /// Stops the health monitor and the worker pool. The workers get <c>WorkerStopTimeout</c> to finish the messages
+    /// already handed to them, unless <paramref name="cancelAtOnce"/> or the host is stopping, which has cancelled them
+    /// already; their handlers are then cancelled, and given
+    /// <c>WorkerStopTimeout</c> again to stop. A stopped worker takes no further message, so no message of a revoked
+    /// partition is handled after this returns, but for one whose handler did not stop when cancelled: that one is
+    /// logged and left running. Waiting for it longer would hold the partitions only until the group reassigns them
+    /// anyway. Does not flush offsets: the caller commits them after stopping the pool.
     /// </summary>
-    internal async Task StopAsync()
+    /// <param name="cancelAtOnce">
+    /// Cancels the handlers without waiting, for partitions already owned by another consumer.
+    /// </param>
+    internal async Task StopAsync(bool cancelAtOnce = false)
     {
         // Cancel the monitor first so it doesn't signal a fault during shutdown.
         monitorCts?.Cancel();
@@ -123,46 +139,84 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
 
         if (workerTasks is not null)
         {
-            try
+            var allWorkers = Task.WhenAll(workerTasks);
+            if (cancelAtOnce || !await EndsWithinStopTimeoutAsync(allWorkers).ConfigureAwait(false))
             {
-                await Task.WhenAll(workerTasks)
-                    .WaitAsync(registration.WorkerStopTimeout)
-                    .ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                logger.LogWarning("Worker pool drain timed out after {Timeout} for group '{GroupId}'",
-                    registration.WorkerStopTimeout, registration.GroupId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error during worker pool drain for group '{GroupId}'", registration.GroupId);
+                if (!cancelAtOnce)
+                {
+                    logger.LogWarning(
+                        "Workers of group '{GroupId}' did not finish within {Timeout}; cancelling their handlers",
+                        registration.GroupId, registration.WorkerStopTimeout);
+                }
+
+                // The cancellation callbacks are not awaited: a handler's could block, or throw, and the wait for the
+                // handlers to stop is bounded below
+                _ = poolCts!.CancelAsync().ContinueWith(
+                    cancelling => logger.LogError(
+                        cancelling.Exception,
+                        "A cancellation callback of a handler of group '{GroupId}' threw",
+                        registration.GroupId),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+
+                if (!await EndsWithinStopTimeoutAsync(allWorkers).ConfigureAwait(false))
+                {
+                    logger.LogError(
+                        "A handler of group '{GroupId}' did not stop within {Timeout} of being cancelled and is left running; it may still be handling a message once its partition is handed over. Handlers must observe their cancellation token",
+                        registration.GroupId, registration.WorkerStopTimeout);
+                }
             }
         }
 
-        // A worker that stopped reading, faulted or cancelled, leaves its remaining messages unhandled; one
-        // still running past the timeout handles them itself
-        if (workers is not null && workerTasks is not null)
+        // The messages a worker left in its queue were never handled. A worker left running in a handler takes no
+        // further message once cancelled, so its queue is read here alone
+        if (workers is not null)
         {
-            var unhandled = 0;
-            for (var i = 0; i < workers.Length; i++)
-            {
-                if (workerTasks[i].IsCompleted)
-                {
-                    unhandled += workers[i].DiscardUnread();
-                }
-            }
-
+            var unhandled = workers.Sum(worker => worker.DiscardUnread());
             if (unhandled > 0)
             {
                 onUnhandled?.Invoke(unhandled);
             }
         }
 
+        // A handler left running may still observe the token: the source goes once every worker has ended
+        if (poolCts is not null)
+        {
+            var stoppedPool = poolCts;
+            _ = Task.WhenAll(workerTasks ?? []).ContinueWith(
+                _ => stoppedPool.Dispose(),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        poolCts = null;
         workers = null;
         workerTasks = null;
         distributionStrategy = null;
         isFaulted = false;
+    }
+
+    /// <summary>
+    /// Returns whether the workers ended within the stop timeout, a fault being an end.
+    /// </summary>
+    private async Task<bool> EndsWithinStopTimeoutAsync(Task allWorkers)
+    {
+        try
+        {
+            await allWorkers.WaitAsync(registration.WorkerStopTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during worker pool drain for group '{GroupId}'", registration.GroupId);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -186,9 +240,9 @@ internal sealed class WorkerPoolSupervisor<TKey, TValue>
             var completed = await Task.WhenAny(workerTasks)
                 .WaitAsync(stopToken).ConfigureAwait(false);
 
-            // Workers use executionToken directly; the linked stopToken may lag behind
-            // due to callback propagation. If the application is shutting down, this
-            // worker completed because of cancellation — not a fault.
+            // The workers' token is linked to executionToken, as stopToken is, and either may lag behind it due to
+            // callback propagation. If the application is shutting down, this worker completed because of
+            // cancellation, not a fault.
             if (executionToken.IsCancellationRequested)
             {
                 return null;

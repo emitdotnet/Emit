@@ -31,6 +31,13 @@ internal class OffsetManager
     }
 
     /// <summary>
+    /// Returns the lowest offset of a topic-partition received and not yet processed, or <see langword="null"/>
+    /// when there is none.
+    /// </summary>
+    public long? FirstUnhandled(string topic, int partition) =>
+        partitions.TryGetValue(new TopicPartitionKey(topic, partition), out var tracker) ? tracker.FirstUnhandled : null;
+
+    /// <summary>
     /// Marks an offset as processed. Forwards watermark advances to the committer.
     /// </summary>
     public virtual void MarkAsProcessed(string topic, int partition, long offset)

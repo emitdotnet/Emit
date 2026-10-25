@@ -45,14 +45,11 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
     // Runtime state — created on the background thread, not in the constructor.
     private WorkerPoolSupervisor<TKey, TValue>? supervisor;
     private OffsetCommitter? committer;
-    private OffsetManager? offsetManager;
-    private CancellationToken executionToken;
+    private PartitionAssignmentHandler<TKey, TValue>? partitionAssignment;
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        executionToken = stoppingToken;
-
         StartupDiagnosticsLogger.Log(registration, deadLetterSink, logger);
 
         kafkaMetrics.RegisterConsumerGroup(
@@ -86,7 +83,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             consumer.Subscribe(registration.TopicName);
 
             committer = new OffsetCommitter(consumer, registration.CommitInterval, registration.GroupId, observerInvoker, kafkaMetrics, logger);
-            offsetManager = new OffsetManager(committer);
+            partitionAssignment = new PartitionAssignmentHandler<TKey, TValue>(supervisor, committer, stoppingToken);
 
             await RunPollLoopAsync(consumer, stoppingToken).ConfigureAwait(false);
         }
@@ -107,7 +104,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                 await committer.DisposeAsync().ConfigureAwait(false);
             }
 
+            // Closing the consumer runs the rebalance callbacks, which must not touch the stopped pool
             supervisor = null;
+            partitionAssignment = null;
 
             kafkaMetrics.DeregisterConsumerGroup(registration.Name);
 
@@ -156,7 +155,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         {
             if (supervisor is not null && supervisor.IsFaulted)
             {
-                await HandlePoolFaultAsync(cancellationToken).ConfigureAwait(false);
+                await HandlePoolFaultAsync(consumer, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -168,11 +167,10 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                     continue;
                 }
 
-                var workers = supervisor?.Workers;
-                var strategy = supervisor?.DistributionStrategy;
-
-                if (workers is null || strategy is null || offsetManager is null)
+                // A message no worker takes is not handed over: the next start reads it again
+                if (partitionAssignment?.WorkerFor(result) is not { } worker)
                 {
+                    consumer.Seek(result.TopicPartitionOffset);
                     continue;
                 }
 
@@ -180,7 +178,6 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
                 // long the handlers take: the message's partition is paused until the queue has room, and the next
                 // fetch on resume starts from it. The poll loop is the queue's only writer, so the room it saw
                 // is still there when it writes
-                var worker = workers[strategy.SelectWorker(result.Message.Key, result.Partition.Value)];
                 if (!worker.HasRoom)
                 {
                     PauseUntilRoom(worker, result.TopicPartition);
@@ -198,7 +195,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
 
                 try
                 {
-                    offsetManager.Enqueue(result.Topic, result.Partition.Value, result.Offset.Value);
+                    partitionAssignment.OffsetManager.Enqueue(result.Topic, result.Partition.Value, result.Offset.Value);
                     if (!worker.Writer.TryWrite(result))
                     {
                         throw new ChannelClosedException();
@@ -215,7 +212,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             }
             catch (ChannelClosedException) when (supervisor is not null && supervisor.IsFaulted)
             {
-                await HandlePoolFaultAsync(cancellationToken).ConfigureAwait(false);
+                await HandlePoolFaultAsync(consumer, cancellationToken).ConfigureAwait(false);
             }
             catch (ConfluentKafka.ConsumeException ex)
             {
@@ -239,9 +236,11 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
             TaskScheduler.Default);
     }
 
-    private async Task HandlePoolFaultAsync(CancellationToken cancellationToken)
+    private async Task HandlePoolFaultAsync(
+        ConfluentKafka.IConsumer<byte[], byte[]> consumer,
+        CancellationToken cancellationToken)
     {
-        if (supervisor is null)
+        if (partitionAssignment is null || cancellationToken.IsCancellationRequested)
         {
             return;
         }
@@ -249,15 +248,7 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         logger.LogInformation("Restarting worker pool after fault for group '{GroupId}'",
             registration.GroupId);
 
-        await supervisor.StopAsync().ConfigureAwait(false);
-
-        ReplaceOffsetManager();
-        committer?.Flush();
-
-        if (offsetManager is not null && !cancellationToken.IsCancellationRequested)
-        {
-            supervisor.Start(offsetManager, cancellationToken);
-        }
+        await partitionAssignment.RestartAfterFaultAsync(consumer).ConfigureAwait(false);
     }
 
     private WorkerPool<TKey, TValue> CreateWorkerPool(
@@ -294,10 +285,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, KafkaMetrics.PartitionEventRevoked, partitions.Count);
         observerInvoker.OnPartitionsRevokedAsync(new PartitionsRevokedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
-        supervisor?.StopAsync().GetAwaiter().GetResult();
-        ReplaceOffsetManager();
-        committer?.Flush();
-        flowControl.OnPartitionsRevoked(partitions.Select(p => p.TopicPartition));
+        var revoked = partitions.Select(p => p.TopicPartition).ToHashSet();
+        partitionAssignment?.RevokedAsync(consumer, revoked).GetAwaiter().GetResult();
+        flowControl.OnPartitionsRevoked(revoked);
     }
 
     private void OnPartitionsLost(
@@ -310,9 +300,9 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         kafkaMetrics.RecordPartitionEvent(registration.GroupId, registration.TopicName, KafkaMetrics.PartitionEventLost, partitions.Count);
         observerInvoker.OnPartitionsLostAsync(new PartitionsLostEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
-        supervisor?.StopAsync().GetAwaiter().GetResult();
-        ReplaceOffsetManager();
-        flowControl.OnPartitionsRevoked(partitions.Select(p => p.TopicPartition));
+        var lost = partitions.Select(p => p.TopicPartition).ToList();
+        partitionAssignment?.LostAsync(consumer, lost).GetAwaiter().GetResult();
+        flowControl.OnPartitionsRevoked(lost);
     }
 
     private void OnPartitionsAssigned(
@@ -337,27 +327,6 @@ internal sealed class ConsumerGroupWorker<TKey, TValue>(
         observerInvoker.OnPartitionsAssignedAsync(new PartitionsAssignedEvent(registration.GroupId, registration.TopicName, partitions.Select(p => p.Partition.Value).ToList())).GetAwaiter().GetResult();
 
         flowControl.OnPartitionsAssigned(partitions);
-
-        if (offsetManager is null || supervisor is null)
-        {
-            return;
-        }
-
-        supervisor.Start(offsetManager, executionToken);
-    }
-
-    /// <summary>
-    /// Gives the next worker pool an offset manager of its own. A worker of the stopped pool that outlived its
-    /// stop timeout keeps its retired manager, so what it finishes later cannot move the new pool's commits.
-    /// </summary>
-    private void ReplaceOffsetManager()
-    {
-        if (offsetManager is null || committer is null)
-        {
-            return;
-        }
-
-        offsetManager.Retire();
-        offsetManager = new OffsetManager(committer);
+        partitionAssignment?.Assigned();
     }
 }

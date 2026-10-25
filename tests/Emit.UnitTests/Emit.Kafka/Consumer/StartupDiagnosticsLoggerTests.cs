@@ -55,6 +55,7 @@ public sealed class StartupDiagnosticsLoggerTests
             BufferSize = 32,
             CommitInterval = TimeSpan.FromSeconds(5),
             WorkerStopTimeout = TimeSpan.FromSeconds(30),
+            DeserializationRetryBackoff = Backoff.None,
             ApplyClientConfig = _ => { },
             ApplyConsumerConfigOverrides = _ => { },
             GroupErrorPolicy = groupErrorPolicy,

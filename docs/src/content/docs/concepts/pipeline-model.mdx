@@ -18,7 +18,7 @@ The inbound path has two distinct phases: transport processing, then per-consume
 Before any middleware runs, Emit handles the mechanics of getting a message from the broker into a usable form:
 
 1. **Poll.** The consumer group reads raw bytes from the broker and distributes them across worker channels.
-2. **Deserialize.** Key and value are deserialized using the registered `IDeserializer<T>` or `IAsyncDeserializer<T>`. Deserialization errors are handled separately via `OnDeserializationError` on the consumer group and never enter the consumer pipeline. A message that cannot be deserialized cannot be processed, so routing it through retry and dead-letter logic would be misleading.
+2. **Deserialize.** Key and value are deserialized using the registered `IDeserializer<T>` or `IAsyncDeserializer<T>`. Deserialization errors never enter the consumer pipeline. Invalid bytes cannot be processed, so they go to `OnDeserializationError` on the consumer group instead of the pipeline's retry and dead-letter logic. A deserializer failing for another reason, such as an unreachable schema registry, is retried until the message is deserialized.
 3. **Fan-out.** For each consumer or router registered on the consumer group, Emit creates a fresh DI scope with its own `ConsumeContext<TValue>`. Each entry runs its pipeline independently.
 
 ### Consumer pipeline layers

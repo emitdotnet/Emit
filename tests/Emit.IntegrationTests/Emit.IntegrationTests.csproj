@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Emit.Abstractions\Emit.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Emit\Emit.csproj" />
     <ProjectReference Include="..\..\src\Emit.Kafka\Emit.Kafka.csproj" />
+    <ProjectReference Include="..\..\src\Emit.Kafka.AvroSerializer\Emit.Kafka.AvroSerializer.csproj" />
     <ProjectReference Include="..\..\src\Emit.Kafka.JsonSerializer\Emit.Kafka.JsonSerializer.csproj" />
     <ProjectReference Include="..\..\src\Emit.MongoDB\Emit.MongoDB.csproj" />
     <ProjectReference Include="..\..\src\Emit.EntityFrameworkCore\Emit.EntityFrameworkCore.csproj" />

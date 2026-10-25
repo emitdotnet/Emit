@@ -96,8 +96,9 @@ public sealed class KafkaTopicBuilderProtobufExtensionsTests
         // Act
         builder.SetProtobufValueDeserializer();
 
-        // Assert
+        // Assert: without a schema registry, nothing but the bytes can make it fail
         Assert.NotNull(builder.ValueAsyncDeserializer);
+        Assert.True(builder.IsInvalidValueData!(new HttpRequestException()));
     }
 
     // ── Factory resolution ──

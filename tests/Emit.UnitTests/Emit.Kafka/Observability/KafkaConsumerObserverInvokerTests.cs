@@ -79,7 +79,7 @@ public class KafkaConsumerObserverInvokerTests
             NullLogger<KafkaConsumerObserverInvoker>.Instance);
 
         var exception = new InvalidOperationException("Deserialization failed");
-        var e = new DeserializationErrorEvent("test-group", "test-topic", 0, 123, exception);
+        var e = new DeserializationErrorEvent("test-group", "test-topic", 0, 123, exception, WillRetry: false);
 
         // Act
         await invoker.OnDeserializationErrorAsync(e);

@@ -36,6 +36,9 @@ public sealed class KafkaMetrics
     /// <summary>The <c>action</c> of a message that could not be deserialized and was discarded.</summary>
     internal const string DeserializationActionDiscard = "discard";
 
+    /// <summary>The <c>action</c> of a deserialization error that is retried, the bytes not being the cause.</summary>
+    internal const string DeserializationActionRetry = "retry";
+
     private readonly EmitMetricsEnrichment enrichment;
     private readonly ConcurrentDictionary<string, ConsumerGroupGaugeState> consumerGroupRegistry = new(StringComparer.Ordinal);
 

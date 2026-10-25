@@ -7,14 +7,13 @@ using Emit.Kafka.Tests.TestInfrastructure;
 using Xunit;
 using ConfluentKafka = Confluent.Kafka;
 
-public class KafkaWorkerPoolRebalanceRecoveryCompliance(KafkaContainerFixture fixture)
-    : WorkerPoolRebalanceRecoveryCompliance, IClassFixture<KafkaContainerFixture>
+public class KafkaRebalanceCompliance(KafkaContainerFixture fixture)
+    : RebalanceCompliance, IClassFixture<KafkaContainerFixture>
 {
     protected override void ConfigureEmit(
         EmitBuilder emit,
         string topic,
-        int bufferSize,
-        TimeSpan maxPollInterval,
+        string groupId,
         TimeSpan workerStopTimeout)
     {
         emit.AddKafka(kafka =>
@@ -30,19 +29,11 @@ public class KafkaWorkerPoolRebalanceRecoveryCompliance(KafkaContainerFixture fi
                 t.UseUtf8Serialization();
 
                 t.Producer();
-                t.ConsumerGroup($"test-rebalance-group-{Guid.NewGuid():N}", group =>
+                t.ConsumerGroup(groupId, group =>
                 {
                     group.AutoOffsetReset = ConfluentKafka.AutoOffsetReset.Earliest;
-                    group.BufferSize = bufferSize;
-                    group.MaxPollInterval = maxPollInterval;
-
-                    // session.timeout.ms must be >= group.min.session.timeout.ms (6 s default in cp-kafka).
-                    // Heartbeat interval must be < session.timeout.ms.
-                    group.SessionTimeout = TimeSpan.FromSeconds(10);
-                    group.HeartbeatInterval = TimeSpan.FromSeconds(3);
-
                     group.WorkerStopTimeout = workerStopTimeout;
-                    group.AddConsumer<HangingConsumer>();
+                    group.AddConsumer<TrackingConsumer>();
                 });
             });
         });

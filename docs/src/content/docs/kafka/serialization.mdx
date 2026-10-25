@@ -149,4 +149,19 @@ This is fine for internal topics where you control both sides. For anything cros
 
 ## Deserialization errors
 
-If deserialization throws, the error is surfaced as a `DeserializationErrorEvent` on any registered `IKafkaConsumerObserver` and is handled by the `OnDeserializationError` policy on the consumer group. See [Error Policies](../../error-handling/error-policies/) for configuration details.
+When a deserializer throws, Emit decides whether the bytes are invalid. Invalid data goes to the consumer group's `OnDeserializationError` action; any other failure, such as an unreachable schema registry, is retried until the message is deserialized. See [Error Policies](../../error-handling/error-policies/#deserialization-errors) for both.
+
+Only failures known to mean invalid data count as such:
+
+- **Synchronous deserializers** do no I/O, so any failure means invalid data.
+- **Schema Registry deserializers** from the three packages above: a payload whose framing is wrong, a failed data quality rule, or a decoding error of their format (Avro, JSON, Protobuf).
+- **Other async deserializers**: an `InvalidDataException`, and whatever exceptions you pass in `isInvalidData`:
+
+```csharp
+topic.SetValueDeserializer(myAsyncDeserializer, isInvalidData: ex => ex is JsonException);
+
+// A deserializer that calls no service can only fail on the bytes
+topic.SetValueDeserializer(myLocalAsyncDeserializer, isInvalidData: InvalidData.Always);
+```
+
+Every failed attempt is surfaced as a `DeserializationErrorEvent` on any registered `IKafkaConsumerObserver`, and counted in `emit.kafka.consume.deserialization.errors` with the action taken, `retry` for a failure that is retried.

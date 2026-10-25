@@ -47,6 +47,19 @@ internal sealed class OffsetCommitter : IAsyncDisposable
     }
 
     /// <summary>
+    /// Drops the offsets waiting to be committed for partitions the consumer lost: another consumer owns them now, and
+    /// committing them could move its progress back.
+    /// </summary>
+    /// <param name="partitions">The partitions lost.</param>
+    public void Discard(IEnumerable<ConfluentKafka.TopicPartition> partitions)
+    {
+        foreach (var partition in partitions)
+        {
+            pendingCommits.TryRemove(new TopicPartitionKey(partition.Topic, partition.Partition.Value), out _);
+        }
+    }
+
+    /// <summary>
     /// Immediately flushes all pending offsets to Kafka.
     /// </summary>
     public void Flush()

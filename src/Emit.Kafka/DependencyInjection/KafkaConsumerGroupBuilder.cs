@@ -159,19 +159,72 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     // ── Worker pool configuration ──
 
     /// <summary>Number of processing tasks in the worker pool.</summary>
-    public int WorkerCount { get; set; } = 1;
+    /// <exception cref="ArgumentOutOfRangeException">The value is less than 1.</exception>
+    public int WorkerCount
+    {
+        get;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            field = value;
+        }
+    } = 1;
 
     /// <summary>How messages are routed from poll loop to workers.</summary>
     public WorkerDistribution WorkerDistribution { get; set; } = WorkerDistribution.ByKeyHash;
 
     /// <summary>Bounded channel capacity per worker.</summary>
-    public int BufferSize { get; set; } = 32;
+    /// <exception cref="ArgumentOutOfRangeException">The value is less than 1.</exception>
+    public int BufferSize
+    {
+        get;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            field = value;
+        }
+    } = 32;
 
     /// <summary>Offset commit interval.</summary>
-    public TimeSpan CommitInterval { get; set; } = TimeSpan.FromSeconds(5);
+    /// <exception cref="ArgumentOutOfRangeException">The value is not positive.</exception>
+    public TimeSpan CommitInterval
+    {
+        get;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            field = value;
+        }
+    } = TimeSpan.FromSeconds(5);
 
-    /// <summary>Maximum time to wait for workers to drain on stop.</summary>
-    public TimeSpan WorkerStopTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// How long the messages already handed to workers may take to finish when a rebalance revokes the group's
+    /// partitions; their handlers are then cancelled. When the application stops, the handlers are cancelled at once.
+    /// Either way, the partitions are released once the cancelled handlers stopped, so a key is never handled by two
+    /// consumers at once; a handler that ignores cancellation is given this long to stop, then left running.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not positive.</exception>
+    public TimeSpan WorkerStopTimeout
+    {
+        get;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, TimeSpan.Zero);
+            field = value;
+        }
+    } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Delay between attempts to deserialize a message whose deserializer failed for a reason other than invalid
+    /// data, such as an unreachable schema registry. The message is retried until it is deserialized, and the
+    /// messages after it wait. Default: exponential from 1 second, up to 30 seconds.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value is <see langword="null"/>.</exception>
+    public Backoff DeserializationRetryBackoff
+    {
+        get;
+        set => field = value ?? throw new ArgumentNullException(nameof(value));
+    } = Backoff.Exponential(TimeSpan.FromSeconds(1), maxDelay: TimeSpan.FromSeconds(30));
 
     // ── Internal state ──
 
@@ -370,7 +423,8 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>
     /// Configures how deserialization errors are handled before message fan-out.
     /// Deserialization errors occur when the raw Kafka message bytes cannot be converted
-    /// to the expected key or value types.
+    /// to the expected key or value types. A deserializer failure for another reason, such as an
+    /// unreachable schema registry, is retried instead, as <see cref="DeserializationRetryBackoff"/> sets.
     /// </summary>
     /// <param name="configure">Configures the deserialization error action.</param>
     /// <returns>This builder for continued chaining.</returns>

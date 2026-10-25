@@ -443,6 +443,39 @@ public sealed class KafkaConsumerGroupBuilderTests
         Assert.Throws<ArgumentNullException>(() => builder.OnDeserializationError(null!));
     }
 
+    [Theory]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.WorkerCount), 0)]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.BufferSize), 0)]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.CommitInterval), 0)]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.CommitInterval), -1)]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.WorkerStopTimeout), 0)]
+    [InlineData(nameof(KafkaConsumerGroupBuilder<string, string>.WorkerStopTimeout), -1)]
+    public void GivenWorkerPoolSetting_WhenSetOutOfRange_ThenThrowsArgumentOutOfRangeException(string setting, int value)
+    {
+        // Arrange
+        var builder = new KafkaConsumerGroupBuilder<string, string>();
+        Action set = setting switch
+        {
+            nameof(builder.WorkerCount) => () => builder.WorkerCount = value,
+            nameof(builder.BufferSize) => () => builder.BufferSize = value,
+            nameof(builder.CommitInterval) => () => builder.CommitInterval = TimeSpan.FromSeconds(value),
+            _ => () => builder.WorkerStopTimeout = TimeSpan.FromSeconds(value),
+        };
+
+        // Act & Assert
+        Assert.Throws<ArgumentOutOfRangeException>(set);
+    }
+
+    [Fact]
+    public void GivenDeserializationRetryBackoff_WhenSetToNull_ThenThrowsArgumentNullException()
+    {
+        // Arrange
+        var builder = new KafkaConsumerGroupBuilder<string, string>();
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => builder.DeserializationRetryBackoff = null!);
+    }
+
     [Fact]
     public void GivenNewBuilder_WhenDefaultState_ThenDeserializationErrorActionIsNull()
     {

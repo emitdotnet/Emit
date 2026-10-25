@@ -144,7 +144,9 @@ public async Task ConsumeAsync(ConsumeContext<OrderPlaced> context)
 
 ## Deserialization errors
 
-Deserialization errors occur before the message enters the consumer pipeline. A corrupt payload or a schema mismatch means the message cannot be deserialized into your expected type. These errors are handled separately from consumer exceptions because there is no typed message to pass through the regular error policy.
+Deserialization errors occur before the message enters the consumer pipeline, so the error policy never sees them. Emit tells two kinds apart.
+
+**Invalid data.** The bytes cannot be decoded: a corrupt payload, a payload without the schema registry framing, a schema mismatch, or a failed data quality rule. No retry changes that, so `OnDeserializationError` decides what happens, with `DeadLetter()` or `Discard()`:
 
 ```csharp
 group.OnDeserializationError(err =>
@@ -153,7 +155,15 @@ group.OnDeserializationError(err =>
 });
 ```
 
-Without `OnDeserializationError` configured, deserialization failures are logged and the message is skipped. Only `DeadLetter()` and `Discard()` are available here; retrying a message that cannot be deserialized is not going to produce a different result.
+Without `OnDeserializationError` configured, the message is logged and skipped.
+
+**Anything else.** The deserializer failed for a reason outside the message, typically a schema registry it cannot reach. The message is retried until it is deserialized, and the messages behind it wait: a registry outage, or a wrong registry URL waiting for a redeploy, never costs a message. A rebalance or a shutdown while a message waits leaves it, unhandled, to whoever consumes its partition next. `DeserializationRetryBackoff` sets the delay between attempts:
+
+```csharp
+group.DeserializationRetryBackoff = Backoff.Exponential(TimeSpan.FromSeconds(1), maxDelay: TimeSpan.FromSeconds(30)); // default
+```
+
+See [Serialization](../../kafka/serialization/#deserialization-errors) for how a deserializer tells Emit its bytes are invalid.
 
 ## Validation
 

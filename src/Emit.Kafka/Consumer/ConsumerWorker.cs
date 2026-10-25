@@ -147,16 +147,16 @@ internal sealed class ConsumerWorker<TKey, TValue>
         {
             while (await reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                while (reader.TryRead(out var raw))
+                // Once stopped, the worker takes no more messages: those left in its queue are counted as unhandled
+                while (!cancellationToken.IsCancellationRequested && reader.TryRead(out var raw))
                 {
                     SignalRoom();
-                    cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
                         DeserializedMessage<TKey, TValue> deserialized;
                         try
                         {
-                            deserialized = await DeserializeAsync(raw).ConfigureAwait(false);
+                            deserialized = await DeserializeAsync(raw, cancellationToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                         {
@@ -240,10 +240,9 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 var rawBatch = await accumulator.AccumulateAsync(cancellationToken).ConfigureAwait(false);
                 if (rawBatch is null) break; // channel completed
 
-                cancellationToken.ThrowIfCancellationRequested();
-
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     await ProcessBatchAsync(rawBatch, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -289,7 +288,7 @@ internal sealed class ConsumerWorker<TKey, TValue>
             DeserializedMessage<TKey, TValue> deserialized;
             try
             {
-                deserialized = await DeserializeAsync(raw).ConfigureAwait(false);
+                deserialized = await DeserializeAsync(raw, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -452,55 +451,32 @@ internal sealed class ConsumerWorker<TKey, TValue>
     }
 
     private async Task<DeserializedMessage<TKey, TValue>> DeserializeAsync(
-        ConfluentKafka.ConsumeResult<byte[], byte[]> raw)
+        ConfluentKafka.ConsumeResult<byte[], byte[]> raw,
+        CancellationToken cancellationToken)
     {
         var headers = raw.Message.Headers ?? new ConfluentKafka.Headers();
 
-        TKey key;
-        var start = Stopwatch.GetTimestamp();
-        try
-        {
-            key = await KafkaSerializer.DeserializeAsync(
-                raw.Message.Key is not null ? new ReadOnlyMemory<byte>(raw.Message.Key) : ReadOnlyMemory<byte>.Empty,
-                raw.Message.Key is null,
-                raw.Topic,
-                headers,
-                registration.KeyDeserializer,
-                registration.KeyAsyncDeserializer,
-                ConfluentKafka.MessageComponentType.Key).ConfigureAwait(false);
+        var key = await DeserializeComponentAsync(
+            raw,
+            raw.Message.Key,
+            headers,
+            registration.KeyDeserializer,
+            registration.KeyAsyncDeserializer,
+            registration.IsInvalidKeyData,
+            ConfluentKafka.MessageComponentType.Key,
+            KafkaMetrics.DeserializationComponentKey,
+            cancellationToken).ConfigureAwait(false);
 
-            kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "key");
-        }
-        catch (Exception ex)
-        {
-            kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "key");
-            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, KafkaMetrics.DeserializationComponentKey, deserializationAction);
-            await observerInvoker.OnDeserializationErrorAsync(new DeserializationErrorEvent(groupId, raw.Topic, raw.Partition.Value, raw.Offset.Value, ex)).ConfigureAwait(false);
-            throw;
-        }
-
-        TValue value;
-        start = Stopwatch.GetTimestamp();
-        try
-        {
-            value = await KafkaSerializer.DeserializeAsync(
-                raw.Message.Value is not null ? new ReadOnlyMemory<byte>(raw.Message.Value) : ReadOnlyMemory<byte>.Empty,
-                raw.Message.Value is null,
-                raw.Topic,
-                headers,
-                registration.ValueDeserializer,
-                registration.ValueAsyncDeserializer,
-                ConfluentKafka.MessageComponentType.Value).ConfigureAwait(false);
-
-            kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "value");
-        }
-        catch (Exception ex)
-        {
-            kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, "value");
-            kafkaMetrics.RecordDeserializationError(groupId, raw.Topic, KafkaMetrics.DeserializationComponentValue, deserializationAction);
-            await observerInvoker.OnDeserializationErrorAsync(new DeserializationErrorEvent(groupId, raw.Topic, raw.Partition.Value, raw.Offset.Value, ex)).ConfigureAwait(false);
-            throw;
-        }
+        var value = await DeserializeComponentAsync(
+            raw,
+            raw.Message.Value,
+            headers,
+            registration.ValueDeserializer,
+            registration.ValueAsyncDeserializer,
+            registration.IsInvalidValueData,
+            ConfluentKafka.MessageComponentType.Value,
+            KafkaMetrics.DeserializationComponentValue,
+            cancellationToken).ConfigureAwait(false);
 
         return new DeserializedMessage<TKey, TValue>
         {
@@ -514,6 +490,65 @@ internal sealed class ConsumerWorker<TKey, TValue>
                 ? raw.Message.Timestamp.UtcDateTime
                 : null,
         };
+    }
+
+    /// <summary>
+    /// Deserializes the key or the value of a message. A failure meaning the bytes are invalid is rethrown, for the
+    /// deserialization error action; any other failure is retried until the deserializer succeeds or the worker stops,
+    /// so the message waits out an unreachable schema registry instead of being dead-lettered or discarded.
+    /// </summary>
+    private async Task<T> DeserializeComponentAsync<T>(
+        ConfluentKafka.ConsumeResult<byte[], byte[]> raw,
+        byte[]? data,
+        ConfluentKafka.Headers headers,
+        ConfluentKafka.IDeserializer<T>? syncDeserializer,
+        ConfluentKafka.IAsyncDeserializer<T>? asyncDeserializer,
+        Func<Exception, bool>? isInvalidData,
+        ConfluentKafka.MessageComponentType componentType,
+        string component,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var start = Stopwatch.GetTimestamp();
+            try
+            {
+                var result = await KafkaSerializer.DeserializeAsync(
+                    data is not null ? new ReadOnlyMemory<byte>(data) : ReadOnlyMemory<byte>.Empty,
+                    data is null,
+                    raw.Topic,
+                    headers,
+                    syncDeserializer,
+                    asyncDeserializer,
+                    componentType).ConfigureAwait(false);
+
+                kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, component);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                kafkaMetrics.RecordDeserializationDuration(Stopwatch.GetElapsedTime(start).TotalSeconds, groupId, component);
+                var invalidData = isInvalidData?.Invoke(ex) ?? true;
+                kafkaMetrics.RecordDeserializationError(
+                    groupId, raw.Topic, component, invalidData ? deserializationAction : KafkaMetrics.DeserializationActionRetry);
+                await observerInvoker.OnDeserializationErrorAsync(
+                    new DeserializationErrorEvent(groupId, raw.Topic, raw.Partition.Value, raw.Offset.Value, ex, !invalidData)).ConfigureAwait(false);
+
+                if (invalidData)
+                {
+                    throw;
+                }
+
+                var delay = registration.DeserializationRetryBackoff.CalculateDelay(attempt);
+                logger.LogWarning(ex,
+                    "Deserializing the {Component} of the message from {Topic}[{Partition}]@{Offset} in group '{GroupId}' failed for a reason other than invalid data; retrying in {Delay}",
+                    component, raw.Topic, raw.Partition.Value, raw.Offset.Value, groupId, delay);
+
+                // A stopped worker abandons the message: left unhandled, it is read again by whoever owns its
+                // partition next
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task FanOutAsync(

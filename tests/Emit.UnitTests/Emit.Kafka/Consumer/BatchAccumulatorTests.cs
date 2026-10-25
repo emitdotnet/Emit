@@ -112,23 +112,20 @@ public sealed class BatchAccumulatorTests
     [Fact]
     public async Task Given_CancellationRequested_When_InPhase2_Then_ReturnsAccumulatedMessages()
     {
-        // Arrange — write one message (enters phase 2), then cancel during phase 2 wait
+        // Arrange: two messages taken (phase 2 entered), then cancelled while waiting for more
         var channel = Channel.CreateUnbounded<ConfluentKafka.ConsumeResult<byte[], byte[]>>();
         var accumulator = new BatchAccumulator(10, TimeSpan.FromSeconds(30), channel.Reader);
-
         await channel.Writer.WriteAsync(MakeResult(0));
-
+        await channel.Writer.WriteAsync(MakeResult(1));
         using var cts = new CancellationTokenSource();
 
-        // Cancel after a short delay (while in phase 2 waiting for more)
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(50);
-            await cts.CancelAsync();
-        });
+        // Act
+        var accumulating = accumulator.AccumulateAsync(cts.Token);
+        await cts.CancelAsync();
+        var batch = await accumulating;
 
-        // Act — external cancellation during phase 2 propagates as OperationCanceledException
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => accumulator.AccumulateAsync(cts.Token));
+        // Assert: the messages taken come back, for the worker to count them as unhandled
+        Assert.NotNull(batch);
+        Assert.Equal([0L, 1L], batch.Select(r => r.Offset.Value));
     }
 }

@@ -127,14 +127,15 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
         // Act
         builder.SetJsonSchemaValueDeserializer();
 
-        // Assert
+        // Assert: without a schema registry, nothing but the bytes can make it fail
         Assert.NotNull(builder.ValueAsyncDeserializer);
+        Assert.True(builder.IsInvalidValueData!(new HttpRequestException()));
     }
 
     // ── Deserializer with Schema: requires schema registry ──
 
     [Fact]
-    public void GivenJsonSchemaKeyDeserializerWithSchema_WhenSchemaRegistryConfigured_ThenSetsFactory()
+    public void GivenJsonSchemaKeyDeserializerWithSchema_WhenSchemaRegistryConfigured_ThenSetsFactoryTellingJsonFailuresFromOthers()
     {
         // Arrange
         var builder = new KafkaTopicBuilder<string, string>("test-topic");
@@ -145,6 +146,8 @@ public sealed class KafkaTopicBuilderJsonSchemaExtensionsTests
 
         // Assert
         Assert.NotNull(builder.KeyAsyncDeserializerFactory);
+        Assert.True(builder.IsInvalidKeyData!(new Newtonsoft.Json.JsonReaderException("Unexpected character")));
+        Assert.False(builder.IsInvalidKeyData!(new HttpRequestException()));
     }
 
     [Fact]

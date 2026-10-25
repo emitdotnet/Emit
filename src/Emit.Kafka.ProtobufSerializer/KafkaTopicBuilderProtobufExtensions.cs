@@ -60,8 +60,7 @@ public static class KafkaTopicBuilderProtobufExtensions
         IEnumerable<KeyValuePair<string, string>>? config = null)
         where TKey : class, IMessage<TKey>, new()
     {
-        builder.SetKeyDeserializer(
-            new ConfluentSerdes.ProtobufDeserializer<TKey>(config));
+        builder.SetKeyDeserializer(new ConfluentSerdes.ProtobufDeserializer<TKey>(config), InvalidData.Always);
     }
 
     // ── Value deserializer ──
@@ -76,8 +75,6 @@ public static class KafkaTopicBuilderProtobufExtensions
         IEnumerable<KeyValuePair<string, string>>? config = null)
         where TValue : class, IMessage<TValue>, new()
     {
-        builder.SetValueDeserializer(
-            new ConfluentSerdes.ProtobufDeserializer<TValue>(config));
+        builder.SetValueDeserializer(new ConfluentSerdes.ProtobufDeserializer<TValue>(config), InvalidData.Always);
     }
-
 }

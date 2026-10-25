@@ -259,13 +259,15 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 
 For error handling, circuit breakers, and rate limiting at the group level, see [Error Policies](../../error-handling/error-policies/) and [Resilience](../../error-handling/resilience/).
 
-## Graceful shutdown
+## Graceful shutdown and rebalances
 
-When the application stops, Emit waits up to `WorkerStopTimeout` for in-flight messages to complete before forcing shutdown:
+When a rebalance revokes the group's partitions, the messages already handed to the workers get `WorkerStopTimeout` to finish. When the application stops, they are cancelled at once.
 
 ```csharp
 group.WorkerStopTimeout = TimeSpan.FromSeconds(30);  // default
 ```
+
+Handlers still running are cancelled through their `CancellationToken`, and the messages waiting behind them are not handled. The partitions are released once the handlers stopped, so the next owner of a partition never handles a key while this consumer still does: per-key order holds across rebalances. Messages left unfinished are not committed and are delivered again to the partition's next owner. Partitions lost rather than revoked, typically after a session timeout, already belong to another consumer: their handlers are cancelled at once, and nothing more is committed for them. With cooperative rebalancing (`PartitionAssignmentStrategy.CooperativeSticky`), the partitions a consumer keeps go on from their first unfinished message, and partitions added to it are handled by the same workers. Handlers must observe their `CancellationToken`: one that ignores it is given `WorkerStopTimeout` to stop, then logged as an error and left running, and may still be handling its message when the partition's next owner starts.
 
 ## Flow control
 
@@ -371,7 +373,7 @@ This is the right choice when nulls are noise. When the handler must observe the
 | `OnPartitionsLostAsync` | `PartitionsLostEvent(GroupId, Topic, Partitions)` | Unclean partition loss |
 | `OnOffsetsCommittedAsync` | `OffsetsCommittedEvent(GroupId, Offsets)` | Offsets successfully committed |
 | `OnOffsetCommitErrorAsync` | `OffsetCommitErrorEvent(GroupId, Offsets, Exception)` | Offset commit fails |
-| `OnDeserializationErrorAsync` | `DeserializationErrorEvent(GroupId, Topic, Partition, Offset, Exception)` | Message fails deserialization before pipeline entry |
+| `OnDeserializationErrorAsync` | `DeserializationErrorEvent(GroupId, Topic, Partition, Offset, Exception, WillRetry)` | Message fails deserialization before pipeline entry, on every attempt when the failure is retried (`WillRetry`) |
 
 `OnConsumerFaultedAsync` and `OnPartitionsLostAsync` are the most operationally significant; they signal conditions that require attention rather than normal lifecycle transitions.
 

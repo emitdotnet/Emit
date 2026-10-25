@@ -602,6 +602,9 @@ public sealed class KafkaBuilder
                 ValueDeserializer = topicBuilder.ValueDeserializer,
                 KeyAsyncDeserializer = topicBuilder.KeyAsyncDeserializer ?? config.KeyDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
                 ValueAsyncDeserializer = topicBuilder.ValueAsyncDeserializer ?? config.ValueDeserializerFactory?.Invoke(sp.GetRequiredService<ConfluentSchemaRegistry.ISchemaRegistryClient>()),
+                IsInvalidKeyData = topicBuilder.IsInvalidKeyData,
+                IsInvalidValueData = topicBuilder.IsInvalidValueData,
+                DeserializationRetryBackoff = config.DeserializationRetryBackoff,
                 // Pipeline factory — called per worker for per-worker middleware isolation.
                 // Singleton middleware is shared (same DI singleton); factory middleware creates fresh instances per build.
                 BuildConsumerPipelines = () =>
@@ -871,6 +874,7 @@ public sealed class KafkaBuilder
             BufferSize = bufferSize,
             CommitInterval = commitInterval,
             WorkerStopTimeout = workerStopTimeout,
+            DeserializationRetryBackoff = groupBuilder.DeserializationRetryBackoff,
             DestinationAddress = destinationAddress,
             GroupErrorPolicy = groupErrorPolicy,
             DeserializationErrorAction = deserializationErrorAction,
@@ -899,6 +903,7 @@ public sealed class KafkaBuilder
         public required int BufferSize { get; init; }
         public required TimeSpan CommitInterval { get; init; }
         public required TimeSpan WorkerStopTimeout { get; init; }
+        public required Backoff DeserializationRetryBackoff { get; init; }
         public required Uri DestinationAddress { get; init; }
         public required ErrorPolicy? GroupErrorPolicy { get; init; }
         public required ErrorAction? DeserializationErrorAction { get; init; }
