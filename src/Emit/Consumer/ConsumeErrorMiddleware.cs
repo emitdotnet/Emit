@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 /// <typeparam name="TMessage">The message type.</typeparam>
 internal sealed class ConsumeErrorMiddleware<TMessage>(
-    Func<Exception, ErrorAction>? evaluatePolicy,
+    Func<Exception, ErrorAction?>? evaluatePolicy,
     IDeadLetterSink? deadLetterSink,
     EmitMetrics emitMetrics,
     ILogger<ConsumeErrorMiddleware<TMessage>> logger,
@@ -47,33 +47,28 @@ internal sealed class ConsumeErrorMiddleware<TMessage>(
             MessagingActivity.RecordFailure(process, exception);
         }
 
-        if (evaluatePolicy is null)
+        switch (evaluatePolicy?.Invoke(exception))
         {
-            // No policy configured — discard with warning
-            logger.LogWarning(exception,
-                "No error policy configured for consumer {Consumer}. Discarding message {MessageId}",
-                identifier, context.MessageId);
-            emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscardUnconfigured);
-            emitMetrics.RecordDiscard(context.MessageCount);
-        }
-        else
-        {
-            var action = evaluatePolicy(exception);
+            case ErrorAction.DeadLetterAction:
+                await ExecuteDeadLetterAsync(exception, context).ConfigureAwait(false);
+                break;
 
-            switch (action)
-            {
-                case ErrorAction.DeadLetterAction:
-                    await ExecuteDeadLetterAsync(exception, context).ConfigureAwait(false);
-                    break;
+            case ErrorAction.DiscardAction:
+                logger.LogWarning(exception,
+                    "Discarding message {MessageId} for consumer {Consumer}",
+                    context.MessageId, identifier);
+                emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscard);
+                emitMetrics.RecordDiscard(context.MessageCount);
+                break;
 
-                case ErrorAction.DiscardAction:
-                    logger.LogWarning(exception,
-                        "Discarding message {MessageId} for consumer {Consumer}",
-                        context.MessageId, identifier);
-                    emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscard);
-                    emitMetrics.RecordDiscard(context.MessageCount);
-                    break;
-            }
+            case null:
+                // No error policy action applies to this failure: the default is to discard with a warning
+                logger.LogWarning(exception,
+                    "No error policy action applies for consumer {Consumer}. Discarding message {MessageId}",
+                    identifier, context.MessageId);
+                emitMetrics.RecordErrorAction(EmitMetrics.ErrorActionDiscardUnconfigured);
+                emitMetrics.RecordDiscard(context.MessageCount);
+                break;
         }
     }
 

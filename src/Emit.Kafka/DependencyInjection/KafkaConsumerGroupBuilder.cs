@@ -280,7 +280,8 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     /// <summary>
     /// Configures error handling for all consumers in this group. When an exception
     /// occurs during message processing, the configured policy determines whether to
-    /// dead-letter or discard the message.
+    /// retry, dead-letter, or discard the message. A failure the policy has no action for
+    /// is logged as a warning and the message is discarded, as when no policy is configured.
     /// </summary>
     /// <param name="configure">Configures the error policy.</param>
     /// <returns>This builder for continued chaining.</returns>

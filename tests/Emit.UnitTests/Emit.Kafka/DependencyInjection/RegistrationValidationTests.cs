@@ -21,39 +21,6 @@ public sealed class RegistrationValidationTests
         public Task ConsumeAsync(ConsumeContext<string> context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    // ── OnError without Default throws ──
-
-    [Fact]
-    public void GivenOnErrorWithoutDefault_WhenBuild_ThenThrowsInvalidOperationException()
-    {
-        // Arrange
-        var policyBuilder = new ErrorPolicyBuilder();
-        policyBuilder.When<InvalidOperationException>(a => a.Retry(3, Backoff.None).Discard());
-        // No Default() call
-
-        // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => policyBuilder.Build());
-        Assert.Contains("Default error action is required", ex.Message);
-    }
-
-    // ── OnError with Default succeeds ──
-
-    [Fact]
-    public void GivenOnErrorWithDefault_WhenBuild_ThenSucceeds()
-    {
-        // Arrange
-        var policyBuilder = new ErrorPolicyBuilder();
-        policyBuilder
-            .When<InvalidOperationException>(a => a.Retry(3, Backoff.None).Discard())
-            .Default(a => a.Discard());
-
-        // Act
-        var policy = policyBuilder.Build();
-
-        // Assert
-        Assert.NotNull(policy);
-    }
-
     // ── Group-level error policy ──
 
     [Fact]

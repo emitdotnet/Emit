@@ -12,7 +12,7 @@ using Xunit;
 /// <summary>
 /// Compliance tests for exception-type-specific error policy behavior using <c>When&lt;TException&gt;</c>
 /// clauses. Derived classes configure a <c>string, string</c> topic whose consumer group applies
-/// a policy with a typed clause and a default action.
+/// a policy with a typed clause, with or without a default action.
 /// </summary>
 [Trait("Category", "Integration")]
 public abstract class ErrorPolicyCompliance
@@ -21,7 +21,7 @@ public abstract class ErrorPolicyCompliance
     /// Configures the messaging provider with a source <c>string, string</c> topic and a DLQ
     /// <c>string, string</c> topic. The source consumer group applies an error policy with a
     /// <c>When&lt;ArgumentException&gt;</c> clause that dead-letters to <paramref name="dlqTopic"/>
-    /// and a <c>Default</c> clause that discards. The consumer group must use
+    /// and no <c>Default</c>. The consumer group must use
     /// <see cref="TypedExceptionConsumer"/>. A consumer on <paramref name="dlqTopic"/> must use
     /// <see cref="DlqCaptureConsumer"/>.
     /// </summary>
@@ -68,11 +68,11 @@ public abstract class ErrorPolicyCompliance
             using var scope = host.Services.CreateScope();
             var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
 
-            // Act — produce a message that triggers ArgumentException (matches the When clause → DLQ).
+            // Act: a message that triggers ArgumentException, which the When clause dead-letters.
             throwControl.ExceptionToThrow = ThrowControl.ThrowArgumentException;
             await producer.ProduceAsync(new EventMessage<string, string>("k1", "matching-exception"));
 
-            // Assert — message arrives in the DLQ because the When<ArgumentException> clause matched.
+            // Assert: the message arrives in the DLQ because the When<ArgumentException> clause matched.
             var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("matching-exception", Encoding.UTF8.GetString(ctx.Message));
         }
@@ -84,8 +84,9 @@ public abstract class ErrorPolicyCompliance
     }
 
     /// <summary>
-    /// Verifies that when the consumer throws a non-matching exception type, the default action
-    /// (discard) applies and the pipeline continues processing subsequent messages.
+    /// Verifies that a policy without a <c>Default</c> starts, and that when the consumer throws a
+    /// non-matching exception type, the message is discarded and the pipeline continues processing
+    /// subsequent messages.
     /// </summary>
     [Fact]
     public async Task GivenWhenClause_WhenNonMatchingExceptionThrown_ThenDefaultActionApplied()
@@ -114,20 +115,15 @@ public abstract class ErrorPolicyCompliance
             using var scope = host.Services.CreateScope();
             var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
 
-            // Act — produce a message that triggers InvalidOperationException (no When clause → Default → discard).
+            // Act: a message that triggers InvalidOperationException, which no clause handles, so it is discarded.
             throwControl.ExceptionToThrow = ThrowControl.ThrowInvalidOperation;
             await producer.ProduceAsync(new EventMessage<string, string>("k1", "non-matching-exception"));
 
-            // Act — produce a sentinel message with no exception to prove the pipeline is still running.
+            // Act: a sentinel message with no exception, to prove the pipeline is still running.
             throwControl.ExceptionToThrow = ThrowControl.ThrowNothing;
             await producer.ProduceAsync(new EventMessage<string, string>("k2", "sentinel-after-discard"));
 
-            // Assert — the non-matching exception triggers discard; the DLQ receives nothing from it.
-            // The sentinel proves pipeline continued. We confirm the DLQ never received the first message
-            // by checking it receives only the sentinel (which would go to DLQ if it also throws — it doesn't).
-            // Instead, verify the sink (direct consumer) is empty for the first message.
-            // Since the sentinel does not throw (throwNothing), it succeeds and does NOT go to DLQ.
-            // We wait a short period and assert the DLQ is still empty (discard leaves nothing in DLQ).
+            // Assert: the discarded message leaves nothing in the DLQ.
             await Task.Delay(TimeSpan.FromSeconds(5));
             Assert.Empty(dlqSink.ReceivedMessages);
         }
@@ -192,7 +188,7 @@ public abstract class ErrorPolicyCompliance
             using var scope = host.Services.CreateScope();
             var producer = scope.ServiceProvider.GetRequiredService<IEventProducer<string, string>>();
 
-            // Act — produce a message whose exception does NOT match the predicate → falls through to Default → discard.
+            // Act: a message whose exception does not match the predicate, so the Default discards it.
             predicateControl.MessageSuffix = "WRONG";
             await producer.ProduceAsync(new EventMessage<string, string>("k1", "non-matching-predicate"));
 
@@ -204,11 +200,11 @@ public abstract class ErrorPolicyCompliance
             await Task.Delay(TimeSpan.FromSeconds(8));
             Assert.Empty(dlqSink.ReceivedMessages);
 
-            // Act — produce a message whose exception DOES match the predicate → dead-lettered.
+            // Act: a message whose exception matches the predicate, so it is dead-lettered.
             predicateControl.MessageSuffix = "MATCH";
             await producer.ProduceAsync(new EventMessage<string, string>("k3", "matching-predicate"));
 
-            // Assert — the matching message arrives in the DLQ.
+            // Assert: the matching message arrives in the DLQ.
             var ctx = await dlqSink.WaitForMessageAsync();
             Assert.Equal("matching-predicate", Encoding.UTF8.GetString(ctx.Message));
         }

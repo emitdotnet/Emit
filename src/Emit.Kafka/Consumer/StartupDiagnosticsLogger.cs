@@ -99,8 +99,8 @@ internal static class StartupDiagnosticsLogger
         if (dlqEntityName is not null && dlqEntityName.Equals(registration.TopicName, StringComparison.Ordinal))
         {
             logger.LogWarning(
-                "Consumer {Handler} on topic {Topic} in group {GroupId} may create infinite loop — " +
-                "consuming from DLQ topic with dead-lettering configured.",
+                "Consumer {Handler} on topic {Topic} in group {GroupId} may create an infinite loop: " +
+                "it consumes from the DLQ topic with dead-lettering configured.",
                 consumerType.Name, registration.TopicName, registration.GroupId);
         }
     }
@@ -116,8 +116,7 @@ internal static class StartupDiagnosticsLogger
 
         foreach (var clause in policy.Clauses)
         {
-            var actionStr = clause.Action is not null ? FormatAction(clause.Action) : "Default";
-            parts.Add($"When<{clause.ExceptionType.Name}>: {actionStr}");
+            parts.Add($"When<{clause.ExceptionType.Name}>: {FormatAction(clause.Action)}");
         }
 
         parts.Add($"Default: {FormatAction(policy.DefaultAction)}");
@@ -127,7 +126,7 @@ internal static class StartupDiagnosticsLogger
 
     private static string FormatAction(ErrorAction? action) => action switch
     {
-        null => "None",
+        null => "None (discard)",
         ErrorAction.RetryAction r => $"Retry({r.MaxAttempts}x, then {FormatAction(r.ExhaustionAction)})",
         ErrorAction.DeadLetterAction => "DeadLetter",
         ErrorAction.DiscardAction => "Discard",
@@ -140,20 +139,17 @@ internal static class StartupDiagnosticsLogger
 
         foreach (var clause in policy.Clauses)
         {
-            if (clause.Action is not null)
+            var duration = ComputeRetryDuration(clause.Action);
+            if (duration > maxDuration)
             {
-                var duration = ComputeRetryDuration(clause.Action);
-                if (duration > maxDuration)
-                {
-                    maxDuration = duration;
-                }
+                maxDuration = duration;
             }
         }
 
         return maxDuration;
     }
 
-    private static TimeSpan ComputeRetryDuration(ErrorAction action)
+    private static TimeSpan ComputeRetryDuration(ErrorAction? action)
     {
         if (action is not ErrorAction.RetryAction retry)
         {

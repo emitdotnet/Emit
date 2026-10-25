@@ -587,6 +587,11 @@ public sealed class KafkaBuilder
                 ? new RateLimitMiddleware(rateLimiter, sp.GetRequiredService<EmitMetrics>())
                 : null;
 
+            // The action applied to a failure no retry follows: RetryMiddleware handles the retries
+            Func<Exception, ErrorAction?>? errorPolicy = config.GroupErrorPolicy is { } policy
+                ? ex => StripRetryAction(policy.Evaluate(ex))
+                : null;
+
             var registration = new ConsumerGroupRegistration<TKey, TValue>
             {
                 Name = name,
@@ -601,11 +606,6 @@ public sealed class KafkaBuilder
                 // Singleton middleware is shared (same DI singleton); factory middleware creates fresh instances per build.
                 BuildConsumerPipelines = () =>
                 {
-                    // Build error evaluator that strips RetryAction (retry handled by RetryMiddleware)
-                    Func<Exception, ErrorAction>? errorEvaluator = config.GroupErrorPolicy is not null
-                        ? ex => StripRetryAction(config.GroupErrorPolicy.Evaluate(ex))
-                        : null;
-
                     var composer = new ConsumerPipelineComposer<TValue>
                     {
                         Services = sp,
@@ -613,7 +613,7 @@ public sealed class KafkaBuilder
                         ValidationMiddleware = BuildValidationMiddleware(config.ValidationMiddleware),
                         FilterMiddleware = BuildFilterMiddleware(config.FilterMiddleware),
                         RetryPolicy = config.RetryPolicy,
-                        ErrorPolicy = errorEvaluator,
+                        ErrorPolicy = errorPolicy,
                         ConsumeObservers = consumeObservers,
                         GroupPipeline = config.GroupPipeline,
                         GlobalPipeline = globalPipeline,
@@ -636,10 +636,8 @@ public sealed class KafkaBuilder
                     {
                         foreach (var routerReg in config.Routers)
                         {
-                            // Strip retry from unmatched route action (router only checks for DiscardAction)
-                            var unmatchedAction = config.GroupErrorPolicy is not null
-                                ? StripRetryAction(config.GroupErrorPolicy.Evaluate(new UnmatchedRouteException(null)))
-                                : null;
+                            // The router only checks for a discard, so it gets the action without its retries
+                            var unmatchedAction = errorPolicy?.Invoke(new UnmatchedRouteException(null));
 
                             var routerInvoker = routerReg.BuildInvoker(
                                 type => new HandlerInvoker<TValue>(type),
@@ -688,10 +686,6 @@ public sealed class KafkaBuilder
                             ? new BatchPerItemAdapter<TValue>(_ => innerFilter)
                             : null;
 
-                        Func<Exception, ErrorAction>? batchErrorEvaluator = config.GroupErrorPolicy is not null
-                            ? ex => StripRetryAction(config.GroupErrorPolicy.Evaluate(ex))
-                            : null;
-
                         var batchComposer = new ConsumerPipelineComposer<MessageBatch<TValue>>
                         {
                             Services = sp,
@@ -699,7 +693,7 @@ public sealed class KafkaBuilder
                             ValidationMiddleware = batchValidation,
                             FilterMiddleware = batchFilter,
                             RetryPolicy = config.RetryPolicy,
-                            ErrorPolicy = batchErrorEvaluator,
+                            ErrorPolicy = errorPolicy,
                             ConsumeObservers = consumeObservers,
                             GroupPipeline = config.GroupPipeline,
                             GlobalPipeline = globalPipeline,
@@ -910,7 +904,7 @@ public sealed class KafkaBuilder
         public required ErrorAction? DeserializationErrorAction { get; init; }
         public required ValidationMiddleware<TValue>? ValidationMiddleware { get; init; }
         public required FilterMiddleware<TValue>? FilterMiddleware { get; init; }
-        public required Func<Exception, ErrorAction>? RetryPolicy { get; init; }
+        public required Func<Exception, ErrorAction?>? RetryPolicy { get; init; }
         public required System.Threading.RateLimiting.RateLimiter? RateLimiter { get; init; }
         public required CircuitBreakerConfig? CircuitBreakerConfig { get; init; }
         public required MessagePipelineBuilder KafkaInboundPipeline { get; init; }
@@ -1078,7 +1072,7 @@ public sealed class KafkaBuilder
     /// Returns the policy evaluator <c>RetryMiddleware</c> decides retries with, or <c>null</c>
     /// when neither the default action nor any clause retries, so no retry layer is composed.
     /// </summary>
-    private static Func<Exception, ErrorAction>? BuildRetryPolicy(ErrorPolicy? policy)
+    private static Func<Exception, ErrorAction?>? BuildRetryPolicy(ErrorPolicy? policy)
     {
         if (policy is null)
         {
@@ -1094,9 +1088,9 @@ public sealed class KafkaBuilder
     /// <summary>
     /// Strips <see cref="ErrorAction.RetryAction"/> wrapping from an error action,
     /// returning the exhaustion action. Retry is handled by <c>RetryMiddleware</c>;
-    /// the error policy should only return dead-letter or discard.
+    /// the error policy should only return dead-letter, discard, or no action.
     /// </summary>
-    private static ErrorAction StripRetryAction(ErrorAction action) =>
+    private static ErrorAction? StripRetryAction(ErrorAction? action) =>
         action is ErrorAction.RetryAction retry ? retry.ExhaustionAction : action;
 
     private sealed class SchemaRegistryMarker;

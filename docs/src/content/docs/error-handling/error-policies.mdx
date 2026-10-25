@@ -27,7 +27,7 @@ topic.ConsumerGroup("pizza-kitchen", group =>
 });
 ```
 
-Clauses are evaluated in registration order. The first `When` clause whose exception type matches wins. If nothing matches, the `Default` action applies. You should always configure a `Default`; without one, unmatched exceptions are logged and the message is discarded with a warning.
+Clauses are evaluated in registration order. The first `When` clause whose exception type matches wins. If nothing matches, the `Default` action applies. `Default` is optional: without one, a failure no clause matches gets Emit's [default behavior](#default-behavior).
 
 ## Terminal actions
 
@@ -161,4 +161,6 @@ A failed validation has its own separate error action and never reaches the erro
 
 ## Default behavior
 
-If you do not configure `OnError` at all, Emit logs the exception as a warning and discards the message. This is a safe default that prevents poison messages from blocking the consumer, but it means failures are silent beyond the log. For production workloads, configure an explicit policy.
+A failure your policy has no action for gets Emit's default: the exception is logged as a warning and the message is discarded, counted as `discard_unconfigured` in `emit.consumer.error.actions`. That covers a failure no clause matches when there is no `Default`, and every failure of a group without `OnError`.
+
+The default keeps a poison message from blocking the consumer, but beyond the log and the metric, the failure is silent. Configure a `Default` to choose another action for everything your clauses do not cover, such as dead-lettering.
