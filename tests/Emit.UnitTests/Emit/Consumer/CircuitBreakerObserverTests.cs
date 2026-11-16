@@ -19,13 +19,13 @@ public sealed class CircuitBreakerObserverTests
         int failureThreshold = 3,
         TimeSpan? samplingWindow = null,
         TimeSpan? pauseDuration = null,
-        Type[]? tripOnExceptionTypes = null)
+        Func<Exception, bool>[]? tripOn = null)
     {
         var config = new CircuitBreakerConfig(
             failureThreshold,
             samplingWindow ?? TimeSpan.FromSeconds(30),
             pauseDuration ?? TimeSpan.FromSeconds(5),
-            tripOnExceptionTypes);
+            tripOn);
 
         return new CircuitBreakerObserver<string>(
             config, "orders-declaration", "group-1", "orders", mockFlowControl.Object, new EmitMetrics(null, new EmitMetricsEnrichment()), logger);
@@ -72,7 +72,7 @@ public sealed class CircuitBreakerObserverTests
             failureThreshold: 3,
             samplingWindow: TimeSpan.FromSeconds(30),
             pauseDuration: TimeSpan.FromSeconds(5),
-            tripOnExceptionTypes: [typeof(InvalidOperationException)]);
+            tripOn: [ex => ex is InvalidOperationException]);
 
         // Act — 3 matching failures should trip the breaker
         for (var i = 0; i < 3; i++)
@@ -92,7 +92,7 @@ public sealed class CircuitBreakerObserverTests
             failureThreshold: 2,
             samplingWindow: TimeSpan.FromSeconds(30),
             pauseDuration: TimeSpan.FromSeconds(5),
-            tripOnExceptionTypes: [typeof(InvalidOperationException)]);
+            tripOn: [ex => ex is InvalidOperationException]);
 
         // Act — throw non-matching exceptions (should NOT trip the breaker)
         for (var i = 0; i < 5; i++)
@@ -112,7 +112,7 @@ public sealed class CircuitBreakerObserverTests
             failureThreshold: 2,
             samplingWindow: TimeSpan.FromSeconds(30),
             pauseDuration: TimeSpan.FromSeconds(5),
-            tripOnExceptionTypes: null);
+            tripOn: null);
 
         // Act — 2 failures with different exception types
         await observer.ReportFailureAsync(new InvalidOperationException("test"));
@@ -300,7 +300,7 @@ public sealed class CircuitBreakerObserverTests
     public async Task GivenHalfOpenCircuit_WhenTheProbeFailsWithAnExceptionTheCircuitIgnores_ThenTheNextAttemptBecomesTheProbe()
     {
         // Arrange: only InvalidOperationException trips the circuit
-        using var observer = await HalfOpenObserverAsync(tripOn: [typeof(InvalidOperationException)]);
+        using var observer = await HalfOpenObserverAsync(tripOn: [ex => ex is InvalidOperationException]);
 
         // Act
         var probe = await observer.BeginAttemptAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(30));
@@ -349,13 +349,13 @@ public sealed class CircuitBreakerObserverTests
     /// <summary>
     /// Returns an observer whose circuit opened on one failure and has gone half-open.
     /// </summary>
-    private async Task<CircuitBreakerObserver<string>> HalfOpenObserverAsync(TimeSpan? pause = null, Type[]? tripOn = null)
+    private async Task<CircuitBreakerObserver<string>> HalfOpenObserverAsync(TimeSpan? pause = null, Func<Exception, bool>[]? tripOn = null)
     {
         var halfOpen = HalfOpenAsync();
         var observer = CreateObserver(
             failureThreshold: 1,
             pauseDuration: pause ?? TimeSpan.FromMilliseconds(300),
-            tripOnExceptionTypes: tripOn);
+            tripOn: tripOn);
         await observer.ReportFailureAsync(new InvalidOperationException("trip"));
         await halfOpen;
         return observer;

@@ -24,7 +24,7 @@ public interface ICircuitBreakerNotifier
     ValueTask ReportSuccessAsync();
 
     /// <summary>
-    /// Reports that an attempt failed. Filtered by <c>TripOn</c> exception types before counting toward the
+    /// Reports that an attempt failed. Filtered by the <c>TripOn</c> conditions before counting toward the
     /// threshold.
     /// </summary>
     ValueTask ReportFailureAsync(Exception exception);
@@ -156,7 +156,7 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
     /// <inheritdoc />
     public async ValueTask ReportFailureAsync(Exception exception)
     {
-        if (config.TripOnExceptionTypes is not null && !MatchesTripOn(exception, config.TripOnExceptionTypes))
+        if (config.TripOn is { } tripOn && !tripOn.Any(trips => trips(exception)))
         {
             return;
         }
@@ -391,20 +391,6 @@ public sealed class CircuitBreakerObserver<TMessage> : ICircuitBreakerNotifier, 
             halfOpenCts.Dispose();
             halfOpenCts = null;
         }
-    }
-
-    private static bool MatchesTripOn(Exception exception, Type[] tripOnTypes)
-    {
-        var exType = exception.GetType();
-        foreach (var tripOnType in tripOnTypes)
-        {
-            if (tripOnType.IsAssignableFrom(exType))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <inheritdoc />

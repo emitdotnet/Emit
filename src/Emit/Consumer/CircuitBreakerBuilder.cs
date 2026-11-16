@@ -11,7 +11,7 @@ public sealed class CircuitBreakerBuilder
     private int failureThreshold;
     private TimeSpan samplingWindow;
     private TimeSpan pauseDuration;
-    private readonly List<Type> tripOnExceptionTypes = [];
+    private readonly List<Func<Exception, bool>> tripOn = [];
     private bool configured;
 
     /// <summary>
@@ -62,7 +62,23 @@ public sealed class CircuitBreakerBuilder
     /// <returns>This builder for chaining.</returns>
     public CircuitBreakerBuilder TripOn<TException>() where TException : Exception
     {
-        tripOnExceptionTypes.Add(typeof(TException));
+        tripOn.Add(ex => ex is TException);
+        return this;
+    }
+
+    /// <summary>
+    /// Restricts which exceptions count toward the failure threshold to those assignable to
+    /// <typeparamref name="TException"/> that <paramref name="predicate"/> accepts, such as a wrapper exception
+    /// whose inner exception is transient. Only the thrown exception's own type is compared, not its inner
+    /// exceptions. Multiple calls are additive.
+    /// </summary>
+    /// <typeparam name="TException">The exception type to count.</typeparam>
+    /// <param name="predicate">Returns <see langword="true"/> for the exceptions to count.</param>
+    /// <returns>This builder for chaining.</returns>
+    public CircuitBreakerBuilder TripOn<TException>(Func<TException, bool> predicate) where TException : Exception
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        tripOn.Add(ex => ex is TException exception && predicate(exception));
         return this;
     }
 
@@ -95,15 +111,22 @@ public sealed class CircuitBreakerBuilder
             failureThreshold,
             samplingWindow,
             pauseDuration,
-            tripOnExceptionTypes.Count > 0 ? tripOnExceptionTypes.ToArray() : null);
+            tripOn.Count > 0 ? tripOn.ToArray() : null);
     }
 }
 
 /// <summary>
 /// Immutable configuration for the circuit breaker.
 /// </summary>
+/// <param name="FailureThreshold">The number of failures within the sampling window that opens the circuit.</param>
+/// <param name="SamplingWindow">The time window over which failures are counted.</param>
+/// <param name="PauseDuration">How long the circuit stays open before going half-open.</param>
+/// <param name="TripOn">
+/// The conditions an exception must meet, any of them, to count toward the threshold; <see langword="null"/> when
+/// every exception counts.
+/// </param>
 public sealed record CircuitBreakerConfig(
     int FailureThreshold,
     TimeSpan SamplingWindow,
     TimeSpan PauseDuration,
-    Type[]? TripOnExceptionTypes);
+    Func<Exception, bool>[]? TripOn);
