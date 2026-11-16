@@ -35,6 +35,9 @@ jobs:
   publish-nuget:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # nuget.org trusted publishing
 
     steps:
     - uses: actions/checkout@v7
@@ -57,8 +60,14 @@ jobs:
     - name: Pack packages
       run: dotnet pack -c Release --no-build -p:Version=${{ steps.get_version.outputs.VERSION }} -p:ContinuousIntegrationBuild=true --output ./artifacts
 
+    - name: NuGet login
+      id: nuget_login
+      uses: NuGet/login@v1
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
     - name: Push to NuGet
-      run: dotnet nuget push './artifacts/*.nupkg' --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push './artifacts/*.nupkg' --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
   deploy-docs:
     needs: test

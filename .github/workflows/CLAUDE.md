@@ -8,4 +8,4 @@
 | `audit.yml` | Dedicated NuGet audit: restore with `AuditPipeline=true` so vulnerable packages fail here only. Runs on PRs, `main`, and daily | Troubleshoot audit failures or NuGet vulnerability handling |
 | `docs.yml` | Builds the docs site on changes under `docs/` | Troubleshoot docs build failures or docs dependency PRs |
 | `deploy-docs.yml` | Manual GitHub Pages deploy of the docs site | Publish docs outside a release |
-| `publish.yml` | Tag-triggered NuGet publish workflow with version extraction and package push | Configure release pipeline or troubleshoot publishing |
+| `publish.yml` | Tag-triggered NuGet publish workflow with version extraction and package push through nuget.org trusted publishing (`NuGet/login`, `NUGET_USER` secret) | Configure release pipeline or troubleshoot publishing |
