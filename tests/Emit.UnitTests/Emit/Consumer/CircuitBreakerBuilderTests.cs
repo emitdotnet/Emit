@@ -21,11 +21,11 @@ public sealed class CircuitBreakerBuilderTests
         Assert.Equal(5, config.FailureThreshold);
         Assert.Equal(TimeSpan.FromSeconds(30), config.SamplingWindow);
         Assert.Equal(TimeSpan.FromSeconds(10), config.PauseDuration);
-        Assert.Null(config.TripOnExceptionTypes);
+        Assert.Null(config.TripOn);
     }
 
     [Fact]
-    public void GivenTripOnConfigured_WhenBuild_ThenConfigContainsExceptionTypes()
+    public void GivenTripOnTypes_WhenBuild_ThenExceptionsOfThoseTypesTrip()
     {
         // Arrange
         var builder = new CircuitBreakerBuilder()
@@ -39,11 +39,32 @@ public sealed class CircuitBreakerBuilderTests
         var config = builder.Build();
 
         // Assert
-        Assert.NotNull(config.TripOnExceptionTypes);
-        Assert.Equal(2, config.TripOnExceptionTypes.Length);
-        Assert.Contains(typeof(InvalidOperationException), config.TripOnExceptionTypes);
-        Assert.Contains(typeof(TimeoutException), config.TripOnExceptionTypes);
+        Assert.True(Trips(config, new ObjectDisposedException("derived from InvalidOperationException")));
+        Assert.True(Trips(config, new TimeoutException()));
+        Assert.False(Trips(config, new ArgumentException()));
     }
+
+    [Fact]
+    public void GivenTripOnWithPredicate_WhenBuild_ThenOnlyExceptionsThePredicateAcceptsTrip()
+    {
+        // Arrange: a transient failure wrapped in a general-purpose exception
+        var builder = new CircuitBreakerBuilder()
+            .FailureThreshold(5)
+            .SamplingWindow(TimeSpan.FromSeconds(30))
+            .PauseDuration(TimeSpan.FromSeconds(10))
+            .TripOn<InvalidOperationException>(ex => ex.InnerException is TimeoutException);
+
+        // Act
+        var config = builder.Build();
+
+        // Assert
+        Assert.True(Trips(config, new InvalidOperationException("wrapped", new TimeoutException())));
+        Assert.False(Trips(config, new InvalidOperationException("a bug")));
+        Assert.False(Trips(config, new TimeoutException()));
+    }
+
+    private static bool Trips(CircuitBreakerConfig config, Exception exception) =>
+        config.TripOn!.Any(tripOn => tripOn(exception));
 
     [Fact]
     public void GivenFailureThresholdZero_WhenSetting_ThenThrowsArgumentOutOfRangeException()
