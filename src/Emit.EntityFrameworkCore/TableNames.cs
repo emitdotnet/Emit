@@ -29,4 +29,9 @@ internal static class TableNames
     /// The table name for daemon assignments.
     /// </summary>
     internal const string DaemonAssignments = "emit_daemon_assignments";
+
+    /// <summary>
+    /// The table name for the messages consumers handled.
+    /// </summary>
+    internal const string Inbox = "emit_inbox";
 }

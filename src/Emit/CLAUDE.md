@@ -19,7 +19,7 @@ Core outbox library: configuration, DI registration, pipeline builder, and backg
 | `Configuration/` | Options classes and IValidateOptions validators for worker and core settings | Add or modify configuration options |
 | `Consumer/` | Circuit breaker, error handling, retry, rate limiting, and worker distribution | Implement consumer middleware or debug consumer behavior |
 | `DependencyInjection/` | EmitBuilder fluent API and AddEmit service registration | Extend the registration API or add new top-level services |
-| `Middleware/` | UnitOfWorkMiddleware bounding each handler's unit of work: transaction and OnSucceeded/OnFailed callbacks | Understand transactions, callbacks, or how a nested handler joins an enclosing transaction |
+| `Middleware/` | UnitOfWorkMiddleware bounding each handler's unit of work (transaction and OnSucceeded/OnFailed callbacks), and the inbox middlewares directly inside it that skip messages already handled | Understand transactions, callbacks, the inbox, or how a nested handler joins an enclosing transaction |
 | `Metrics/` | Core emit metrics and metrics middleware for consume/produce operations | Monitor performance, set up dashboards, or customize instrumentation |
 | `Observability/` | Observer middleware invokers for consume, produce, and outbox events | Implement custom observability or understand observer invocation |
 | `Pipeline/` | Concrete pipeline builder and configuration extension methods | Understand pipeline construction or modify builder behavior |

@@ -97,6 +97,19 @@ await tx.CommitAsync(ct);
 
 `CommitAsync` calls `SaveChangesAsync` internally before committing the database transaction. `IUnitOfWork` is registered automatically as a scoped service by `AddEntityFrameworkCore`, whether or not `UseOutbox()` is called.
 
+## Inbox
+
+Call `UseInbox()` to let consumers skip the messages they already handled. Records are stored in the `emit_inbox` table, which `AddEmitModel` always maps, and the `emit:inbox-cleanup` daemon removes expired ones. See [Inbox](../../inbox/).
+
+```csharp
+.UseInbox(inbox =>
+{
+    inbox.Retention = TimeSpan.FromDays(7);
+    inbox.CleanupInterval = TimeSpan.FromMinutes(1);
+    inbox.CleanupBatchSize = 1000;
+})
+```
+
 ## Lock cleanup
 
-The EF Core provider includes a background worker that periodically deletes expired lock rows. It runs automatically alongside the distributed lock provider. The default cleanup interval is 5 minutes, configurable via `LockCleanupOptions`.
+The EF Core provider periodically deletes expired lock rows with the `emit:lock-cleanup` [daemon](../../concepts/leader-election/), registered automatically alongside the distributed lock provider. Like any daemon it runs on one node of the service, so adding replicas adds no cleanup queries. The default cleanup interval is 5 minutes, configurable via `LockCleanupOptions`.

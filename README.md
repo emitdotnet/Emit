@@ -15,7 +15,7 @@ A .NET transactional outbox library that actually cares about message ordering.
 
 Emit sits between your application and your message broker, making sure every message gets delivered exactly once and in the right order. If your app crashes mid-write, Emit picks up where you left off. No lost messages, no duplicates, no existential dread.
 
-It supports MongoDB and PostgreSQL (via EF Core) for persistence, Kafka for message delivery, and comes with distributed locking, dead letter queues, and OpenTelemetry baked in. Basically, the boring infrastructure stuff you'd rather not build yourself.
+It supports MongoDB and PostgreSQL (via EF Core) for persistence, Kafka for message delivery, and comes with distributed locking, dead letter queues, an inbox that skips messages a consumer already handled, and OpenTelemetry baked in. Basically, the boring infrastructure stuff you'd rather not build yourself.
 
 ## Documentation
 

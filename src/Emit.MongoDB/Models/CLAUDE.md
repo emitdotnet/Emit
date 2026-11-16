@@ -9,3 +9,4 @@
 | `DaemonAssignmentDocument.cs` | Daemon assignment document, unique per service name and daemon id | Understand daemon assignment schema |
 | `LeaderDocument.cs` | Leader lease document of a service, unique per service name | Understand leader election schema |
 | `NodeDocument.cs` | Node registration document with its service name and declared daemon ids | Understand node registration schema |
+| `InboxDocument.cs` | Inbox record, unique per message id and handler, removed by a TTL index on its expiry | Understand the inbox schema |

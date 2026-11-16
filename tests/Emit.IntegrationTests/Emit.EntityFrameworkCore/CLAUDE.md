@@ -16,7 +16,7 @@ PostgreSQL integration tests: EF Core compliance implementations and test DbCont
 | `EfCoreOutboxHeadersCompliance.cs` | Inherits OutboxHeadersCompliance; verifies header propagation through the EF Core outbox | Debug or extend header propagation tests |
 | `EfCoreOutboxObserverCompliance.cs` | Inherits OutboxObserverCompliance; proves EF Core outbox observer event delivery | Debug or extend EF Core outbox observer tests |
 | `PostgreSqlServiceCoordinationCompliance.cs` | Inherits ServiceCoordinationCompliance; proves per-service leaders, daemons and handover on real hosts with PostgreSQL | Debug or extend PostgreSQL coordination tests |
-| `EfCoreLockCleanupTests.cs` | LockCleanupWorker behavior for EF Core expired lock rows | Debug or extend lock cleanup behavior |
+| `EfCoreLockCleanupTests.cs` | LockCleanupDaemon run against PostgreSQL: expired lock rows deleted, active ones kept | Debug or extend lock cleanup behavior |
 | `EfCoreTransactionalMiddlewareCompliance.cs` | Inherits TransactionalMiddlewareCompliance; proves [Transactional] middleware with EF Core + Kafka | Debug or extend EF Core transactional middleware tests |
 | `EfCoreUnitOfWorkCompliance.cs` | Inherits UnitOfWorkCompliance; proves IUnitOfWork with EF Core + Kafka | Debug or extend EF Core unit of work tests |
 | `EfCoreImplicitOutboxCompliance.cs` | Inherits ImplicitOutboxCompliance; proves EF Core implicit outbox (Tier 1) with SaveChangesAsync | Debug or extend EF Core implicit outbox tests |
@@ -25,6 +25,7 @@ PostgreSQL integration tests: EF Core compliance implementations and test DbCont
 | `EfCoreProducerOutboxRoutingCompliance.cs` | Inherits ProducerOutboxRoutingCompliance; proves outbox-backed producer routing with EF Core + Kafka | Debug or extend EF Core producer outbox-routing tests |
 | `EfCoreTransactionalRouterCompliance.cs` | Inherits TransactionalRouterCompliance with EF Core (PostgreSQL) | Debug or extend EF Core transactional router tests |
 | `EfCoreUnitOfWorkCallbackCompliance.cs` | Inherits UnitOfWorkCallbackCompliance with EF Core (PostgreSQL) | Debug or extend EF Core unit of work callback tests |
+| `EfCoreInboxCompliance.cs` | Inherits InboxCompliance with EF Core (PostgreSQL) | Debug or extend EF Core inbox tests |
 
 ## Subdirectories
 

@@ -45,10 +45,10 @@ public sealed class MessageRouterBuilder<TMessage, TRouteKey>
     /// </summary>
     /// <typeparam name="TConsumer">The consumer handler type.</typeparam>
     /// <param name="key">The route key value to match.</param>
-    /// <param name="configure">Configures per-route middleware and filters.</param>
+    /// <param name="configure">Configures per-route middleware, filters and the inbox.</param>
     /// <returns>This builder for continued chaining.</returns>
     /// <exception cref="InvalidOperationException">Duplicate route key or consumer type.</exception>
-    public MessageRouterBuilder<TMessage, TRouteKey> Route<TConsumer>(TRouteKey key, Action<IInboundConfigurable<TMessage>> configure)
+    public MessageRouterBuilder<TMessage, TRouteKey> Route<TConsumer>(TRouteKey key, Action<IConsumerConfigurable<TMessage>> configure)
         where TConsumer : class, IConsumer<TMessage>
     {
         ArgumentNullException.ThrowIfNull(configure);
@@ -62,6 +62,7 @@ public sealed class MessageRouterBuilder<TMessage, TRouteKey>
             RouteKey = key,
             ConsumerType = typeof(TConsumer),
             Pipeline = !configurator.Pipeline.IsEmpty ? configurator.Pipeline : null,
+            InboxEnabled = configurator.InboxEnabled,
         });
 
         return this;

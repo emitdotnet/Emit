@@ -48,4 +48,5 @@ Abstract compliance test base classes. Each class defines [Fact] methods that ev
 | `ProducerOutboxRoutingCompliance.cs` | Producer routes through the outbox: a rolled-back transaction delivers nothing, regardless of registration order | Add producer outbox-routing tests or debug direct-versus-outbox routing |
 | `BatchFilterCompliance.cs` | Consumer filters on batch consumers: filtered items dropped from the batch, the rest delivered | Add batch filter tests |
 | `TransactionalRouterCompliance.cs` | [Transactional] on routed handlers: each route gets its own usable unit of work | Add transactional router tests |
+| `InboxCompliance.cs` | Inbox on real hosts: a message produced twice or redelivered after a restart handled once, retries and final failures, fan-out, groups, routes, concurrent copies, batches, expiry, the stored record, services sharing a database with different retentions | Add inbox tests or debug the inbox |
 | `UnitOfWorkCallbackCompliance.cs` | OnSucceeded and OnFailed callbacks run once at the end of the unit of work, against a real database and broker | Add unit of work callback tests |

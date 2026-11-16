@@ -95,6 +95,14 @@ public async Task HandleAsync(PlacePizzaOrder request, CancellationToken ct)
 MongoDB transactions require a **replica set** (or sharded cluster). A standalone `mongod` does not support multi-document transactions. For local development, run MongoDB as a single-node replica set.
 :::
 
+## Inbox
+
+Call `UseInbox()` to let consumers skip the messages they already handled. Records are stored in the `emit.inbox` collection, and a TTL index removes expired ones. See [Inbox](../../inbox/).
+
+```csharp
+.UseInbox(inbox => inbox.Retention = TimeSpan.FromDays(7))
+```
+
 ## Serialization
 
 Emit uses the official MongoDB.Driver BSON conventions. `OutboxEntry` fields are stored with camelCase keys by default, consistent with the rest of your MongoDB documents.

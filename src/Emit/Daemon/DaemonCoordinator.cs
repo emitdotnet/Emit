@@ -4,6 +4,7 @@ using Emit.Abstractions;
 using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
 using Emit.Configuration;
+using Emit.DependencyInjection;
 using Emit.LeaderElection;
 using Emit.Metrics;
 using Emit.Observability;
@@ -89,6 +90,7 @@ internal sealed class DaemonCoordinator
         IDaemonAssignmentPersistence assignmentPersistence,
         ILeaderElectionPersistence leaderElectionPersistence,
         IEnumerable<IDaemonAgent> daemons,
+        IEnumerable<EmitDaemonMarker> emitDaemons,
         DaemonObserverInvoker observerInvoker,
         LeaderElectionObserverInvoker leaderElectionObserverInvoker,
         IOptions<DaemonOptions> options,
@@ -101,6 +103,7 @@ internal sealed class DaemonCoordinator
             assignmentPersistence,
             leaderElectionPersistence,
             daemons,
+            emitDaemons.Select(m => m.DaemonType),
             observerInvoker,
             leaderElectionObserverInvoker,
             options,
@@ -116,12 +119,14 @@ internal sealed class DaemonCoordinator
 
     /// <summary>
     /// Creates a coordinator that judges nodes with <paramref name="nodeObservations"/>, and starts and cancels
-    /// daemon runs on <paramref name="runScheduler"/>.
+    /// daemon runs on <paramref name="runScheduler"/>. Only the daemons of <paramref name="internalDaemonTypes"/>, Emit's
+    /// own, may use the reserved identifier prefix.
     /// </summary>
     internal DaemonCoordinator(
         IDaemonAssignmentPersistence assignmentPersistence,
         ILeaderElectionPersistence leaderElectionPersistence,
         IEnumerable<IDaemonAgent> daemons,
+        IEnumerable<Type> internalDaemonTypes,
         DaemonObserverInvoker observerInvoker,
         LeaderElectionObserverInvoker leaderElectionObserverInvoker,
         IOptions<DaemonOptions> options,
@@ -136,6 +141,7 @@ internal sealed class DaemonCoordinator
         ArgumentNullException.ThrowIfNull(assignmentPersistence);
         ArgumentNullException.ThrowIfNull(leaderElectionPersistence);
         ArgumentNullException.ThrowIfNull(daemons);
+        ArgumentNullException.ThrowIfNull(internalDaemonTypes);
         ArgumentNullException.ThrowIfNull(observerInvoker);
         ArgumentNullException.ThrowIfNull(leaderElectionObserverInvoker);
         ArgumentNullException.ThrowIfNull(options);
@@ -149,7 +155,7 @@ internal sealed class DaemonCoordinator
 
         this.assignmentPersistence = assignmentPersistence;
         this.leaderElectionPersistence = leaderElectionPersistence;
-        this.daemons = IndexDaemons(daemons);
+        this.daemons = IndexDaemons(daemons, [.. internalDaemonTypes]);
         this.observerInvoker = observerInvoker;
         this.leaderElectionObserverInvoker = leaderElectionObserverInvoker;
         this.options = options.Value;
@@ -1227,7 +1233,7 @@ internal sealed class DaemonCoordinator
     /// <summary>
     /// Indexes the daemons by identifier, reading each identifier once.
     /// </summary>
-    private static Dictionary<string, IDaemonAgent> IndexDaemons(IEnumerable<IDaemonAgent> daemons)
+    private static Dictionary<string, IDaemonAgent> IndexDaemons(IEnumerable<IDaemonAgent> daemons, HashSet<Type> internalDaemonTypes)
     {
         Dictionary<string, IDaemonAgent> byId = new(StringComparer.Ordinal);
         foreach (var daemon in daemons)
@@ -1245,7 +1251,7 @@ internal sealed class DaemonCoordinator
                     nameof(daemons));
             }
 
-            if (daemonId.StartsWith(ValidationConstants.ReservedDaemonIdPrefix, StringComparison.OrdinalIgnoreCase) && daemon is not OutboxDaemon)
+            if (daemonId.StartsWith(ValidationConstants.ReservedDaemonIdPrefix, StringComparison.OrdinalIgnoreCase) && !internalDaemonTypes.Contains(daemon.GetType()))
             {
                 throw new ArgumentException(
                     $"Daemon identifier '{daemonId}' starts with '{ValidationConstants.ReservedDaemonIdPrefix}', which is reserved for Emit's own daemons.",

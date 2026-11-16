@@ -210,6 +210,10 @@ public sealed class ScanBatchConsumer(
 
 Each retry attempt gets a fresh transaction. See [Outbox](../../outbox/) for persistence setup.
 
+### Inbox
+
+Call `batch.UseInbox()` to drop from each batch the messages the consumer already handled. A batch with nothing new does not reach the consumer, which must be `[Transactional]`. See [Inbox](../../inbox/).
+
 ## Offset commit
 
 Offsets for all messages in a batch are committed together after the handler completes (or after retry exhaustion). The watermark algorithm ensures offsets advance only when all prior messages have been processed. A failed batch does not block the watermark for other workers; each worker tracks its own offsets independently.

@@ -6,18 +6,30 @@ using Emit.Pipeline;
 using Emit.Pipeline.Modules;
 
 /// <summary>
-/// Configures per-consumer middleware for a single consumer handler registered
+/// Configures per-consumer middleware and the inbox for a single consumer handler registered
 /// via <see cref="KafkaConsumerGroupBuilder{TKey, TValue}.AddConsumer{TConsumer}(Action{KafkaConsumerHandlerBuilder{TValue}})"/>.
 /// Middleware registered here wraps only this consumer's invocation, running after
 /// any group-level middleware.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
-public sealed class KafkaConsumerHandlerBuilder<TValue> : IInboundConfigurable<TValue>
+public sealed class KafkaConsumerHandlerBuilder<TValue> : IConsumerConfigurable<TValue>
 {
     /// <summary>
     /// Gets the per-consumer middleware level.
     /// </summary>
     internal MessagePipelineBuilder<ConsumeContext<TValue>> Pipeline { get; } = new();
+
+    /// <summary>
+    /// Gets a value indicating whether the consumer uses the inbox.
+    /// </summary>
+    internal bool InboxEnabled { get; private set; }
+
+    /// <inheritdoc />
+    public IConsumerConfigurable<TValue> UseInbox()
+    {
+        InboxEnabled = true;
+        return this;
+    }
 
     /// <inheritdoc />
     public IInboundConfigurable<TValue> Use<TMiddleware>(MiddlewareLifetime lifetime = default)

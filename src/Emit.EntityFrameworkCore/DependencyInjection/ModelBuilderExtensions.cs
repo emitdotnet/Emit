@@ -22,8 +22,8 @@ public static class ModelBuilderExtensions
     /// </param>
     /// <returns>The model builder for method chaining.</returns>
     /// <remarks>
-    /// Call this method in your <see cref="DbContext.OnModelCreating"/> to add the outbox
-    /// and lock tables to your database schema.
+    /// Call this method in your <see cref="DbContext.OnModelCreating"/> to add the outbox,
+    /// inbox and lock tables to your database schema.
     /// </remarks>
     public static ModelBuilder AddEmitModel(this ModelBuilder modelBuilder, Action<EmitModelBuilder>? configure = null)
     {
@@ -34,6 +34,7 @@ public static class ModelBuilderExtensions
         ConfigureLeaderEntity(modelBuilder);
         ConfigureNodeEntity(modelBuilder);
         ConfigureDaemonAssignmentEntity(modelBuilder);
+        ConfigureInboxEntity(modelBuilder);
 
         if (configure is not null)
         {
@@ -178,9 +179,39 @@ public static class ModelBuilderExtensions
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // Index for LockCleanupWorker DELETE WHERE expires_at < clock_timestamp()
+        // Index for LockCleanupDaemon DELETE WHERE expires_at < clock_timestamp()
         entity.HasIndex(e => e.ExpiresAt)
             .HasDatabaseName("ix_locks_expires_at");
+    }
+
+    private static void ConfigureInboxEntity(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<InboxEntity>();
+
+        entity.ToTable(TableNames.Inbox);
+
+        // Primary key - one record per message and handler; the message id leads, so a message can be looked up
+        entity.HasKey(e => new { e.MessageId, e.Handler });
+        entity.Property(e => e.MessageId)
+            .HasColumnName("message_id");
+        entity.Property(e => e.Handler)
+            .HasColumnName("handler");
+
+        // When the message was handled - UTC timestamp
+        entity.Property(e => e.HandledAt)
+            .HasColumnName("handled_at")
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+
+        // When the record expires - UTC timestamp
+        entity.Property(e => e.ExpiresAt)
+            .HasColumnName("expires_at")
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+
+        // Index for InboxCleanupDaemon DELETE of expired records
+        entity.HasIndex(e => e.ExpiresAt)
+            .HasDatabaseName("ix_inbox_expires_at");
     }
 
     private static void ConfigureLeaderEntity(ModelBuilder modelBuilder)

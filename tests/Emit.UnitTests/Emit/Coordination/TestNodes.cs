@@ -32,13 +32,15 @@ internal static class TestNodes
         IDaemonObserver[]? daemonObservers = null,
         ILeaderElectionObserver[]? leaderElectionObservers = null,
         ILogger<DaemonCoordinator>? logger = null,
-        DaemonMetrics? metrics = null)
+        DaemonMetrics? metrics = null,
+        IEnumerable<Type>? internalDaemonTypes = null)
     {
         AssertValid(leaderElectionOptions, daemonOptions);
         return new(
             assignmentPersistence,
             leaderElectionPersistence,
             agents,
+            internalDaemonTypes ?? [],
             new DaemonObserverInvoker(daemonObservers ?? [], InlineTaskScheduler.Instance, NullLogger<DaemonObserverInvoker>.Instance),
             new LeaderElectionObserverInvoker(leaderElectionObservers ?? [], InlineTaskScheduler.Instance, NullLogger<LeaderElectionObserverInvoker>.Instance),
             Options.Create(daemonOptions),

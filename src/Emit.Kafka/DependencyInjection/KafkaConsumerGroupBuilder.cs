@@ -23,6 +23,7 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
     private readonly List<Type> consumerTypes = [];
     private readonly HashSet<Type> registeredConsumerTypes = [];
     private readonly Dictionary<Type, MessagePipelineBuilder> consumerPipelines = new();
+    private readonly HashSet<Type> inboxConsumerTypes = [];
     private readonly KafkaConsumerOptions consumerConfig = new();
 
     /// <summary>
@@ -233,6 +234,9 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
 
     /// <summary>Per-consumer middleware pipelines keyed by consumer type.</summary>
     internal IReadOnlyDictionary<Type, MessagePipelineBuilder> ConsumerPipelines => consumerPipelines;
+
+    /// <summary>Consumer types registered via <see cref="AddConsumer{TConsumer}(Action{KafkaConsumerHandlerBuilder{TValue}})"/> that use the inbox.</summary>
+    internal IReadOnlySet<Type> InboxConsumerTypes => inboxConsumerTypes;
 
     /// <summary>Group-level error policy configuration, or <c>null</c> if not configured.</summary>
     internal Action<ErrorPolicyBuilder>? GroupErrorPolicyAction { get; private set; }
@@ -535,6 +539,11 @@ public sealed class KafkaConsumerGroupBuilder<TKey, TValue> : IConsumerGroupConf
         configure(handlerBuilder);
 
         consumerTypes.Add(type);
+
+        if (handlerBuilder.InboxEnabled)
+        {
+            inboxConsumerTypes.Add(type);
+        }
 
         if (!handlerBuilder.Pipeline.IsEmpty)
         {

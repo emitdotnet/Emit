@@ -8,3 +8,4 @@
 | `DaemonAssignmentEntity.cs` | Daemon assignment entity keyed by service name and daemon id | Understand daemon assignment schema |
 | `LeaderEntity.cs` | Leader lease entity of a service, keyed by service name | Understand leader election schema |
 | `NodeEntity.cs` | Node registration entity with its service name and declared daemon ids | Understand node registration schema |
+| `InboxEntity.cs` | Inbox record keyed by message id and handler, with handled and expiry times | Understand the inbox schema |

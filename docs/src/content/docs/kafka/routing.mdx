@@ -52,6 +52,8 @@ router.Route<DeepDishHandler>("deep-dish", route =>
 });
 ```
 
+A route's consumer can also use the [inbox](../../inbox/) with `route.UseInbox()`.
+
 ## Unmatched messages
 
 If the selector returns a key with no registered route, an `UnmatchedRouteException` is thrown. Configure how this is handled via the group's `OnError` policy:

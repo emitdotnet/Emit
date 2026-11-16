@@ -13,7 +13,8 @@ EF Core persistence provider: outbox repository with PostgreSQL support and auto
 | `EfCoreLeaderElectionPersistence.cs` | ILeaderElectionPersistence implementation for PostgreSQL | Understand or debug leader election persistence |
 | `EfCoreTransactionContext.cs` | IEfCoreTransactionContext implementation wrapping IDbContextTransaction with commit/rollback state tracking | Debug EF Core transaction lifecycle or understand double-commit guard |
 | `DbContextFactoryExtensions.cs` | Creates the contexts Emit's background work runs on, connected to the primary whatever the user's connection string targets | Change how coordination, locks or outbox delivery connect |
-| `TableNames.cs` | Table name constants (outbox, locks) | Reference or modify table naming |
+| `TableNames.cs` | Table name constants (outbox, locks, inbox) | Reference or modify table naming |
+| `EfCoreInboxRepository.cs` | IInboxRepository implementation: `INSERT ... ON CONFLICT DO NOTHING` on the user's DbContext in the unit of work's transaction, a batch through one `unnest` array | Implement or debug the EF Core inbox |
 | `Emit.EntityFrameworkCore.csproj` | Project file with EF Core and Npgsql dependencies | Configure EF Core provider dependencies |
 | `EfCoreUnitOfWork.cs` | EF Core IUnitOfWork: begins a database transaction on the DbContext and makes it the ambient transaction | Understand explicit transactions with EF Core |
 | `EfCoreUnitOfWorkTransaction.cs` | EF Core unit of work transaction: saves changes then commits, rolls back on dispose when not committed | Debug EF Core commit or rollback |
@@ -22,7 +23,7 @@ EF Core persistence provider: outbox repository with PostgreSQL support and auto
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
-| `Configuration/` | LockCleanupOptions for expired lock cleanup interval | Configure lock cleanup behavior |
+| `Configuration/` | LockCleanupOptions and EntityFrameworkCoreInboxOptions, with their validators | Configure lock cleanup or the inbox |
 | `DependencyInjection/` | UseEntityFrameworkCore extension methods, builders, and ModelBuilder configuration | Register EF Core persistence or extend registration API |
-| `Models/` | EF Core entity models for locks, daemon assignments, leader election, and nodes | Understand EF Core entity schemas |
-| `Worker/` | LockCleanupWorker background service for expired lock cleanup | Understand lock cleanup behavior |
+| `Models/` | EF Core entity models for locks, daemon assignments, leader election, nodes, and the inbox | Understand EF Core entity schemas |
+| `Daemon/` | LockCleanupDaemon and InboxCleanupDaemon, daemons removing expired rows on one node of the service | Understand lock or inbox cleanup behavior |

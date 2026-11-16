@@ -37,6 +37,11 @@ public sealed class MongoDbContext
     internal IMongoCollection<LockDocument>? LockCollection { get; set; }
 
     /// <summary>
+    /// Gets or sets the inbox collection, set when the inbox is enabled.
+    /// </summary>
+    internal IMongoCollection<InboxDocument>? InboxCollection { get; set; }
+
+    /// <summary>
     /// Gets the leader election collection.
     /// </summary>
     internal IMongoCollection<LeaderDocument> LeaderCollection { get; set; } = null!;

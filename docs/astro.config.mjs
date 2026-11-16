@@ -59,6 +59,12 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Inbox',
+          items: [
+            { label: 'Overview', link: '/inbox/' },
+          ],
+        },
+        {
           label: 'Persistence',
           items: [
             { label: 'MongoDB', link: '/persistence/mongodb/' },

@@ -16,4 +16,7 @@ internal sealed class RouteEntry<TMessage>
 
     /// <summary>Optional per-route middleware pipeline, or <c>null</c> if no per-route middleware was configured.</summary>
     public MessagePipelineBuilder<ConsumeContext<TMessage>>? Pipeline { get; init; }
+
+    /// <summary>Whether the route's consumer uses the inbox.</summary>
+    public bool InboxEnabled { get; init; }
 }
