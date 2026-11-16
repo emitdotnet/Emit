@@ -2,6 +2,7 @@ namespace Emit.Routing;
 
 using Emit.Abstractions;
 using Emit.Abstractions.ErrorHandling;
+using Emit.Abstractions.Pipeline;
 using Emit.Middleware;
 using Emit.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,12 +27,18 @@ internal sealed class RouterRegistration<TMessage>
         this.routeSelector = routeSelector;
         this.routes = routes;
         ConsumerTypes = routes.Select(r => r.ConsumerType).ToList();
+        InboxConsumerTypes = routes.Where(r => r.InboxEnabled).Select(r => r.ConsumerType).ToList();
     }
 
     /// <summary>
     /// All consumer handler types registered as routes in this router.
     /// </summary>
     public IReadOnlyList<Type> ConsumerTypes { get; }
+
+    /// <summary>
+    /// The consumer handler types of the routes that use the inbox.
+    /// </summary>
+    public IReadOnlyList<Type> InboxConsumerTypes { get; }
 
     /// <summary>
     /// The user-provided identifier for this router.
@@ -51,16 +58,22 @@ internal sealed class RouterRegistration<TMessage>
     /// Pre-evaluated error action for unmatched messages. When <see cref="ErrorAction.DiscardAction"/>,
     /// the invoker discards unmatched messages inline without throwing. Pass <c>null</c> to always throw.
     /// </param>
+    /// <param name="inboxMiddlewareFactory">
+    /// Creates the inbox middleware of a route's consumer type, for the routes that use the inbox. The provider
+    /// supplies this, since it knows how to identify the consumer.
+    /// </param>
     /// <returns>The constructed router pipeline ready to participate in fan-out.</returns>
     /// <remarks>
     /// Each route is wrapped in a <see cref="UnitOfWorkMiddleware{TContext}"/> outside the route's
-    /// own middleware, so the route's handler and middleware share one unit of work.
+    /// own middleware, so the route's handler and middleware share one unit of work. A route that uses
+    /// the inbox gets its inbox middleware directly inside its unit of work.
     /// </remarks>
     public IMiddlewarePipeline<ConsumeContext<TMessage>> BuildInvoker(
         Func<Type, IMiddlewarePipeline<ConsumeContext<TMessage>>> terminalFactory,
         IServiceProvider services,
         ILoggerFactory loggerFactory,
-        ErrorAction? unmatchedAction = null)
+        ErrorAction? unmatchedAction = null,
+        Func<Type, IMiddleware<ConsumeContext<TMessage>>>? inboxMiddlewareFactory = null)
     {
         ArgumentNullException.ThrowIfNull(terminalFactory);
         ArgumentNullException.ThrowIfNull(services);
@@ -72,6 +85,17 @@ internal sealed class RouterRegistration<TMessage>
         {
             var subPipeline = MessagePipelineBuilder.Build<ConsumeContext<TMessage>, TMessage>(
                 services, terminalFactory(route.ConsumerType), route.Pipeline);
+            if (route.InboxEnabled)
+            {
+                if (inboxMiddlewareFactory is null)
+                {
+                    throw new InvalidOperationException(
+                        $"The route to {route.ConsumerType.Name} uses the inbox, but its provider supplies no inbox middleware.");
+                }
+
+                subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(inboxMiddlewareFactory(route.ConsumerType), subPipeline);
+            }
+
             var unitOfWorkMw = new UnitOfWorkMiddleware<ConsumeContext<TMessage>>(route.ConsumerType, unitOfWorkLogger);
             subPipeline = new MiddlewarePipeline<ConsumeContext<TMessage>>(unitOfWorkMw, subPipeline);
             subPipelines[route.RouteKey] = (route.ConsumerType, subPipeline);

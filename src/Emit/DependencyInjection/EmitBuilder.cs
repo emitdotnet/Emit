@@ -262,5 +262,22 @@ public sealed class EmitBuilder
                 $"[{nameof(TransactionalAttribute)}] but no {nameof(IUnitOfWork)} is registered. " +
                 "Add a persistence provider, or remove the attribute.");
         }
+
+        // An inbox consumer records each message in the persistence provider's inbox, which only exists once the
+        // provider enables it. Checked here, after every integration has registered, like the transactional handlers.
+        var inboxConsumers = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<InboxConsumerMarker>()
+            .Select(m => m.ConsumerType.Name)
+            .Distinct()
+            .ToList();
+
+        if (inboxConsumers.Count > 0 && !services.Any(d => d.ImplementationInstance is InboxRegistrationMarker))
+        {
+            throw new InvalidOperationException(
+                $"{string.Join(", ", inboxConsumers)} use the inbox, but no persistence provider enables it. " +
+                $"Call {nameof(IConsumerConfigurable<object>.UseInbox)}() on the persistence provider, " +
+                $"or remove {nameof(IConsumerConfigurable<object>.UseInbox)}() from the consumers.");
+        }
     }
 }

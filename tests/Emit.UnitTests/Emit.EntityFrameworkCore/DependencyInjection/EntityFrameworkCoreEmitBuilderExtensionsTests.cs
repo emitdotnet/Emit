@@ -1,9 +1,10 @@
 namespace Emit.EntityFrameworkCore.Tests.DependencyInjection;
 
 using global::Emit.Abstractions;
+using global::Emit.Abstractions.Daemon;
 using global::Emit.DependencyInjection;
+using global::Emit.EntityFrameworkCore.Daemon;
 using global::Emit.EntityFrameworkCore.DependencyInjection;
-using global::Emit.EntityFrameworkCore.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -80,11 +81,11 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
         // Assert
         var outboxDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IOutboxRepository));
         var lockDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IDistributedLockProvider));
-        var cleanupWorkerDescriptor = services.FirstOrDefault(d => d.ImplementationType == typeof(LockCleanupWorker<TestDbContext>));
+        var cleanupDaemonDescriptor = services.FirstOrDefault(d => d.ImplementationType == typeof(LockCleanupDaemon<TestDbContext>));
 
         Assert.Null(outboxDescriptor);
         Assert.Null(lockDescriptor);
-        Assert.Null(cleanupWorkerDescriptor);
+        Assert.Null(cleanupDaemonDescriptor);
     }
 
     [Fact]
@@ -132,7 +133,7 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
     }
 
     [Fact]
-    public void GivenUseDistributedLock_WhenAddEntityFrameworkCore_ThenRegistersLockCleanupWorker()
+    public void GivenUseDistributedLock_WhenAddEntityFrameworkCore_ThenRegistersLockCleanupDaemon()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -147,9 +148,9 @@ public class EntityFrameworkCoreEmitBuilderExtensionsTests
         });
 
         // Assert
-        var cleanupWorkerDescriptor = services.FirstOrDefault(d => d.ImplementationType == typeof(LockCleanupWorker<TestDbContext>));
-        Assert.NotNull(cleanupWorkerDescriptor);
-        Assert.Equal(ServiceLifetime.Singleton, cleanupWorkerDescriptor.Lifetime);
+        var cleanupDaemonDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IDaemonAgent) && d.ImplementationType == typeof(LockCleanupDaemon<TestDbContext>));
+        Assert.NotNull(cleanupDaemonDescriptor);
+        Assert.Equal(ServiceLifetime.Singleton, cleanupDaemonDescriptor.Lifetime);
     }
 
     [Fact]

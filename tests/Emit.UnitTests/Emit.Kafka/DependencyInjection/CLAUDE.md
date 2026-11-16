@@ -16,4 +16,5 @@ Unit tests for Kafka DI builder, topic builder, consumer group builder, producer
 | `KafkaTopicBuilderExtensionsTests.cs` | Unit tests for KafkaTopicBuilder extension methods | Debugging topic builder extension test failures |
 | `KafkaTopicBuilderTests.cs` | Unit tests for KafkaTopicBuilder topic configuration | Debugging topic builder test failures |
 | `RegistrationValidationTests.cs` | Unit tests for Kafka DI registration validation rules | Debugging registration validation test failures |
+| `InboxRegistrationTests.cs` | Startup checks of inbox consumers: transactional, provider inbox enabled, unique type names | Debugging inbox registration test failures |
 | `TopicCreationOptionsTests.cs` | Unit tests for TopicCreationOptions validation | Debugging topic creation options test failures |

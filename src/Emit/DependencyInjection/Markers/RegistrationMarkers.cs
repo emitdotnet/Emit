@@ -26,3 +26,23 @@ public sealed record DistributedLockRegistrationMarker(string ProviderName);
 /// </summary>
 /// <param name="HandlerType">The decorated consumer or mediator handler type.</param>
 public sealed record TransactionalHandlerMarker(Type HandlerType);
+
+/// <summary>
+/// Marker registered by a persistence provider when the inbox is enabled.
+/// </summary>
+/// <param name="ProviderName">The persistence provider.</param>
+public sealed record InboxRegistrationMarker(string ProviderName);
+
+/// <summary>
+/// Marker registered for each consumer that uses the inbox, so the configuration can be validated once every
+/// integration has been registered.
+/// </summary>
+/// <param name="ConsumerType">The consumer type.</param>
+public sealed record InboxConsumerMarker(Type ConsumerType);
+
+/// <summary>
+/// Marker registered for each of Emit's own daemons, the only daemons whose identifiers may use the reserved
+/// <c>emit:</c> prefix.
+/// </summary>
+/// <param name="DaemonType">The daemon type.</param>
+public sealed record EmitDaemonMarker(Type DaemonType);

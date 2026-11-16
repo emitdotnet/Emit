@@ -16,11 +16,6 @@ public static class ValidationConstants
     public static readonly TimeSpan MinPollingInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Minimum allowed lock cleanup interval.
-    /// </summary>
-    public static readonly TimeSpan MinLockCleanupInterval = TimeSpan.FromMinutes(1);
-
-    /// <summary>
     /// Maximum length of a service name.
     /// </summary>
     public const int MaxServiceNameLength = 200;

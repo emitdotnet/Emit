@@ -1,0 +1,78 @@
+---
+title: Inbox
+description: Skip the messages a consumer already handled, recorded in the same transaction as its writes.
+---
+
+Delivery is at least once. A broker redelivers a message after a rebalance or a restart, and the outbox can deliver an entry twice after a failure. Unless the consumer is idempotent, it does the work twice. The inbox records each message a consumer handled, in the consumer's own transaction, and skips the message when it comes back.
+
+## How it works
+
+1. **Recorded first.** Before the consumer runs, the message is recorded in the transaction of the consumer's unit of work.
+2. **Skipped when known.** If the consumer already handled the message, the consumer is not invoked and the message counts as handled.
+3. **Committed together.** The record commits with the consumer's writes. A failed attempt rolls it back with everything else, so the retry, or a later copy, handles the message.
+4. **Removed after the retention.** Each record expires after the retention configured on the persistence provider.
+
+A message is identified by its message id, which is the same on every delivery. A consumer is identified by where it consumes (with Kafka, its topic and consumer group) and the name of its type, so two consumers of one group, or one consumer in two groups, each keep their own records.
+
+## Enabling it
+
+Enable the inbox on the persistence provider, then on each consumer that should use it. Every such consumer must be `[Transactional]`.
+
+```csharp
+services.AddEmit(emit =>
+{
+    emit.AddMongoDb(mongo => mongo
+        .Configure((sp, ctx) => { /* client and database */ })
+        .UseInbox());
+
+    emit.AddKafka(kafka =>
+    {
+        kafka.Topic<string, OrderPlaced>("orders", topic =>
+        {
+            topic.ConsumerGroup("billing", group =>
+            {
+                group.AddConsumer<ChargeCustomer>(c => c.UseInbox());
+                group.AddConsumer<AuditOrder>(); // no inbox
+
+                group.AddRouter("by-type", ctx => ctx.Message.Type, router => router
+                    .Route<IssueRefund>("refund", route => route.UseInbox()));
+            });
+        });
+    });
+});
+
+[Transactional]
+public sealed class ChargeCustomer : IConsumer<OrderPlaced> { /* ... */ }
+```
+
+With EF Core, call `UseInbox()` on the `AddEntityFrameworkCore` builder. Its table is part of the model `AddEmitModel` adds, so it comes with your next migration.
+
+`AddEmit` throws when:
+
+- a consumer uses the inbox but is not `[Transactional]`,
+- a consumer uses the inbox but the persistence provider does not enable it,
+- two consumers of one group that use the inbox share a type name, as when one type is registered both directly and as a route.
+
+## Batch consumers
+
+```csharp
+group.AddBatchConsumer<IndexShipments>(batch => batch.UseInbox());
+```
+
+The items of a batch are recorded in one database call. Items the consumer already handled are removed from the batch, and a batch with nothing new does not reach the consumer.
+
+## Limits
+
+- **Retention.** A copy that arrives after its record expired is handled again. Choose a retention longer than the longest a message can take to come back, such as a consumer replaying from an earlier position.
+- **Side effects outside the transaction.** Calls to other services, emails, and writes to another database are not covered. Pass the message id to such a service as its idempotency key.
+- **Renaming a consumer type.** The type name identifies the consumer, so a renamed type starts over with no records.
+
+## Options
+
+| Option | Provider | Default | Description |
+|---|---|---|---|
+| `Retention` | both | `7 days` | How long a handled message stays recorded |
+| `CleanupInterval` | EF Core | `1 minute` | How often expired records are removed |
+| `CleanupBatchSize` | EF Core | `1000` | The most records removed in one database call |
+
+With EF Core, the `emit:inbox-cleanup` [daemon](../concepts/leader-election/) removes expired records on one node of the service. MongoDB removes them with a TTL index, typically within a minute of their expiry. Each record carries its own expiry, so services sharing a database keep their records for the retention each configured.

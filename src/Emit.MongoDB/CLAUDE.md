@@ -7,7 +7,8 @@ MongoDB persistence provider: outbox repository with sharding support and atomic
 | File | What | When to read |
 | ---- | ---- | ------------ |
 | `README.md` | MongoDB provider documentation: schema, indexes, sharding, sequence generation, troubleshooting | Understand MongoDB provider usage or configure collections |
-| `CollectionNames.cs` | MongoDB collection name constants (outbox, sequences, locks) | Reference or modify collection naming |
+| `CollectionNames.cs` | MongoDB collection name constants (outbox, sequences, locks, inbox) | Reference or modify collection naming |
+| `MongoDbInboxRepository.cs` | IInboxRepository implementation: an upsert setting fields only on insert, in the unit of work's session, a batch through one ordered bulk write | Implement or debug the MongoDB inbox |
 | `MongoDbOutboxRepository.cs` | IOutboxRepository implementation with aggregation-based group heads and atomic sequences | Implement MongoDB queries or troubleshoot persistence |
 | `MongoDbDistributedLockProvider.cs` | IDistributedLockProvider implementation using MongoDB atomic upserts and TTL index | Implement or debug distributed lock behavior |
 | `MongoDbDaemonAssignmentPersistence.cs` | IDaemonAssignmentPersistence implementation for MongoDB | Understand or debug daemon assignment persistence |
@@ -26,4 +27,4 @@ MongoDB persistence provider: outbox repository with sharding support and atomic
 | --------- | ---- | ------------ |
 | `Configuration/` | MongoDB options, BSON class maps, conventions, and validators | Configure MongoDB connection, collections, or serialization |
 | `DependencyInjection/` | UseMongoDb extension methods registering IMongoClient, repository, and validators | Register MongoDB persistence provider |
-| `Models/` | MongoDB document models for locks, sequences, daemon assignments, leader election, and nodes | Understand MongoDB document schemas |
+| `Models/` | MongoDB document models for locks, sequences, daemon assignments, leader election, nodes, and the inbox | Understand MongoDB document schemas |

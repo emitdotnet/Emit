@@ -11,6 +11,7 @@ using Emit.Kafka.Metrics;
 using Emit.Kafka.Observability;
 using Emit.Kafka.Tracing;
 using Emit.Metrics;
+using Emit.Middleware;
 using Emit.Observability;
 using Emit.Pipeline;
 using Emit.Pipeline.Modules;
@@ -548,7 +549,14 @@ public sealed class KafkaBuilder
         KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
     {
         RegisterConsumerTypes(groupBuilder);
+        RegisterInboxConsumers(topicName, groupId, groupBuilder);
         RegisterMiddleware(groupBuilder);
+
+        // The inbox identifies a consumer by where it consumes and the name of its type, all fixed in code or
+        // configuration, so the same consumer finds its records after a restart
+        string InboxHandler(Type consumerType) => $"{Provider.Identifier}/{topicName}/{groupId}/{consumerType.Name}";
+        var directInboxConsumers = groupBuilder.InboxConsumerTypes;
+        var batchUsesInbox = groupBuilder.BatchOptions?.InboxEnabled == true;
 
         var config = BuildConsumerGroupConfig(topicName, topicBuilder, groupBuilder);
 
@@ -632,7 +640,10 @@ public sealed class KafkaBuilder
                     {
                         entries.Add(composer.Compose(
                             entry.Invoker, entry.Pipeline,
-                            entry.ConsumerType.Name, ConsumerKind.Direct, entry.ConsumerType));
+                            entry.ConsumerType.Name, ConsumerKind.Direct, entry.ConsumerType,
+                            directInboxConsumers.Contains(entry.ConsumerType)
+                                ? new InboxMiddleware<TValue>(InboxHandler(entry.ConsumerType))
+                                : null));
                     }
 
                     if (config.Routers is { Count: > 0 })
@@ -646,7 +657,8 @@ public sealed class KafkaBuilder
                                 type => new HandlerInvoker<TValue>(type),
                                 sp,
                                 loggerFactory,
-                                unmatchedAction);
+                                unmatchedAction,
+                                type => new InboxMiddleware<TValue>(InboxHandler(type)));
 
                             entries.Add(composer.Compose(
                                 routerInvoker, null,
@@ -708,7 +720,8 @@ public sealed class KafkaBuilder
 
                         var batchEntry = batchComposer.Compose(
                             invoker, null,
-                            userType.Name, ConsumerKind.Direct, userType);
+                            userType.Name, ConsumerKind.Direct, userType,
+                            batchUsesInbox ? new BatchInboxMiddleware<TValue>(InboxHandler(userType)) : null);
 
                         return [batchEntry];
                     }
@@ -753,6 +766,52 @@ public sealed class KafkaBuilder
             {
                 MarkIfTransactional(routedConsumerType);
             }
+        }
+    }
+
+    /// <summary>
+    /// Validates the inbox consumers of a consumer group and marks them for the checks made once every integration
+    /// has registered. Each must be transactional, since its record is written in its transaction, and have a type
+    /// name of its own, since the name identifies it.
+    /// </summary>
+    private void RegisterInboxConsumers<TKey, TValue>(
+        string topicName,
+        string groupId,
+        KafkaConsumerGroupBuilder<TKey, TValue> groupBuilder)
+    {
+        List<Type> inboxConsumerTypes =
+        [
+            .. groupBuilder.InboxConsumerTypes,
+            .. groupBuilder.Routers?.SelectMany(r => r.InboxConsumerTypes) ?? [],
+        ];
+
+        if (groupBuilder.BatchOptions?.InboxEnabled == true && groupBuilder.BatchConsumerType is { } batchConsumerType)
+        {
+            inboxConsumerTypes.Add(batchConsumerType);
+        }
+
+        foreach (var consumerType in inboxConsumerTypes)
+        {
+            if (!Attribute.IsDefined(consumerType, typeof(TransactionalAttribute)))
+            {
+                throw new InvalidOperationException(
+                    $"{consumerType.Name} in consumer group '{groupId}' on topic '{topicName}' uses the inbox but is not " +
+                    $"decorated with [{nameof(TransactionalAttribute)}]. The inbox records each message in the consumer's " +
+                    "transaction, so add the attribute, or remove the inbox.");
+            }
+        }
+
+        if (inboxConsumerTypes.GroupBy(t => t.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } sameName)
+        {
+            throw new InvalidOperationException(
+                $"Consumer group '{groupId}' on topic '{topicName}' has several consumers named '{sameName.Key}' that use " +
+                $"the inbox ({string.Join(", ", sameName.Select(t => t.FullName))}). The inbox identifies a consumer by " +
+                "the name of its type, so each consumer of a consumer group that uses it needs a type name of its own.");
+        }
+
+        foreach (var consumerType in inboxConsumerTypes)
+        {
+            services.AddSingleton(new InboxConsumerMarker(consumerType));
         }
     }
 

@@ -9,7 +9,7 @@
 | `KafkaClientOptions.cs` | Shared Kafka client settings (connection, security, timeouts, connection pooling) with ApplyTo method | Configure shared Kafka client connection settings |
 | `KafkaConsumerOptions.cs` | Consumer-specific configuration overrides (offset reset, timeouts, fetch settings) with ApplyTo method | Configure Kafka consumer behavior |
 | `KafkaConsumerGroupBuilder.cs` | Fluent builder for consumer group configuration (name, concurrency, distribution, consumers); worker pool settings and the deserialization retry backoff are validated when set | Configure Kafka consumer group registration |
-| `KafkaConsumerHandlerBuilder.cs` | Per-consumer handler middleware configuration with compile-time type safety | Configure middleware for individual consumer handlers |
+| `KafkaConsumerHandlerBuilder.cs` | Per-consumer handler middleware and inbox configuration with compile-time type safety | Configure middleware or the inbox for individual consumer handlers |
 | `KafkaProducerBuilder.cs` | Fluent builder for producer configuration (acks, linger, batch) with per-producer outbound middleware | Configure individual Kafka producers |
 | `KafkaProducerOptions.cs` | Producer configuration model holding serializer and topic settings | Understand producer configuration structure |
 | `KafkaSchemaRegistryOptions.cs` | Schema Registry connection configuration (URL, timeouts, retries, caching, auth) with ApplyTo method | Configure Confluent Schema Registry connection |

@@ -1,16 +1,22 @@
 namespace Emit.EntityFrameworkCore.Tests.LockCleanup;
 
 using Emit.Abstractions;
+using Emit.Abstractions.Daemon;
 using Emit.DependencyInjection;
+using Emit.EntityFrameworkCore.Configuration;
+using Emit.EntityFrameworkCore.Daemon;
 using Emit.EntityFrameworkCore.DependencyInjection;
 using Emit.EntityFrameworkCore.Tests.TestInfrastructure;
+using Emit.IntegrationTests.Integration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
 
 /// <summary>
-/// Integration tests for the EF Core lock cleanup worker. Verifies that expired lock rows
+/// Integration tests for the EF Core lock cleanup daemon. Verifies that expired lock rows
 /// are removed from the database while active (non-expired) lock rows are preserved.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -63,11 +69,11 @@ public class EfCoreLockCleanupTests : IClassFixture<PostgreSqlContainerFixture>,
     }
 
     /// <summary>
-    /// Verifies that when the cleanup SQL runs, expired lock rows are deleted while
-    /// active (non-expired) lock rows remain intact.
+    /// Verifies that the lock cleanup daemon deletes expired lock rows while active (non-expired) lock rows remain
+    /// intact.
     /// </summary>
     [Fact]
-    public async Task GivenExpiredLockRows_WhenCleanupSqlExecuted_ThenExpiredLocksRemovedActiveLocksPreserved()
+    public async Task GivenExpiredLockRows_WhenTheCleanupDaemonRuns_ThenExpiredLocksRemovedActiveLocksPreserved()
     {
         // Arrange — insert one expired row and one active row directly via SQL.
         await using var connection = new NpgsqlConnection(testDb.ConnectionString);
@@ -92,23 +98,34 @@ public class EfCoreLockCleanupTests : IClassFixture<PostgreSqlContainerFixture>,
             await insertCmd.ExecuteNonQueryAsync();
         }
 
-        // Act — run the same cleanup SQL that LockCleanupWorker uses.
-        await using (var deleteCmd = connection.CreateCommand())
+        // Act: the daemon runs until the expired row is gone
+        var daemon = new LockCleanupDaemon<IntegrationTestDbContext>(
+            dbContextFactory,
+            Options.Create(new LockCleanupOptions { CleanupInterval = TimeSpan.FromMilliseconds(100) }),
+            TimeProvider.System,
+            NullLogger<LockCleanupDaemon<IntegrationTestDbContext>>.Instance);
+        using var assignment = new CancellationTokenSource();
+        var run = daemon.RunAsync(new DaemonRunContext(assignment.Token, 1, Guid.NewGuid(), () => true));
+
+        try
         {
-            deleteCmd.CommandText = """DELETE FROM "emit_locks" WHERE expires_at < clock_timestamp()""";
-            var deleted = await deleteCmd.ExecuteNonQueryAsync();
-            Assert.Equal(1, deleted);
+            await TestHelpers.WaitUntilAsync(
+                async () =>
+                {
+                    await using var countCmd = connection.CreateCommand();
+                    countCmd.CommandText = """SELECT COUNT(*) FROM "emit_locks" WHERE key = @expiredKey""";
+                    countCmd.Parameters.AddWithValue("expiredKey", expiredKey);
+                    return (long)(await countCmd.ExecuteScalarAsync())! == 0;
+                },
+                "The daemon never deleted the expired lock row.");
+        }
+        finally
+        {
+            await assignment.CancelAsync();
+            await run;
         }
 
-        // Assert — expired row is gone; active row remains.
-        await using var countCmd = connection.CreateCommand();
-        countCmd.CommandText = $"""
-            SELECT COUNT(*) FROM "emit_locks" WHERE key = @expiredKey
-            """;
-        countCmd.Parameters.AddWithValue("expiredKey", expiredKey);
-        var expiredCount = (long)(await countCmd.ExecuteScalarAsync())!;
-        Assert.Equal(0, expiredCount);
-
+        // Assert: the active row remains
         await using var activeCountCmd = connection.CreateCommand();
         activeCountCmd.CommandText = $"""
             SELECT COUNT(*) FROM "emit_locks" WHERE key = @activeKey

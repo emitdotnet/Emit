@@ -9,8 +9,8 @@ using Emit.MongoDB.Configuration;
 /// <remarks>
 /// <para>
 /// You must call <see cref="Configure"/> to provide the MongoDB client and database.
-/// Optionally call <see cref="UseOutbox"/> to enable the transactional outbox, or
-/// <see cref="UseDistributedLock"/> to expose <c>IDistributedLockProvider</c>.
+/// Optionally call <see cref="UseOutbox"/> to enable the transactional outbox, <see cref="UseInbox"/>
+/// to enable the inbox, or <see cref="UseDistributedLock"/> to expose <c>IDistributedLockProvider</c>.
 /// </para>
 /// </remarks>
 public sealed class MongoDbBuilder
@@ -34,6 +34,16 @@ public sealed class MongoDbBuilder
     /// Gets a value indicating whether the distributed lock is enabled.
     /// </summary>
     internal bool DistributedLockEnabled { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the inbox is enabled.
+    /// </summary>
+    internal bool InboxEnabled { get; private set; }
+
+    /// <summary>
+    /// Gets the stored inbox options configuration action.
+    /// </summary>
+    internal Action<MongoDbInboxOptions>? InboxOptionsConfiguration { get; private set; }
 
     /// <summary>
     /// Configures the MongoDB client and database for persistence.
@@ -67,6 +77,18 @@ public sealed class MongoDbBuilder
     {
         OutboxEnabled = true;
         OutboxOptionsConfiguration = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables the inbox, so consumers that call <c>UseInbox()</c> skip the messages they already handled.
+    /// </summary>
+    /// <param name="configure">Optional configuration action for the inbox options.</param>
+    /// <returns>This builder instance for method chaining.</returns>
+    public MongoDbBuilder UseInbox(Action<MongoDbInboxOptions>? configure = null)
+    {
+        InboxEnabled = true;
+        InboxOptionsConfiguration = configure;
         return this;
     }
 

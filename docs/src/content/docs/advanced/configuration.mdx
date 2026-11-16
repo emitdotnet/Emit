@@ -194,13 +194,23 @@ emit.ConfigureDaemons(d =>
 });
 ```
 
+## Inbox options
+
+Passed to `UseInbox()` on the persistence provider. See [Inbox](../../inbox/).
+
+| Option | Provider | Default | Range | Description |
+|---|---|---|---|---|
+| `Retention` | EF Core, MongoDB | `7 days` | > 0 | How long a handled message stays recorded |
+| `CleanupInterval` | EF Core | `1 minute` | > 0 | How often expired records are removed |
+| `CleanupBatchSize` | EF Core | `1000` | > 0 | The most records removed in one database call |
+
 ## Lock cleanup options
 
 Applies to the EF Core persistence provider only. Controls how often expired distributed lock rows are purged from the database.
 
 | Option | Default | Range | Description |
 |---|---|---|---|
-| `CleanupInterval` | `5 minutes` | min `1 minute` | How often the cleanup worker runs |
+| `CleanupInterval` | `5 minutes` | > 0 | How often the `emit:lock-cleanup` daemon removes expired lock rows |
 
 ## Tracing options
 

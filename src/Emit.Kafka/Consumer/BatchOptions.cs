@@ -1,5 +1,7 @@
 namespace Emit.Kafka.Consumer;
 
+using Emit.Abstractions;
+
 /// <summary>
 /// Batch accumulation configuration for a consumer group.
 /// Accumulation happens per-worker: each worker in the consumer group independently
@@ -19,4 +21,15 @@ public sealed class BatchOptions
     /// Maximum time to wait after the first message before dispatching a partial batch. Default: 5 seconds.
     /// </summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Gets a value indicating whether the batch consumer uses the inbox.
+    /// </summary>
+    internal bool InboxEnabled { get; private set; }
+
+    /// <summary>
+    /// Removes from each batch the messages the batch consumer already handled, and skips a batch with none left.
+    /// The same rules apply as for <see cref="IConsumerConfigurable{TMessage}.UseInbox"/>.
+    /// </summary>
+    public void UseInbox() => InboxEnabled = true;
 }

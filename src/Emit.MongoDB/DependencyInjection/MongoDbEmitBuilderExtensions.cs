@@ -58,6 +58,7 @@ public static class MongoDbEmitBuilderExtensions
         var configureAction = mongoBuilder.ConfigureAction;
         var outboxEnabled = mongoBuilder.OutboxEnabled;
         var distributedLockEnabled = mongoBuilder.DistributedLockEnabled;
+        var inboxEnabled = mongoBuilder.InboxEnabled;
 
         builder.Services.AddSingleton(sp =>
         {
@@ -72,8 +73,8 @@ public static class MongoDbEmitBuilderExtensions
             ArgumentNullException.ThrowIfNull(context.Client, nameof(MongoDbContext.Client));
             ArgumentNullException.ThrowIfNull(context.Database, nameof(MongoDbContext.Database));
 
-            ResolveCollections(context, outboxEnabled, distributedLockEnabled);
-            CreateIndexes(context, outboxEnabled, distributedLockEnabled);
+            ResolveCollections(context, outboxEnabled, distributedLockEnabled, inboxEnabled);
+            CreateIndexes(context, outboxEnabled, distributedLockEnabled, inboxEnabled);
 
             return context;
         });
@@ -83,6 +84,11 @@ public static class MongoDbEmitBuilderExtensions
         if (outboxEnabled)
         {
             RegisterOutboxServices(builder, mongoBuilder);
+        }
+
+        if (inboxEnabled)
+        {
+            RegisterInboxServices(builder, mongoBuilder);
         }
 
         if (distributedLockEnabled)
@@ -104,7 +110,8 @@ public static class MongoDbEmitBuilderExtensions
     private static void ResolveCollections(
         MongoDbContext context,
         bool outboxEnabled,
-        bool distributedLockEnabled)
+        bool distributedLockEnabled,
+        bool inboxEnabled)
     {
         if (outboxEnabled)
         {
@@ -122,6 +129,14 @@ public static class MongoDbEmitBuilderExtensions
         {
             context.LockCollection = context.Database
                 .GetCollection<LockDocument>(CollectionNames.Locks)
+                .WithWriteConcern(WriteConcern.WMajority)
+                .WithReadPreference(ReadPreference.Primary);
+        }
+
+        if (inboxEnabled)
+        {
+            context.InboxCollection = context.Database
+                .GetCollection<InboxDocument>(CollectionNames.Inbox)
                 .WithWriteConcern(WriteConcern.WMajority)
                 .WithReadPreference(ReadPreference.Primary);
         }
@@ -145,7 +160,8 @@ public static class MongoDbEmitBuilderExtensions
     private static void CreateIndexes(
         MongoDbContext context,
         bool outboxEnabled,
-        bool distributedLockEnabled)
+        bool distributedLockEnabled,
+        bool inboxEnabled)
     {
         if (outboxEnabled)
         {
@@ -162,6 +178,21 @@ public static class MongoDbEmitBuilderExtensions
                 new CreateIndexModel<LockDocument>(
                     Builders<LockDocument>.IndexKeys.Ascending(x => x.ExpiresAt),
                     new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
+        }
+
+        if (inboxEnabled)
+        {
+            // One record per message and handler; the message id leads, so a message can be looked up
+            context.InboxCollection!.Indexes.CreateOne(
+                new CreateIndexModel<InboxDocument>(
+                    Builders<InboxDocument>.IndexKeys.Ascending(x => x.MessageId).Ascending(x => x.Handler),
+                    new CreateIndexOptions { Name = "messageId_handler", Unique = true }));
+
+            // Each record carries its own expiry, so services sharing the database with different retentions keep theirs
+            context.InboxCollection.Indexes.CreateOne(
+                new CreateIndexModel<InboxDocument>(
+                    Builders<InboxDocument>.IndexKeys.Ascending(x => x.ExpiresAt),
+                    new CreateIndexOptions { Name = "expiresAt", ExpireAfter = TimeSpan.Zero }));
         }
 
         // One lease per service
@@ -202,6 +233,20 @@ public static class MongoDbEmitBuilderExtensions
 
         builder.Services.AddScoped<MongoDbOutboxRepository>();
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<MongoDbOutboxRepository>());
+    }
+
+    private static void RegisterInboxServices(EmitBuilder builder, MongoDbBuilder mongoBuilder)
+    {
+        builder.Services.AddSingleton(new InboxRegistrationMarker("MongoDB"));
+
+        var optionsBuilder = builder.Services.AddOptions<MongoDbInboxOptions>().ValidateOnStart();
+        if (mongoBuilder.InboxOptionsConfiguration is { } configure)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<MongoDbInboxOptions>, MongoDbInboxOptionsValidator>();
+        builder.Services.AddScoped<IInboxRepository, MongoDbInboxRepository>();
     }
 
     // Transactions are a capability of the persistence provider, not of the outbox, so the

@@ -46,7 +46,7 @@ Register an `ILeaderElectionObserver` with `emit.AddLeaderElectionObserver<T>()`
 
 ## Daemons
 
-A daemon is background work that runs continuously on exactly one node of the service, and moves to another node when that node goes away: a scheduler, a poller, a reconciliation job. The outbox runs as a daemon too (`emit:outbox`).
+A daemon is background work that runs continuously on exactly one node of the service, and moves to another node when that node goes away: a scheduler, a poller, a reconciliation job. The outbox runs as a daemon too (`emit:outbox`), and so does the EF Core provider's removal of expired rows (`emit:inbox-cleanup`, `emit:lock-cleanup`).
 
 ### Writing a daemon
 

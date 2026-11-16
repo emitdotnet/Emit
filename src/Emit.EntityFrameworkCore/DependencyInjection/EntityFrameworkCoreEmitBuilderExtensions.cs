@@ -5,6 +5,8 @@ using Emit.Abstractions.Daemon;
 using Emit.Abstractions.LeaderElection;
 using Emit.Configuration;
 using Emit.DependencyInjection;
+using Emit.EntityFrameworkCore.Configuration;
+using Emit.EntityFrameworkCore.Daemon;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -63,6 +65,11 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
         if (efBuilder.OutboxEnabled)
         {
             RegisterOutboxServices<TDbContext>(builder, efBuilder);
+        }
+
+        if (efBuilder.InboxEnabled)
+        {
+            RegisterInboxServices<TDbContext>(builder, efBuilder);
         }
 
         if (efBuilder.DistributedLockEnabled)
@@ -133,6 +140,25 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
         builder.Services.AddScoped<IOutboxRepository>(sp => sp.GetRequiredService<EfCoreOutboxRepository<TDbContext>>());
     }
 
+    private static void RegisterInboxServices<TDbContext>(EmitBuilder builder, EntityFrameworkCoreBuilder efBuilder)
+        where TDbContext : DbContext
+    {
+        builder.Services.AddSingleton(new InboxRegistrationMarker("EntityFrameworkCore"));
+
+        var optionsBuilder = builder.Services.AddOptions<EntityFrameworkCoreInboxOptions>().ValidateOnStart();
+        if (efBuilder.InboxOptionsConfiguration is { } configure)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<EntityFrameworkCoreInboxOptions>, EntityFrameworkCoreInboxOptionsValidator>();
+
+        // Scoped, to record on the user's scoped DbContext in the transaction of its unit of work
+        builder.Services.AddScoped<IInboxRepository, EfCoreInboxRepository<TDbContext>>();
+        builder.Services.AddSingleton<IDaemonAgent, InboxCleanupDaemon<TDbContext>>();
+        builder.Services.AddSingleton(new EmitDaemonMarker(typeof(InboxCleanupDaemon<TDbContext>)));
+    }
+
     // Transactions are a capability of the persistence provider, not of the outbox, so the
     // unit of work is available whether or not UseOutbox() is called.
     private static void RegisterUnitOfWorkServices<TDbContext>(EmitBuilder builder)
@@ -161,7 +187,8 @@ public static class EntityFrameworkCoreEmitBuilderExtensions
     {
         builder.Services.AddOptions<Configuration.LockCleanupOptions>().ValidateOnStart();
         builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Configuration.LockCleanupOptions>, Configuration.LockCleanupOptionsValidator>();
-        builder.Services.AddHostedService<Worker.LockCleanupWorker<TDbContext>>();
+        builder.Services.AddSingleton<IDaemonAgent, LockCleanupDaemon<TDbContext>>();
+        builder.Services.AddSingleton(new EmitDaemonMarker(typeof(LockCleanupDaemon<TDbContext>)));
     }
 
     private static void RegisterLeaderElectionServices<TDbContext>(EmitBuilder builder)

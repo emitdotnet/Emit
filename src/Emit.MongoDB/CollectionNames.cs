@@ -34,4 +34,9 @@ internal static class CollectionNames
     /// The collection name for daemon assignments.
     /// </summary>
     internal const string DaemonAssignments = "emit.daemon.assignments";
+
+    /// <summary>
+    /// The collection name for the messages consumers handled.
+    /// </summary>
+    internal const string Inbox = "emit.inbox";
 }

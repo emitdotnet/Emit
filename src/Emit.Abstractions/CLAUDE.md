@@ -35,6 +35,8 @@ Shared abstractions for the Emit library: interfaces, models, pipeline contracts
 | `FeatureCollection.cs` | Dictionary-backed IFeatureCollection implementation used by message contexts | Understand how features are stored and retrieved on pipeline contexts |
 | `IConsumerFlowControl.cs` | Pause and resume of a consumer group declaration on this node, resolved as a keyed service under the declaration's name | Pause a consumer group from application code |
 | `IDeadLetterSink.cs` | Interface for producing messages to a dead letter destination by raw bytes and headers | Implement a DLQ producer or understand how failed messages are forwarded |
+| `IConsumerConfigurable.cs` | Builder interface of one consumer or route: `IInboundConfigurable` plus `UseInbox()` | Configure a consumer, or implement a builder that configures one |
+| `IInboxRepository.cs` | Persistence contract recording the messages each consumer handled, one message or a batch per call, in the unit of work's transaction | Implement the inbox on a new persistence backend |
 | `IInboundConfigurable.cs` | Builder interface for registering middleware (Use, by type or factory) and consumer filters (Filter) on the consumer pipelines of a message type | Implement a new builder that supports per-consumer pipeline configuration |
 | `IMessageValidator.cs` | Interface for validating incoming messages; return Fail for deterministic failures, throw for transient errors | Implement message validation or understand the validation contract |
 | `IOutboundConfigurable.cs` | Builder interface for registering middleware (Use, by type or factory) on the producer pipeline of a message type | Implement a new builder that supports per-producer pipeline configuration |

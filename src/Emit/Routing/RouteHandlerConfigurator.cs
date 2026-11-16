@@ -6,16 +6,28 @@ using Emit.Pipeline;
 using Emit.Pipeline.Modules;
 
 /// <summary>
-/// Internal <see cref="IInboundConfigurable{TMessage}"/> implementation used inside
-/// per-route callbacks. Provides <c>Use</c> and <c>Filter</c> without exposing
+/// Internal <see cref="IConsumerConfigurable{TMessage}"/> implementation used inside
+/// per-route callbacks. Provides <c>Use</c>, <c>Filter</c> and <c>UseInbox</c> without exposing
 /// group-level or router-level methods.
 /// </summary>
-internal sealed class RouteHandlerConfigurator<TMessage> : IInboundConfigurable<TMessage>
+internal sealed class RouteHandlerConfigurator<TMessage> : IConsumerConfigurable<TMessage>
 {
     /// <summary>
     /// Gets the per-route middleware level.
     /// </summary>
     internal MessagePipelineBuilder<ConsumeContext<TMessage>> Pipeline { get; } = new();
+
+    /// <summary>
+    /// Gets a value indicating whether the route's consumer uses the inbox.
+    /// </summary>
+    internal bool InboxEnabled { get; private set; }
+
+    /// <inheritdoc />
+    public IConsumerConfigurable<TMessage> UseInbox()
+    {
+        InboxEnabled = true;
+        return this;
+    }
 
     /// <inheritdoc />
     public IInboundConfigurable<TMessage> Use<TMiddleware>(MiddlewareLifetime lifetime = default)

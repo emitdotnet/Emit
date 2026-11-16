@@ -24,6 +24,7 @@ MongoDB integration tests: compliance implementations proving MongoDB persistenc
 | `MongoDbProducerOutboxRoutingCompliance.cs` | Inherits ProducerOutboxRoutingCompliance; proves outbox-backed producer routing with MongoDB + Kafka | Debug or extend MongoDB producer outbox-routing tests |
 | `MongoDbTransactionalRouterCompliance.cs` | Inherits TransactionalRouterCompliance with MongoDB | Debug or extend MongoDB transactional router tests |
 | `MongoDbUnitOfWorkCallbackCompliance.cs` | Inherits UnitOfWorkCallbackCompliance with MongoDB | Debug or extend MongoDB unit of work callback tests |
+| `MongoDbInboxCompliance.cs` | Inherits InboxCompliance with MongoDB | Debug or extend MongoDB inbox tests |
 
 ## Subdirectories
 

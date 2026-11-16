@@ -210,7 +210,7 @@ group.CommitInterval = TimeSpan.FromSeconds(5);  // default
 
 Commits happen in the background on this interval. You do not call commit manually.
 
-Delivery is at least once: a message whose offset was not committed yet is delivered again after a restart or a rebalance. `MessageId` is the same on every delivery of a message, so it is the key to deduplicate on. A message produced by Emit carries its id in the `emit-message-id` header, through the outbox too, and a message produced with the headers of a consumed message gets its own id, not the consumed one; a message produced outside Emit is identified by its topic, partition and offset.
+Delivery is at least once: a message whose offset was not committed yet is delivered again after a restart or a rebalance. `MessageId` is the same on every delivery of a message, so it is the key to deduplicate on, and the one the [inbox](../../inbox/) uses. A message produced by Emit carries its id in the `emit-message-id` header, through the outbox too, and a message produced with the headers of a consumed message gets its own id, not the consumed one; a message produced outside Emit is identified by its topic, partition and offset.
 
 ## Transactional consumers
 
@@ -228,6 +228,8 @@ public sealed class PizzaOrderedConsumer(
     }
 }
 ```
+
+To skip the messages a transactional consumer already handled, call `UseInbox()` on it: `group.AddConsumer<PizzaOrderedConsumer>(c => c.UseInbox())`. See [Inbox](../../inbox/).
 
 To act once the transaction has committed, or once the message has definitely failed, register `OnSucceeded` and `OnFailed` callbacks on `IEmitContext`. See [Unit of Work](../../concepts/unit-of-work/). For the full transactional outbox story, see [Outbox](../../outbox/).
 

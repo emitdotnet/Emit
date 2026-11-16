@@ -788,6 +788,28 @@ public class DaemonCoordinatorTests
     }
 
     [Fact]
+    public void GivenEmitDaemonWithTheReservedPrefix_WhenCreatingTheCoordinator_ThenItIsDeclared()
+    {
+        // Arrange: a daemon type registered as one of Emit's own, as persistence providers register theirs
+        var daemon = new ControllableDaemonAgent("emit:cleanup");
+
+        // Act
+        var coordinator = TestNodes.CreateCoordinator(
+            mockAssignmentPersistence.Object,
+            mockLeaderElectionPersistence.Object,
+            [daemon],
+            new DaemonOptions(),
+            new LeaderElectionOptions(),
+            Mock.Of<INodeIdentity>(n => n.NodeId == nodeId && n.ServiceName == ServiceName),
+            NewTime(),
+            InlineTaskScheduler.Instance,
+            internalDaemonTypes: [typeof(ControllableDaemonAgent)]);
+
+        // Assert
+        Assert.Equal(["emit:cleanup"], DeclareDaemons(coordinator));
+    }
+
+    [Fact]
     public async Task GivenOneAssignmentWhoseHandlingFails_WhenTheNodeProcessesItsAssignments_ThenTheOthersAreStillHandled()
     {
         // Arrange: a persistent error on one assignment's row must not hold up the node's other daemons

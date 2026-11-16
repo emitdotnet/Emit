@@ -124,6 +124,7 @@ public static class ServiceCollectionExtensions
 
             services.AddSingleton<OutboxDaemon>();
             services.AddSingleton<IDaemonAgent>(sp => sp.GetRequiredService<OutboxDaemon>());
+            services.AddSingleton(new EmitDaemonMarker(typeof(OutboxDaemon)));
         }
 
         // Register leader election and daemon coordination when a persistence provider is present

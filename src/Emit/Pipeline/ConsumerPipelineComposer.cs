@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 /// <summary>
 /// Composes a fully-layered consume middleware pipeline for a single consumer or router entry.
 /// Pipeline order (innermost → outermost):
-/// handler → per-entry → unit of work → validation → filter → retry → rate limit → group/provider/global inbound/every pipeline → metrics → observers → error → tracing.
+/// handler → per-entry → inbox → unit of work → validation → filter → retry → rate limit → group/provider/global inbound/every pipeline → metrics → observers → error → tracing.
 /// </summary>
 /// <typeparam name="TValue">The message value type.</typeparam>
 internal sealed class ConsumerPipelineComposer<TValue>
@@ -116,6 +116,11 @@ internal sealed class ConsumerPipelineComposer<TValue>
     /// <param name="consumerType">
     /// The handler type for direct consumers, or <see langword="null"/> for routers.
     /// </param>
+    /// <param name="inboxMiddleware">
+    /// The inbox middleware of a direct consumer that uses the inbox, or <see langword="null"/>. Applied directly
+    /// inside the unit of work, so its record is written in the consumer's transaction. Routes get theirs inside the
+    /// router invoker.
+    /// </param>
     /// <returns>
     /// A <see cref="ConsumerPipelineEntry{TValue}"/> pairing the composed pipeline with its identity metadata.
     /// </returns>
@@ -124,7 +129,8 @@ internal sealed class ConsumerPipelineComposer<TValue>
         MessagePipelineBuilder? perEntryPipeline,
         string identifier,
         ConsumerKind kind,
-        Type? consumerType)
+        Type? consumerType,
+        IMiddleware<ConsumeContext<TValue>>? inboxMiddleware = null)
     {
         // === Build pipeline innermost → outermost ===
 
@@ -132,6 +138,12 @@ internal sealed class ConsumerPipelineComposer<TValue>
 
         // 2. Per-entry middleware
         terminal = MessagePipelineBuilder.Build<ConsumeContext<TValue>, TValue>(Services, terminal, perEntryPipeline);
+
+        // 2.25. Inbox (inside the unit of work, so the record commits or rolls back with the handler's writes)
+        if (inboxMiddleware is not null)
+        {
+            terminal = new MiddlewarePipeline<ConsumeContext<TValue>>(inboxMiddleware, terminal);
+        }
 
         // 2.5. Unit of work (wraps the handler and its own middleware, directly inside retry, so
         // nothing within an attempt can fail after the commit). Routers have none here: each route

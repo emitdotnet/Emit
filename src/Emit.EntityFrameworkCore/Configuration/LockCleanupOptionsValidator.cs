@@ -1,6 +1,5 @@
 namespace Emit.EntityFrameworkCore.Configuration;
 
-using Emit.Configuration;
 using Microsoft.Extensions.Options;
 
 /// <summary>
@@ -11,10 +10,9 @@ internal sealed class LockCleanupOptionsValidator : IValidateOptions<LockCleanup
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, LockCleanupOptions options)
     {
-        if (options.CleanupInterval < ValidationConstants.MinLockCleanupInterval)
+        if (options.CleanupInterval <= TimeSpan.Zero)
         {
-            return ValidateOptionsResult.Fail(
-                $"{nameof(options.CleanupInterval)} must be at least {ValidationConstants.MinLockCleanupInterval.TotalMinutes} minute(s).");
+            return ValidateOptionsResult.Fail($"{nameof(options.CleanupInterval)} must be greater than zero.");
         }
 
         return ValidateOptionsResult.Success;

@@ -1,6 +1,7 @@
 namespace Emit.EntityFrameworkCore.DependencyInjection;
 
 using Emit.Configuration;
+using Emit.EntityFrameworkCore.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
@@ -10,8 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 /// <para>
 /// You must call exactly one database provider method (e.g., <see cref="UseNpgsql"/>)
 /// to specify which database engine to use with Entity Framework Core.
-/// Optionally call <see cref="UseOutbox"/> to enable the transactional outbox, or
-/// <see cref="UseDistributedLock"/> to expose <c>IDistributedLockProvider</c>.
+/// Optionally call <see cref="UseOutbox"/> to enable the transactional outbox, <see cref="UseInbox"/>
+/// to enable the inbox, or <see cref="UseDistributedLock"/> to expose <c>IDistributedLockProvider</c>.
 /// </para>
 /// </remarks>
 public sealed class EntityFrameworkCoreBuilder
@@ -52,6 +53,16 @@ public sealed class EntityFrameworkCoreBuilder
     internal bool DistributedLockEnabled { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether the inbox is enabled.
+    /// </summary>
+    internal bool InboxEnabled { get; private set; }
+
+    /// <summary>
+    /// Gets the stored inbox options configuration action.
+    /// </summary>
+    internal Action<EntityFrameworkCoreInboxOptions>? InboxOptionsConfiguration { get; private set; }
+
+    /// <summary>
     /// Configures PostgreSQL via Npgsql as the database provider for Entity Framework Core.
     /// </summary>
     /// <returns>This builder instance for method chaining.</returns>
@@ -80,6 +91,18 @@ public sealed class EntityFrameworkCoreBuilder
     {
         OutboxEnabled = true;
         OutboxOptionsConfiguration = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables the inbox, so consumers that call <c>UseInbox()</c> skip the messages they already handled.
+    /// </summary>
+    /// <param name="configure">Optional configuration action for the inbox options.</param>
+    /// <returns>This builder instance for method chaining.</returns>
+    public EntityFrameworkCoreBuilder UseInbox(Action<EntityFrameworkCoreInboxOptions>? configure = null)
+    {
+        InboxEnabled = true;
+        InboxOptionsConfiguration = configure;
         return this;
     }
 
